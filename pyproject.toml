@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ioc-enricher"
+version = "0.1.0"
+description = "Threat intelligence enrichment for IPs, domains, URLs and hashes"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+dependencies = [
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+api = ["fastapi>=0.110", "uvicorn>=0.29"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "respx>=0.21"]
+
+[project.scripts]
+ioc-enrich = "ioc_enricher.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ioc_enricher*"]
