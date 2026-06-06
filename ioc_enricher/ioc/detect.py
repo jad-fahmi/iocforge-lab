@@ -2,6 +2,7 @@ import ipaddress
 import re
 from urllib.parse import urlparse
 
+from ioc_enricher.ioc.defang import refang
 from ioc_enricher.ioc.types import IocType
 
 DOMAIN_RE = re.compile(
@@ -45,7 +46,7 @@ def _try_hash(value):
 
 
 def detect(value):
-    value = value.strip()
+    value = refang(value.strip())
 
     ip = _try_ip(value)
     if ip:
