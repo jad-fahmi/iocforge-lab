@@ -14,6 +14,21 @@ ENV_KEYS = {
 }
 
 
+def load_dotenv(path=".env"):
+    """tiny .env reader so we don't pull in a dependency for this."""
+    p = Path(path)
+    if not p.exists():
+        return
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        k, v = k.strip(), v.strip()
+        if k and k not in os.environ:
+            os.environ[k] = v
+
+
 class Config:
     def __init__(self, keys=None, cache_ttl=3600):
         self.keys = keys or {}
