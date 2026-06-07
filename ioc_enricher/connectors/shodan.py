@@ -15,7 +15,7 @@ class Shodan(Connector):
 
         url = f"{BASE}/shodan/host/{ioc}"
         try:
-            resp = self.client.get(url, params={"key": self.api_key})
+            resp = self.get(url, params={"key": self.api_key})
         except Exception as exc:
             log.warning("shodan request failed: %s", exc)
             return self._empty(ioc, ioc_type, error=str(exc))

@@ -41,7 +41,7 @@ class OTX(Connector):
         url = f"{BASE}/{section}/{ioc}/general"
         headers = {"X-OTX-API-KEY": self.api_key}
         try:
-            resp = self.client.get(url, headers=headers)
+            resp = self.get(url, headers=headers)
         except Exception as exc:
             log.warning("otx request failed: %s", exc)
             return self._empty(ioc, ioc_type, error=str(exc))

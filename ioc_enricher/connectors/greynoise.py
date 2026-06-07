@@ -15,7 +15,7 @@ class GreyNoise(Connector):
 
         headers = {"key": self.api_key, "Accept": "application/json"}
         try:
-            resp = self.client.get(f"{BASE}/{ioc}", headers=headers)
+            resp = self.get(f"{BASE}/{ioc}", headers=headers)
         except Exception as exc:
             log.warning("greynoise request failed: %s", exc)
             return self._empty(ioc, ioc_type, error=str(exc))
