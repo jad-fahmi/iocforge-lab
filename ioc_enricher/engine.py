@@ -37,11 +37,16 @@ class Engine:
         active = [c for c in self.connectors if c.supports(ioc_type)]
 
         with ThreadPoolExecutor(max_workers=len(active) or 1) as pool:
-            futures = [
-                pool.submit(c.run, ioc, ioc_type, self.cache) for c in active
-            ]
-            for f in futures:
-                result.add(f.result())
+            futures = {
+                pool.submit(c.run, ioc, ioc_type, self.cache): c for c in active
+            }
+            for f, conn in futures.items():
+                try:
+                    result.add(f.result())
+                except Exception as exc:
+                    # a broken connector should not sink the whole lookup
+                    log.exception("connector %s crashed", conn.name)
+                    result.add(conn._empty(ioc, ioc_type, error=str(exc)))
 
         result.score, result.verdict = score(result)
         return result
