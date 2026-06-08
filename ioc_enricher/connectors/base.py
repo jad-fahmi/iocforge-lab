@@ -46,6 +46,21 @@ class Connector(abc.ABC):
     def enrich(self, ioc: str, ioc_type: IocType) -> SourceResult:
         ...
 
+    def run(self, ioc, ioc_type, cache=None) -> SourceResult:
+        """enrich with an optional cache in front."""
+        if cache is not None:
+            hit = cache.get(self.name, ioc)
+            if hit is not None:
+                hit["ioc_type"] = IocType(hit["ioc_type"])
+                return SourceResult(**hit)
+
+        result = self.enrich(ioc, ioc_type)
+
+        # only cache real answers, not transient errors
+        if cache is not None and result.error is None:
+            cache.set(self.name, ioc, result.to_dict())
+        return result
+
     def _empty(self, ioc, ioc_type, error=None):
         return SourceResult(
             source=self.name,
