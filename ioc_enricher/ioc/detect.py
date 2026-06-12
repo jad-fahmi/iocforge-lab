@@ -10,10 +10,9 @@ DOMAIN_RE = re.compile(
     r"[a-zA-Z]{2,63}$"
 )
 
-# note: only lowercase hex for now
-MD5_RE = re.compile(r"^[a-f0-9]{32}$")
-SHA1_RE = re.compile(r"^[a-f0-9]{40}$")
-SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
+MD5_RE = re.compile(r"^[a-fA-F0-9]{32}$")
+SHA1_RE = re.compile(r"^[a-fA-F0-9]{40}$")
+SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
 
 
 def _try_ip(value):
