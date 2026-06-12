@@ -22,6 +22,8 @@ def build_parser():
     p.add_argument("-s", "--sources", help="comma separated subset of: "
                    + ",".join(ALL_SOURCES))
     p.add_argument("--no-cache", action="store_true", help="skip the cache")
+    p.add_argument("-q", "--quiet", action="store_true",
+                   help="only print malicious/suspicious verdicts")
     return p
 
 
@@ -78,6 +80,10 @@ def main(argv=None):
         results = [engine.enrich(iocs[0])]
     else:
         results = engine.enrich_many(iocs)
+
+    if args.quiet:
+        results = [r for r in results
+                   if r.verdict in ("malicious", "suspicious")]
 
     print(render(results, args.format))
     return 0

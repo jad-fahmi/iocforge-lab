@@ -35,6 +35,9 @@ class EnrichmentResult:
     def add(self, result: SourceResult):
         self.sources.append(result)
 
+    def hits(self):
+        return [s for s in self.sources if s.found]
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "ioc": self.ioc,
