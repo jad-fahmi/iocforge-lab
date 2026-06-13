@@ -5,6 +5,7 @@ from ioc_enricher.connectors.greynoise import GreyNoise
 from ioc_enricher.connectors.otx import OTX
 from ioc_enricher.connectors.shodan import Shodan
 from ioc_enricher.connectors.virustotal import VirusTotal
+from ioc_enricher.ioc.defang import refang
 from ioc_enricher.ioc.detect import detect
 from ioc_enricher.log import get
 from ioc_enricher.models import EnrichmentResult
@@ -31,6 +32,7 @@ class Engine:
         return built
 
     def enrich(self, ioc):
+        ioc = refang(ioc.strip())
         ioc_type = detect(ioc)
         log.debug("detected %s as %s", ioc, ioc_type)
         result = EnrichmentResult(ioc=ioc, ioc_type=ioc_type)
