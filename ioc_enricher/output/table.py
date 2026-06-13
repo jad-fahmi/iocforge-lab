@@ -9,8 +9,11 @@ def render(results):
     lines = []
     for r in results:
         head = (f"{r.ioc}  [{r.ioc_type.value}]  ->  "
-                f"{r.verdict} ({r.score})")
+                f"{r.verdict} ({r.score}, {r.confidence})")
         lines.append(paint(head, r.verdict))
+        if r.reason_codes:
+            lines.append("  reasons: " + ", ".join(r.reason_codes))
+        lines.append("  action: " + r.recommended_action)
 
         rows = []
         for s in r.sources:
