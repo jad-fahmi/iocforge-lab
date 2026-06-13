@@ -31,16 +31,36 @@ class Connector(abc.ABC):
         return ioc_type in self.supported
 
     def get(self, url, max_retries=2, **kwargs):
-        """wrapper that backs off once on a 429."""
+        """wrapper that backs off on 429s, 5xx errors, and network hiccups."""
         attempt = 0
         while True:
-            resp = self.client.get(url, **kwargs)
-            if resp.status_code != 429 or attempt >= max_retries:
-                return resp
-            wait = float(resp.headers.get("Retry-After", 2))
-            log.warning("%s rate limited, sleeping %ss", self.name, wait)
-            time.sleep(min(wait, 30))
-            attempt += 1
+            try:
+                resp = self.client.get(url, **kwargs)
+            except (httpx.TimeoutException, httpx.NetworkError):
+                if attempt >= max_retries:
+                    raise
+                wait = min(2 ** attempt, 30)
+                log.warning("%s request failed, retrying in %ss", self.name, wait)
+                time.sleep(wait)
+                attempt += 1
+                continue
+
+            if resp.status_code == 429 and attempt < max_retries:
+                wait = float(resp.headers.get("Retry-After", 2))
+                log.warning("%s rate limited, sleeping %ss", self.name, wait)
+                time.sleep(min(wait, 30))
+                attempt += 1
+                continue
+
+            if resp.status_code >= 500 and attempt < max_retries:
+                wait = min(2 ** attempt, 30)
+                log.warning("%s server error %s, retrying in %ss",
+                            self.name, resp.status_code, wait)
+                time.sleep(wait)
+                attempt += 1
+                continue
+
+            return resp
 
     @abc.abstractmethod
     def enrich(self, ioc: str, ioc_type: IocType) -> SourceResult:
