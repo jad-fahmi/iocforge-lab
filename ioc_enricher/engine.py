@@ -5,6 +5,7 @@ from ioc_enricher.connectors.greynoise import GreyNoise
 from ioc_enricher.connectors.otx import OTX
 from ioc_enricher.connectors.shodan import Shodan
 from ioc_enricher.connectors.virustotal import VirusTotal
+from ioc_enricher.connectors.registry import ConnectorRegistry
 from ioc_enricher.ioc.defang import refang
 from ioc_enricher.ioc.detect import detect, normalize
 from ioc_enricher.log import get
@@ -14,7 +15,7 @@ from ioc_enricher.context import InternalContext
 
 log = get(__name__)
 
-REGISTRY = [VirusTotal, AbuseIPDB, OTX, Shodan, GreyNoise]
+REGISTRY = ConnectorRegistry([VirusTotal, AbuseIPDB, OTX, Shodan, GreyNoise])
 
 
 class Engine:
@@ -25,13 +26,10 @@ class Engine:
         self.internal_context = internal_context or InternalContext.empty()
 
     def _build(self, sources):
-        built = []
-        for cls in REGISTRY:
-            if sources and cls.name not in sources:
-                continue
-            key = self.config.key_for(cls.name)
-            built.append(cls(api_key=key))
-        return built
+        return REGISTRY.build(self.config, sources)
+
+    def provider_status(self):
+        return [status.to_dict() for status in REGISTRY.status(self.config)]
 
     def enrich(self, ioc, source_context=None):
         ioc = refang(ioc.strip())
