@@ -9,6 +9,11 @@ DOMAIN_RE = re.compile(
     r"[a-zA-Z]{2,63}$"
 )
 
+# note: only lowercase hex for now
+MD5_RE = re.compile(r"^[a-f0-9]{32}$")
+SHA1_RE = re.compile(r"^[a-f0-9]{40}$")
+SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
+
 
 def _try_ip(value):
     try:
@@ -29,12 +34,26 @@ def _looks_like_domain(value):
     return bool(DOMAIN_RE.match(value))
 
 
+def _try_hash(value):
+    if MD5_RE.match(value):
+        return IocType.MD5
+    if SHA1_RE.match(value):
+        return IocType.SHA1
+    if SHA256_RE.match(value):
+        return IocType.SHA256
+    return None
+
+
 def detect(value):
     value = value.strip()
 
     ip = _try_ip(value)
     if ip:
         return ip
+
+    h = _try_hash(value)
+    if h:
+        return h
 
     if _looks_like_url(value):
         return IocType.URL
