@@ -4,7 +4,7 @@ import threading
 import time
 from pathlib import Path
 
-DEFAULT_DB = Path.home() / ".cache" / "ioc-enricher" / "cache.db"
+DEFAULT_DB = Path.home() / ".cache" / "iocforge-lab" / "cache.db"
 
 
 class Cache:

@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 
-DEFAULT_PATH = Path.home() / ".config" / "ioc-enricher" / "config.json"
+DEFAULT_PATH = Path.home() / ".config" / "iocforge-lab" / "config.json"
 
 # maps a source name to the env var holding its api key
 ENV_KEYS = {

@@ -6,7 +6,7 @@ from ioc_enricher.cache import Cache
 from ioc_enricher.config import Config, load_dotenv
 from ioc_enricher.engine import Engine
 
-app = FastAPI(title="ioc-enricher")
+app = FastAPI(title="iocforge-lab")
 
 
 @lru_cache
