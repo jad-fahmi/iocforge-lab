@@ -14,6 +14,8 @@ class ProviderStatus:
     name: str
     enabled: bool
     configured: bool
+    available: bool
+    requires_api_key: bool
     supported_types: tuple[IocType, ...]
 
     def to_dict(self) -> dict:
@@ -21,6 +23,8 @@ class ProviderStatus:
             "name": self.name,
             "enabled": self.enabled,
             "configured": self.configured,
+            "available": self.available,
+            "requires_api_key": self.requires_api_key,
             "supported_types": [ioc_type.value for ioc_type in self.supported_types],
         }
 
@@ -61,6 +65,10 @@ class ConnectorRegistry:
                 name=name,
                 enabled=config.provider_enabled(name),
                 configured=bool(config.key_for(name)),
+                available=(config.provider_enabled(name) and (
+                    not connector_type.requires_api_key or bool(config.key_for(name))
+                )),
+                requires_api_key=connector_type.requires_api_key,
                 supported_types=connector_type.supported,
             )
             for name, connector_type in self._types.items()

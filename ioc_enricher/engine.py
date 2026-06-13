@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from ioc_enricher.connectors.abuseipdb import AbuseIPDB
 from ioc_enricher.connectors.greynoise import GreyNoise
 from ioc_enricher.connectors.otx import OTX
+from ioc_enricher.connectors.rdap import RDAP
 from ioc_enricher.connectors.shodan import Shodan
 from ioc_enricher.connectors.virustotal import VirusTotal
 from ioc_enricher.connectors.registry import ConnectorRegistry
@@ -15,7 +16,7 @@ from ioc_enricher.context import InternalContext
 
 log = get(__name__)
 
-REGISTRY = ConnectorRegistry([VirusTotal, AbuseIPDB, OTX, Shodan, GreyNoise])
+REGISTRY = ConnectorRegistry([VirusTotal, AbuseIPDB, OTX, Shodan, GreyNoise, RDAP])
 
 
 class Engine:
