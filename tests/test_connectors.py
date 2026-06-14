@@ -1,6 +1,5 @@
 import httpx
 import respx
-
 from ioc_enricher.connectors.abuseipdb import AbuseIPDB
 from ioc_enricher.connectors.greynoise import GreyNoise
 from ioc_enricher.connectors.virustotal import VirusTotal

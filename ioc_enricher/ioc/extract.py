@@ -1,10 +1,9 @@
 import re
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 
 from ioc_enricher.ioc.defang import refang
 from ioc_enricher.ioc.detect import detect, normalize
 from ioc_enricher.ioc.types import IocType
-
 
 TOKEN_RE = re.compile(
     r"(?P<url>hxxps?://[^\s<>'\"]+|https?://[^\s<>'\"]+)|"

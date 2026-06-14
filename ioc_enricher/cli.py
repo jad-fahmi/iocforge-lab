@@ -131,12 +131,12 @@ def main(argv=None):
 
 
 def _batch_summary(iocs, results, total_seen):
-    unique_seen = {}
+    unique_seen: dict[str, int] = {}
     for item in iocs:
         ioc = item[0] if isinstance(item, tuple) else item
         unique_seen.setdefault(ioc, 0)
         unique_seen[ioc] += 1
-    errors = {}
+    errors: dict[str, int] = {}
     for r in results:
         for err in r.errors:
             errors[err["source"]] = errors.get(err["source"], 0) + 1

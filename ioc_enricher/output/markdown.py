@@ -65,7 +65,7 @@ def render(results, summary=None):
 
 
 def source_error_summary(results):
-    counts = {}
+    counts: dict[str, int] = {}
     for r in results:
         for err in r.errors:
             counts[err["source"]] = counts.get(err["source"], 0) + 1
