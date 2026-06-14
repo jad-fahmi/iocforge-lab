@@ -17,6 +17,7 @@ class VirusTotal(Connector):
         IocType.MD5,
         IocType.SHA1,
         IocType.SHA256,
+        IocType.SHA512,
     )
 
     def _path(self, ioc, ioc_type):
