@@ -8,6 +8,7 @@ from ioc_enricher.connectors.otx import OTX
 from ioc_enricher.connectors.rdap import RDAP
 from ioc_enricher.connectors.registry import ConnectorRegistry
 from ioc_enricher.connectors.shodan import Shodan
+from ioc_enricher.connectors.urlhaus import URLhaus
 from ioc_enricher.connectors.virustotal import VirusTotal
 from ioc_enricher.context import InternalContext
 from ioc_enricher.ioc.defang import refang
@@ -18,7 +19,9 @@ from ioc_enricher.scoring import score
 
 log = get(__name__)
 
-REGISTRY = ConnectorRegistry([VirusTotal, AbuseIPDB, OTX, Shodan, GreyNoise, RDAP, DNS])
+REGISTRY = ConnectorRegistry(
+    [VirusTotal, AbuseIPDB, OTX, Shodan, GreyNoise, RDAP, DNS, URLhaus]
+)
 
 
 class Engine:

@@ -22,6 +22,7 @@ Threat intelligence enrichment tool for investigating IP addresses, domains, URL
 - GreyNoise
 - RDAP (keyless domain and IP registration data)
 - DNS (keyless A, AAAA, CNAME, MX, and NS resolution)
+- URLhaus (authenticated malware URL lookup)
 
 ## Install
 
