@@ -1,0 +1,41 @@
+import pytest
+from ioc_enricher import cli
+from ioc_enricher.ioc.types import IocType
+from ioc_enricher.models import EnrichmentResult
+
+
+class FakeEngine:
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    def enrich(self, ioc, source_context=None):
+        return EnrichmentResult(ioc=ioc, ioc_type=IocType.DOMAIN)
+
+    def provider_status(self):
+        return [{"name": "rdap", "available": True}]
+
+
+def test_cli_version(capsys):
+    with pytest.raises(SystemExit) as error:
+        cli.main(["--version"])
+
+    assert error.value.code == 0
+    assert "ioc-enrich 0.1.0" in capsys.readouterr().out
+
+
+def test_cli_writes_output_file(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(cli, "Engine", FakeEngine)
+    destination = tmp_path / "result.json"
+
+    assert cli.main(["example.com", "-f", "json", "-o", str(destination)]) == 0
+
+    assert '"ioc": "example.com"' in destination.read_text()
+    assert capsys.readouterr().out == ""
+
+
+def test_cli_provider_status_does_not_need_an_ioc(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "Engine", FakeEngine)
+
+    assert cli.main(["--provider-status"]) == 0
+
+    assert '"rdap"' in capsys.readouterr().out
