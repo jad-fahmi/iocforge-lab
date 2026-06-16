@@ -100,3 +100,26 @@ def test_allowlisted_internal_context_reduces_score():
     assert r.verdict == "suspicious"
     assert r.score == 0.25
     assert "allowlisted_asset" in r.reason_codes
+
+
+def test_configured_thresholds_change_verdict_and_record_version():
+    r = _res([SourceResult("custom", "x", IocType.IPV4, found=True,
+                           malicious=True, score=0.4)])
+
+    score(r, settings={"weights": {"custom": 1.0}, "thresholds": {
+        "suspicious": 0.2, "malicious": 0.4,
+    }})
+
+    assert r.verdict == "malicious"
+    assert r.scoring_version == "1"
+
+
+def test_invalid_thresholds_are_rejected():
+    r = _res([])
+
+    try:
+        score(r, settings={"thresholds": {"suspicious": 0.8, "malicious": 0.6}})
+    except ValueError as error:
+        assert "thresholds" in str(error)
+    else:
+        raise AssertionError("invalid thresholds must fail")

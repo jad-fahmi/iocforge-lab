@@ -63,7 +63,7 @@ class Engine:
                     log.exception("connector %s crashed", conn.name)
                     result.add(conn._empty(ioc, ioc_type, error=str(exc)))
 
-        result.score, result.verdict = score(result)
+        result.score, result.verdict = score(result, settings=self.config.scoring)
         if self.history is not None:
             self.history.record(result)
         return result

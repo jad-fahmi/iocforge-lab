@@ -34,6 +34,7 @@ class EnrichmentResponse(BaseModel):
     verdict: str
     score: float
     confidence: str
+    scoring_version: str
     evidence: list[dict[str, Any]]
     counter_evidence: list[dict[str, Any]]
     no_data: list[str]
