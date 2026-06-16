@@ -22,7 +22,7 @@ def test_history_migrates_and_preserves_snapshots(tmp_path):
         "ioc_type": "domain",
         "first_seen": "2026-01-01T00:00:00+00:00",
         "last_seen": "2026-01-02T00:00:00+00:00",
-        "tags": "[]",
+        "tags": [],
         "status": "open",
         "analyst_notes": "",
     }
@@ -37,3 +37,20 @@ def test_engine_records_completed_enrichment(tmp_path):
 
     history = store.list_enrichments("example.com")
     assert history[0]["result"]["verdict"] == result.verdict
+
+
+def test_history_updates_analyst_fields_and_records_an_event(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    store.record(EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN))
+
+    indicator = store.update_indicator(
+        "example.com",
+        tags=["Phishing", "phishing", "urgent"],
+        status="triaged",
+        analyst_notes="Validated against proxy telemetry.",
+    )
+
+    assert indicator["tags"] == ["phishing", "urgent"]
+    assert indicator["status"] == "triaged"
+    assert indicator["analyst_notes"] == "Validated against proxy telemetry."
+    assert store.indicator_events("example.com")[0]["data"]["status"] == "triaged"
