@@ -10,6 +10,7 @@ DEFAULT_WEIGHTS = {
     "otx": 0.7,
     "greynoise": 0.6,
     "urlhaus": 0.9,
+    "threatfox": 0.85,
     "shodan": 0.0,
 }
 
@@ -182,6 +183,8 @@ def _summary(source):
         return f"open ports {source.raw.get('ports', [])}"
     if source.source == "urlhaus":
         return f"malware URL status {source.raw.get('url_status', 'unknown')}"
+    if source.source == "threatfox":
+        return f"matched {source.raw.get('ioc_count', 0)} curated malware IOC(s)"
     return "source reported data"
 
 
