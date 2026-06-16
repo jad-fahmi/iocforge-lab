@@ -2,6 +2,9 @@ from fastapi.testclient import TestClient
 from ioc_enricher.api import app as api_module
 from ioc_enricher.config import Config
 from ioc_enricher.engine import Engine
+from ioc_enricher.history import HistoryStore
+from ioc_enricher.ioc.types import IocType
+from ioc_enricher.models import EnrichmentResult
 
 
 def _client(monkeypatch):
@@ -36,3 +39,30 @@ def test_extract_endpoint_and_validation(monkeypatch):
 
     assert extracted.json()["indicators"][0]["normalized"] == "evil.com"
     assert invalid.status_code == 422
+
+
+def test_history_endpoint_filters_and_paginates(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    store.record(
+        EnrichmentResult(
+            ioc="example.com", ioc_type=IocType.DOMAIN, verdict="clean", score=0.0
+        ),
+        looked_up_at="2026-01-01T00:00:00+00:00",
+    )
+    store.record(
+        EnrichmentResult(
+            ioc="other.example", ioc_type=IocType.DOMAIN, verdict="low", score=0.1
+        ),
+        looked_up_at="2026-01-02T00:00:00+00:00",
+    )
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+
+    response = TestClient(api_module.app).get(
+        "/api/v1/history", params={"ioc": "example.com", "limit": 1}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["ioc"] == "example.com"
+    assert response.json()["limit"] == 1

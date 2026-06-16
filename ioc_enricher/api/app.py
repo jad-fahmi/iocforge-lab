@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Any
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ioc_enricher.cache import Cache
@@ -53,6 +53,23 @@ class ExtractResponse(BaseModel):
     indicators: list[dict[str, Any]]
 
 
+class HistoryItem(BaseModel):
+    id: int
+    ioc: str
+    ioc_type: str
+    verdict: str
+    score: float
+    confidence: str
+    looked_up_at: str
+    result: dict[str, Any]
+
+
+class HistoryResponse(BaseModel):
+    items: list[HistoryItem]
+    limit: int
+    offset: int
+
+
 @lru_cache
 def get_engine() -> Engine:
     load_dotenv()
@@ -90,6 +107,22 @@ def enrich_batch(request: BatchEnrichRequest) -> dict[str, list[dict[str, Any]]]
 @api.post("/extract", response_model=ExtractResponse)
 def extract(request: ExtractRequest) -> dict[str, list[dict[str, Any]]]:
     return {"indicators": [item.to_dict() for item in extract_iocs(request.text)]}
+
+
+@api.get("/history", response_model=HistoryResponse, tags=["history"])
+def history(
+    ioc: str | None = None,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    store = get_engine().history
+    if store is None:
+        raise HTTPException(status_code=503, detail="history storage is unavailable")
+    return {
+        "items": store.list_enrichments(ioc=ioc, limit=limit, offset=offset),
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 app.include_router(api)
