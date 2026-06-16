@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from ioc_enricher.cache import Cache
 from ioc_enricher.config import Config, load_dotenv
 from ioc_enricher.engine import Engine
+from ioc_enricher.history import HistoryStore
 from ioc_enricher.ioc.extract import extract_iocs
 
 app = FastAPI(title="IOCForge API", version="0.1.0")
@@ -56,7 +57,7 @@ class ExtractResponse(BaseModel):
 def get_engine() -> Engine:
     load_dotenv()
     config = Config.load()
-    return Engine(config, cache=Cache(ttl=config.cache_ttl))
+    return Engine(config, cache=Cache(ttl=config.cache_ttl), history=HistoryStore())
 
 
 @app.get("/health", tags=["operations"])
