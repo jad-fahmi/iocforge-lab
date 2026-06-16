@@ -47,6 +47,7 @@ Providers can be disabled without removing their credentials:
 ```
 ioc-enrich 8.8.8.8
 ioc-enrich evil[.]com -f json
+ioc-enrich -i iocs.txt -f jsonl
 ioc-enrich -i iocs.txt -f csv
 cat iocs.txt | ioc-enrich -i -
 ioc-enrich 1.2.3.4 -s virustotal,abuseipdb

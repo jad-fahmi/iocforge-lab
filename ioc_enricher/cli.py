@@ -9,7 +9,7 @@ from ioc_enricher.context import InternalContext
 from ioc_enricher.engine import REGISTRY, Engine
 from ioc_enricher.history import HistoryStore
 from ioc_enricher.ioc.extract import extract_iocs
-from ioc_enricher.output import csv_out, json_out, markdown, table
+from ioc_enricher.output import csv_out, json_out, jsonl_out, markdown, table
 
 ALL_SOURCES = list(REGISTRY.names)
 
@@ -24,7 +24,7 @@ def build_parser():
     p.add_argument("-i", "--input", help="file of iocs, one per line "
                    "(use - for stdin)")
     p.add_argument("--extract", help="extract IOCs from messy analyst text")
-    p.add_argument("-f", "--format", choices=["table", "json", "csv"],
+    p.add_argument("-f", "--format", choices=["table", "json", "jsonl", "csv"],
                    default="table")
     p.add_argument("-o", "--output", help="write rendered output to this file")
     p.add_argument("--report", choices=["markdown"],
@@ -88,6 +88,8 @@ def render(results, fmt, report=None, summary=None):
         return markdown.render(results, summary=summary)
     if fmt == "json":
         return json_out.render(results)
+    if fmt == "jsonl":
+        return jsonl_out.render(results)
     if fmt == "csv":
         return csv_out.render(results)
     return table.render(results)
