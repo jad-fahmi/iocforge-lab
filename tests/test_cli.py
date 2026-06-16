@@ -15,6 +15,11 @@ class FakeEngine:
         return [{"name": "rdap", "available": True}]
 
 
+class FakeHistory:
+    def list_enrichments(self, ioc=None, limit=50):
+        return [{"ioc": ioc, "limit": limit}]
+
+
 def test_cli_version(capsys):
     with pytest.raises(SystemExit) as error:
         cli.main(["--version"])
@@ -39,3 +44,11 @@ def test_cli_provider_status_does_not_need_an_ioc(monkeypatch, capsys):
     assert cli.main(["--provider-status"]) == 0
 
     assert '"rdap"' in capsys.readouterr().out
+
+
+def test_cli_history_query_does_not_enrich(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "HistoryStore", FakeHistory)
+
+    assert cli.main(["--history", "example.com", "--history-limit", "3"]) == 0
+
+    assert '"ioc": "example.com"' in capsys.readouterr().out

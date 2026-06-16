@@ -7,6 +7,7 @@ from ioc_enricher.cache import Cache
 from ioc_enricher.config import Config, load_dotenv
 from ioc_enricher.context import InternalContext
 from ioc_enricher.engine import REGISTRY, Engine
+from ioc_enricher.history import HistoryStore
 from ioc_enricher.ioc.extract import extract_iocs
 from ioc_enricher.output import csv_out, json_out, markdown, table
 
@@ -43,6 +44,10 @@ def build_parser():
                    help="exit 2 when any IOC is malicious")
     p.add_argument("--provider-status", action="store_true",
                    help="show enabled provider capabilities and exit")
+    p.add_argument("--history", nargs="?", const="",
+                   help="show enrichment history, optionally for one IOC")
+    p.add_argument("--history-limit", type=int, default=50,
+                   help="maximum history rows to return (default: 50)")
     return p
 
 
@@ -98,6 +103,13 @@ def main(argv=None):
         status = Engine(config, cache=None).provider_status()
         print(json.dumps({"providers": status}, indent=2))
         return 0
+    if args.history is not None:
+        store = HistoryStore()
+        entries = store.list_enrichments(
+            ioc=args.history or None, limit=args.history_limit
+        )
+        print(json.dumps({"history": entries}, indent=2))
+        return 0
 
     iocs = read_iocs(args)
     total_seen = len(iocs)
@@ -113,8 +125,13 @@ def main(argv=None):
         paths=args.context,
         asset_inventory=args.asset_inventory,
     )
-    engine = Engine(config, cache=cache, sources=_sources_arg(args.sources),
-                    internal_context=internal_context)
+    engine = Engine(
+        config,
+        cache=cache,
+        sources=_sources_arg(args.sources),
+        internal_context=internal_context,
+        history=HistoryStore(),
+    )
     if len(iocs) == 1:
         item = iocs[0]
         if isinstance(item, tuple):
