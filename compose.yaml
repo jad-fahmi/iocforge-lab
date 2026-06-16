@@ -1,0 +1,14 @@
+services:
+  iocforge:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - iocforge-data:/home/iocforge/.local/share/iocforge-lab
+    restart: unless-stopped
+
+volumes:
+  iocforge-data:
