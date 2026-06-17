@@ -26,6 +26,7 @@ def test_registry_builds_only_enabled_requested_connectors():
         "configured": True,
         "available": False,
         "requires_api_key": True,
+        "reliability": 0.5,
         "supported_types": ["domain", "url"],
     }
 
@@ -42,3 +43,11 @@ def test_engine_reports_provider_capabilities_without_keys():
     assert virustotal["configured"] is False
     assert virustotal["available"] is False
     assert "sha256" in virustotal["supported_types"]
+    assert virustotal["reliability"] == 1.0
+
+
+def test_provider_status_uses_configured_reliability_weight():
+    providers = Engine(Config(scoring={"weights": {"rdap": 0.2}})).provider_status()
+    rdap = next(provider for provider in providers if provider["name"] == "rdap")
+
+    assert rdap["reliability"] == 0.2

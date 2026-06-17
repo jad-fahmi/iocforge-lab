@@ -5,6 +5,7 @@ from typing import Iterable, Type
 
 from ioc_enricher.connectors.base import Connector
 from ioc_enricher.ioc.types import IocType
+from ioc_enricher.scoring import DEFAULT_WEIGHTS
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class ProviderStatus:
     configured: bool
     available: bool
     requires_api_key: bool
+    reliability: float
     supported_types: tuple[IocType, ...]
 
     def to_dict(self) -> dict:
@@ -25,6 +27,7 @@ class ProviderStatus:
             "configured": self.configured,
             "available": self.available,
             "requires_api_key": self.requires_api_key,
+            "reliability": self.reliability,
             "supported_types": [ioc_type.value for ioc_type in self.supported_types],
         }
 
@@ -69,6 +72,11 @@ class ConnectorRegistry:
                     not connector_type.requires_api_key or bool(config.key_for(name))
                 )),
                 requires_api_key=connector_type.requires_api_key,
+                reliability=float(
+                    config.scoring.get("weights", {}).get(
+                        name, DEFAULT_WEIGHTS.get(name, 0.5)
+                    )
+                ),
                 supported_types=connector_type.supported,
             )
             for name, connector_type in self._types.items()
