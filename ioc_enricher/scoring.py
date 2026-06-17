@@ -13,6 +13,7 @@ DEFAULT_WEIGHTS = {
     "threatfox": 0.85,
     "malwarebazaar": 0.9,
     "hashlookup": 0.0,
+    "urlscan": 0.0,
     "shodan": 0.0,
 }
 
@@ -191,6 +192,8 @@ def _summary(source):
         return f"confirmed malware sample {source.raw.get('file_name', 'unknown')}"
     if source.source == "hashlookup":
         return f"known file metadata {source.raw.get('file_name', 'unknown')}"
+    if source.source == "urlscan":
+        return f"observed in {source.raw.get('scan_count', 0)} historical scan(s)"
     return "source reported data"
 
 

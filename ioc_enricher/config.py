@@ -14,6 +14,7 @@ ENV_KEYS = {
     "urlhaus": "URLHAUS_API_KEY",
     "threatfox": "THREATFOX_API_KEY",
     "malwarebazaar": "MALWAREBAZAAR_API_KEY",
+    "urlscan": "URLSCAN_API_KEY",
 }
 
 

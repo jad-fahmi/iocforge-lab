@@ -13,6 +13,7 @@ from ioc_enricher.connectors.registry import ConnectorRegistry
 from ioc_enricher.connectors.shodan import Shodan
 from ioc_enricher.connectors.threatfox import ThreatFox
 from ioc_enricher.connectors.urlhaus import URLhaus
+from ioc_enricher.connectors.urlscan import Urlscan
 from ioc_enricher.connectors.virustotal import VirusTotal
 from ioc_enricher.context import InternalContext
 from ioc_enricher.ioc.defang import refang
@@ -34,6 +35,7 @@ REGISTRY = ConnectorRegistry(
         DNS,
         CrtSh,
         Hashlookup,
+        Urlscan,
         URLhaus,
         ThreatFox,
         MalwareBazaar,
