@@ -54,3 +54,17 @@ def test_history_updates_analyst_fields_and_records_an_event(tmp_path):
     assert indicator["status"] == "triaged"
     assert indicator["analyst_notes"] == "Validated against proxy telemetry."
     assert store.indicator_events("example.com")[0]["data"]["status"] == "triaged"
+
+
+def test_investigation_groups_indicators_and_preserves_events(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    investigation = store.create_investigation("Credential phishing", "Initial triage")
+
+    updated = store.add_investigation_indicator(investigation["id"], "evil.example")
+    store.add_investigation_indicator(investigation["id"], "evil.example")
+
+    assert updated["indicators"] == ["evil.example"]
+    assert [event["event_type"] for event in store.investigation_events(investigation["id"])] == [
+        "indicator_added",
+        "investigation_created",
+    ]

@@ -94,6 +94,31 @@ class IndicatorEventResponse(BaseModel):
     created_at: str
 
 
+class InvestigationCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    description: str = Field(default="", max_length=10_000)
+
+
+class InvestigationIndicatorRequest(BaseModel):
+    ioc: str = Field(min_length=1, max_length=4096)
+
+
+class InvestigationResponse(BaseModel):
+    id: int
+    title: str
+    description: str
+    status: str
+    created_at: str
+    updated_at: str
+    indicators: list[str]
+
+
+class InvestigationsResponse(BaseModel):
+    items: list[InvestigationResponse]
+    limit: int
+    offset: int
+
+
 @lru_cache
 def get_engine() -> Engine:
     load_dotenv()
@@ -186,6 +211,59 @@ def indicator_events(
     ioc: str, limit: int = Query(default=100, ge=1, le=500)
 ) -> list[dict[str, Any]]:
     return _history_store().indicator_events(ioc, limit=limit)
+
+
+@api.post(
+    "/investigations", response_model=InvestigationResponse, status_code=201, tags=["investigations"]
+)
+def create_investigation(request: InvestigationCreateRequest) -> dict[str, Any]:
+    return _history_store().create_investigation(request.title, request.description)
+
+
+@api.get("/investigations", response_model=InvestigationsResponse, tags=["investigations"])
+def list_investigations(
+    limit: int = Query(default=50, ge=1, le=500), offset: int = Query(default=0, ge=0)
+) -> dict[str, Any]:
+    return {
+        "items": _history_store().list_investigations(limit=limit, offset=offset),
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@api.get(
+    "/investigations/{investigation_id}",
+    response_model=InvestigationResponse,
+    tags=["investigations"],
+)
+def get_investigation(investigation_id: int) -> dict[str, Any]:
+    investigation = _history_store().investigation(investigation_id)
+    if investigation is None:
+        raise HTTPException(status_code=404, detail="investigation not found")
+    return investigation
+
+
+@api.post(
+    "/investigations/{investigation_id}/indicators",
+    response_model=InvestigationResponse,
+    tags=["investigations"],
+)
+def add_investigation_indicator(
+    investigation_id: int, request: InvestigationIndicatorRequest
+) -> dict[str, Any]:
+    investigation = _history_store().add_investigation_indicator(investigation_id, request.ioc)
+    if investigation is None:
+        raise HTTPException(status_code=404, detail="investigation not found")
+    return investigation
+
+
+@api.get("/investigations/{investigation_id}/events", tags=["investigations"])
+def investigation_events(
+    investigation_id: int, limit: int = Query(default=100, ge=1, le=500)
+) -> list[dict[str, Any]]:
+    if _history_store().investigation(investigation_id) is None:
+        raise HTTPException(status_code=404, detail="investigation not found")
+    return _history_store().investigation_events(investigation_id, limit=limit)
 
 
 app.include_router(api)

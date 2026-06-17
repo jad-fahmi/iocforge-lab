@@ -85,3 +85,24 @@ def test_indicator_metadata_endpoints(monkeypatch, tmp_path):
     assert updated.status_code == 200
     assert updated.json()["tags"] == ["phishing"]
     assert events.json()[0]["event_type"] == "indicator_updated"
+
+
+def test_investigation_endpoints_group_indicators(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+    client = TestClient(api_module.app)
+
+    created = client.post(
+        "/api/v1/investigations", json={"title": "Malware triage", "description": "Review"}
+    )
+    investigation_id = created.json()["id"]
+    updated = client.post(
+        f"/api/v1/investigations/{investigation_id}/indicators",
+        json={"ioc": "evil.example"},
+    )
+
+    assert created.status_code == 201
+    assert updated.json()["indicators"] == ["evil.example"]
+    assert client.get(f"/api/v1/investigations/{investigation_id}/events").status_code == 200
