@@ -26,6 +26,7 @@ Threat intelligence enrichment tool for investigating IP addresses, domains, URL
 - URLhaus (authenticated malware URL lookup)
 - ThreatFox (authenticated curated malware IOC lookup)
 - MalwareBazaar (authenticated confirmed-malware file-hash lookup)
+- CIRCL Hashlookup (keyless known-file metadata)
 
 ## Install
 

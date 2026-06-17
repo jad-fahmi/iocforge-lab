@@ -12,6 +12,7 @@ DEFAULT_WEIGHTS = {
     "urlhaus": 0.9,
     "threatfox": 0.85,
     "malwarebazaar": 0.9,
+    "hashlookup": 0.0,
     "shodan": 0.0,
 }
 
@@ -188,6 +189,8 @@ def _summary(source):
         return f"matched {source.raw.get('ioc_count', 0)} curated malware IOC(s)"
     if source.source == "malwarebazaar":
         return f"confirmed malware sample {source.raw.get('file_name', 'unknown')}"
+    if source.source == "hashlookup":
+        return f"known file metadata {source.raw.get('file_name', 'unknown')}"
     return "source reported data"
 
 

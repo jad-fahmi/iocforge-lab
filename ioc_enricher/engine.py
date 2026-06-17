@@ -5,6 +5,7 @@ from ioc_enricher.connectors.abuseipdb import AbuseIPDB
 from ioc_enricher.connectors.crtsh import CrtSh
 from ioc_enricher.connectors.dns import DNS
 from ioc_enricher.connectors.greynoise import GreyNoise
+from ioc_enricher.connectors.hashlookup import Hashlookup
 from ioc_enricher.connectors.malwarebazaar import MalwareBazaar
 from ioc_enricher.connectors.otx import OTX
 from ioc_enricher.connectors.rdap import RDAP
@@ -32,6 +33,7 @@ REGISTRY = ConnectorRegistry(
         RDAP,
         DNS,
         CrtSh,
+        Hashlookup,
         URLhaus,
         ThreatFox,
         MalwareBazaar,
