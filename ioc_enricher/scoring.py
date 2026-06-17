@@ -11,6 +11,7 @@ DEFAULT_WEIGHTS = {
     "greynoise": 0.6,
     "urlhaus": 0.9,
     "threatfox": 0.85,
+    "malwarebazaar": 0.9,
     "shodan": 0.0,
 }
 
@@ -185,6 +186,8 @@ def _summary(source):
         return f"malware URL status {source.raw.get('url_status', 'unknown')}"
     if source.source == "threatfox":
         return f"matched {source.raw.get('ioc_count', 0)} curated malware IOC(s)"
+    if source.source == "malwarebazaar":
+        return f"confirmed malware sample {source.raw.get('file_name', 'unknown')}"
     return "source reported data"
 
 

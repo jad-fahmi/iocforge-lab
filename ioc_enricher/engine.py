@@ -5,6 +5,7 @@ from ioc_enricher.connectors.abuseipdb import AbuseIPDB
 from ioc_enricher.connectors.crtsh import CrtSh
 from ioc_enricher.connectors.dns import DNS
 from ioc_enricher.connectors.greynoise import GreyNoise
+from ioc_enricher.connectors.malwarebazaar import MalwareBazaar
 from ioc_enricher.connectors.otx import OTX
 from ioc_enricher.connectors.rdap import RDAP
 from ioc_enricher.connectors.registry import ConnectorRegistry
@@ -22,7 +23,19 @@ from ioc_enricher.scoring import score
 log = get(__name__)
 
 REGISTRY = ConnectorRegistry(
-    [VirusTotal, AbuseIPDB, OTX, Shodan, GreyNoise, RDAP, DNS, CrtSh, URLhaus, ThreatFox]
+    [
+        VirusTotal,
+        AbuseIPDB,
+        OTX,
+        Shodan,
+        GreyNoise,
+        RDAP,
+        DNS,
+        CrtSh,
+        URLhaus,
+        ThreatFox,
+        MalwareBazaar,
+    ]
 )
 
 
