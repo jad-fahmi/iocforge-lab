@@ -110,6 +110,24 @@ class HistoryStore:
                     """
                 )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (3)")
+            if 4 not in applied:
+                self.conn.executescript(
+                    """
+                    CREATE TABLE indicator_relationships (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        source_ioc TEXT NOT NULL,
+                        target_ioc TEXT NOT NULL,
+                        relationship_type TEXT NOT NULL,
+                        confidence REAL NOT NULL DEFAULT 1.0,
+                        evidence_source TEXT NOT NULL DEFAULT 'analyst',
+                        created_at TEXT NOT NULL,
+                        UNIQUE(source_ioc, target_ioc, relationship_type, evidence_source)
+                    );
+                    CREATE INDEX idx_relationships_source ON indicator_relationships(source_ioc);
+                    CREATE INDEX idx_relationships_target ON indicator_relationships(target_ioc);
+                    """
+                )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (4)")
             self.conn.commit()
 
     def record(self, result: Any, looked_up_at: str | None = None) -> int:
@@ -350,6 +368,65 @@ class HistoryStore:
             "VALUES (?, ?, ?, ?)",
             (investigation_id, event_type, json.dumps(data, sort_keys=True), timestamp),
         )
+
+    def add_relationship(
+        self,
+        source_ioc: str,
+        target_ioc: str,
+        relationship_type: str,
+        confidence: float = 1.0,
+        evidence_source: str = "analyst",
+    ) -> dict[str, Any]:
+        if source_ioc == target_ioc:
+            raise ValueError("an indicator cannot relate to itself")
+        if not 0 <= confidence <= 1:
+            raise ValueError("relationship confidence must be between 0 and 1")
+        timestamp = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self.conn.execute(
+                """
+                INSERT OR IGNORE INTO indicator_relationships(
+                    source_ioc, target_ioc, relationship_type, confidence, evidence_source, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    source_ioc,
+                    target_ioc,
+                    relationship_type.strip(),
+                    confidence,
+                    evidence_source.strip() or "analyst",
+                    timestamp,
+                ),
+            )
+            self.conn.commit()
+            row = self.conn.execute(
+                """
+                SELECT * FROM indicator_relationships
+                WHERE source_ioc = ? AND target_ioc = ? AND relationship_type = ?
+                  AND evidence_source = ?
+                """,
+                (source_ioc, target_ioc, relationship_type.strip(), evidence_source.strip() or "analyst"),
+            ).fetchone()
+        return dict(row)
+
+    def relationships(self, ioc: str, limit: int = 100) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT * FROM indicator_relationships
+                WHERE source_ioc = ? OR target_ioc = ?
+                ORDER BY id DESC LIMIT ?
+                """,
+                (ioc, ioc, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def relationship_graph(self, ioc: str, limit: int = 100) -> dict[str, Any]:
+        edges = self.relationships(ioc, limit=limit)
+        nodes = sorted({ioc, *(edge["source_ioc"] for edge in edges),
+                        *(edge["target_ioc"] for edge in edges)})
+        return {"nodes": [{"id": node} for node in nodes], "edges": edges}
 
     def close(self) -> None:
         self.conn.close()

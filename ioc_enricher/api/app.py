@@ -119,6 +119,29 @@ class InvestigationsResponse(BaseModel):
     offset: int
 
 
+class RelationshipCreateRequest(BaseModel):
+    source_ioc: str = Field(min_length=1, max_length=4096)
+    target_ioc: str = Field(min_length=1, max_length=4096)
+    relationship_type: str = Field(min_length=1, max_length=100)
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    evidence_source: str = Field(default="analyst", min_length=1, max_length=100)
+
+
+class RelationshipResponse(BaseModel):
+    id: int
+    source_ioc: str
+    target_ioc: str
+    relationship_type: str
+    confidence: float
+    evidence_source: str
+    created_at: str
+
+
+class RelationshipGraphResponse(BaseModel):
+    nodes: list[dict[str, str]]
+    edges: list[RelationshipResponse]
+
+
 @lru_cache
 def get_engine() -> Engine:
     load_dotenv()
@@ -211,6 +234,42 @@ def indicator_events(
     ioc: str, limit: int = Query(default=100, ge=1, le=500)
 ) -> list[dict[str, Any]]:
     return _history_store().indicator_events(ioc, limit=limit)
+
+
+@api.post("/relationships", response_model=RelationshipResponse, status_code=201, tags=["relationships"])
+def create_relationship(request: RelationshipCreateRequest) -> dict[str, Any]:
+    try:
+        return _history_store().add_relationship(
+            request.source_ioc,
+            request.target_ioc,
+            request.relationship_type,
+            request.confidence,
+            request.evidence_source,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@api.get(
+    "/indicators/{ioc}/relationships",
+    response_model=list[RelationshipResponse],
+    tags=["relationships"],
+)
+def indicator_relationships(
+    ioc: str, limit: int = Query(default=100, ge=1, le=500)
+) -> list[dict[str, Any]]:
+    return _history_store().relationships(ioc, limit=limit)
+
+
+@api.get(
+    "/indicators/{ioc}/graph",
+    response_model=RelationshipGraphResponse,
+    tags=["relationships"],
+)
+def indicator_graph(
+    ioc: str, limit: int = Query(default=100, ge=1, le=500)
+) -> dict[str, Any]:
+    return _history_store().relationship_graph(ioc, limit=limit)
 
 
 @api.post(

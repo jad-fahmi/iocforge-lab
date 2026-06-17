@@ -106,3 +106,26 @@ def test_investigation_endpoints_group_indicators(monkeypatch, tmp_path):
     assert created.status_code == 201
     assert updated.json()["indicators"] == ["evil.example"]
     assert client.get(f"/api/v1/investigations/{investigation_id}/events").status_code == 200
+
+
+def test_relationship_endpoints_return_graph_data(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+    client = TestClient(api_module.app)
+
+    created = client.post(
+        "/api/v1/relationships",
+        json={
+            "source_ioc": "evil.example",
+            "target_ioc": "203.0.113.7",
+            "relationship_type": "resolves_to",
+            "confidence": 0.8,
+            "evidence_source": "dns",
+        },
+    )
+    graph = client.get("/api/v1/indicators/evil.example/graph")
+
+    assert created.status_code == 201
+    assert graph.json()["edges"][0]["target_ioc"] == "203.0.113.7"
