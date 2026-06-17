@@ -1,6 +1,5 @@
 import httpx
 import respx
-
 from ioc_enricher.connectors.hashlookup import Hashlookup
 from ioc_enricher.ioc.types import IocType
 
