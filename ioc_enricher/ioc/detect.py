@@ -1,13 +1,14 @@
 import ipaddress
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlsplit, urlunsplit
 
 from ioc_enricher.ioc.defang import refang
 from ioc_enricher.ioc.types import IocType
 
 DOMAIN_RE = re.compile(
-    r"^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+"
-    r"[a-zA-Z]{2,63}$"
+    r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+    re.I,
 )
 
 MD5_RE = re.compile(r"^[a-fA-F0-9]{32}$")
@@ -30,12 +31,20 @@ def _try_ip(value):
 def _looks_like_url(value):
     if "://" not in value:
         return False
-    parsed = urlparse(value)
-    return bool(parsed.scheme and parsed.netloc)
+    parsed = urlsplit(value)
+    return bool(parsed.scheme and parsed.netloc and parsed.hostname)
 
 
 def _looks_like_domain(value):
-    return bool(DOMAIN_RE.match(value))
+    try:
+        return bool(DOMAIN_RE.match(_idna(value).rstrip(".")))
+    except UnicodeError:
+        return False
+
+
+def _idna(value):
+    """Return a lowercase ASCII IDNA hostname, rejecting invalid labels."""
+    return value.encode("idna").decode("ascii").lower()
 
 
 def _try_hash(value):
@@ -67,7 +76,7 @@ def detect(value):
     if ASN_RE.match(value):
         return IocType.ASN
 
-    if EMAIL_RE.match(value):
+    if _looks_like_email(value):
         return IocType.EMAIL
 
     if _looks_like_url(value):
@@ -79,20 +88,53 @@ def detect(value):
     return IocType.UNKNOWN
 
 
+def _looks_like_email(value):
+    local, separator, domain = value.rpartition("@")
+    return bool(separator and EMAIL_RE.match(f"{local}@{_idna(domain)}")) if domain else False
+
+
 def normalize(value, ioc_type):
     """canonicalize an ioc so equivalent inputs share one cache key.
 
-    domains and hashes are case-insensitive; ips have multiple valid
-    textual forms. urls are left untouched since path/query can be
-    case sensitive.
+    Domains and hashes are case-insensitive; Unicode hostnames are converted to
+    their IDNA ASCII form. URL paths and query strings remain untouched because
+    they can be case-sensitive.
     """
     if ioc_type in (IocType.IPV4, IocType.IPV6):
         return str(ipaddress.ip_address(value))
-    if ioc_type == IocType.DOMAIN or ioc_type.is_hash():
+    if ioc_type == IocType.DOMAIN:
+        return _idna(value.rstrip("."))
+    if ioc_type.is_hash():
         return value.lower()
     if ioc_type == IocType.EMAIL:
         local, _, domain = value.partition("@")
-        return f"{local}@{domain.lower()}"
+        return f"{local}@{_idna(domain)}"
+    if ioc_type == IocType.URL:
+        return _normalize_url(value)
     if ioc_type in (IocType.CVE, IocType.ASN):
         return value.upper()
     return value
+
+
+def _normalize_url(value):
+    parsed = urlsplit(value)
+    host = parsed.hostname
+    if not host:
+        return value
+    normalized_host = _idna(host)
+    try:
+        port = parsed.port
+    except ValueError:
+        return value
+    credentials = ""
+    if parsed.username is not None:
+        credentials = parsed.username
+        if parsed.password is not None:
+            credentials += f":{parsed.password}"
+        credentials += "@"
+    if ":" in normalized_host and not normalized_host.startswith("["):
+        normalized_host = f"[{normalized_host}]"
+    netloc = f"{credentials}{normalized_host}"
+    if port is not None:
+        netloc += f":{port}"
+    return urlunsplit((parsed.scheme.lower(), netloc, parsed.path, parsed.query, parsed.fragment))

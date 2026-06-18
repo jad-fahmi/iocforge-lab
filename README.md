@@ -6,6 +6,7 @@ Threat intelligence enrichment tool for investigating IP addresses, domains, URL
 
 - detects IPv4/IPv6, domains, URLs, MD5/SHA-1/SHA-256/SHA-512, emails, CVEs, and ASNs
 - refangs defanged input like `evil[.]com` or `hxxp://`
+- canonicalizes Unicode domains and URL hosts to IDNA ASCII without altering URL paths or queries
 - queries several intel sources through pluggable connectors
 - caches answers in sqlite so repeat lookups are cheap
 - extracts IOCs from pasted analyst text, alerts, tickets, emails and logs

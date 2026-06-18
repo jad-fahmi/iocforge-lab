@@ -1,4 +1,4 @@
-from ioc_enricher.ioc.detect import detect
+from ioc_enricher.ioc.detect import detect, normalize
 from ioc_enricher.ioc.types import IocType
 
 
@@ -43,6 +43,20 @@ def test_uppercase_hash():
 
 def test_defanged_domain():
     assert detect("evil-domain[.]com") == IocType.DOMAIN
+
+
+def test_unicode_domain_is_detected_and_normalized_to_idna():
+    domain = "bücher.example"
+
+    assert detect(domain) == IocType.DOMAIN
+    assert normalize(domain, IocType.DOMAIN) == "xn--bcher-kva.example"
+
+
+def test_url_host_is_normalized_without_changing_case_sensitive_path():
+    url = "HTTPS://BÜCHER.example/CaseSensitive?Key=Value"
+
+    assert detect(url) == IocType.URL
+    assert normalize(url, IocType.URL) == "https://xn--bcher-kva.example/CaseSensitive?Key=Value"
 
 
 def test_unknown():
