@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from ioc_enricher.api import app as api_module
+from ioc_enricher.api.rate_limit import RateLimiter
 from ioc_enricher.config import Config
 from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
@@ -20,6 +21,19 @@ def test_versioned_enrich_endpoint_returns_typed_payload(monkeypatch):
     assert response.status_code == 200
     assert response.json()["ioc_type"] == "domain"
     assert response.json()["sources"] == []
+
+
+def test_api_rate_limit_returns_retry_headers(monkeypatch):
+    monkeypatch.setattr(api_module, "rate_limiter", RateLimiter(limit=1, window_seconds=60))
+    client = _client(monkeypatch)
+
+    first = client.get("/api/v1/providers")
+    second = client.get("/api/v1/providers")
+
+    assert first.headers["X-RateLimit-Remaining"] == "0"
+    assert second.status_code == 429
+    assert second.json()["detail"]["code"] == "rate_limit_exceeded"
+    assert second.headers["Retry-After"] == "60"
 
 
 def test_score_explanation_endpoint_returns_only_scoring_decision(monkeypatch):

@@ -1,11 +1,14 @@
 """Versioned FastAPI application for IOC enrichment."""
 
+import os
 from functools import lru_cache
 from typing import Any, Literal
 
-from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from ioc_enricher.api.rate_limit import RateLimiter
 from ioc_enricher.cache import Cache
 from ioc_enricher.config import Config, load_dotenv
 from ioc_enricher.engine import Engine
@@ -15,6 +18,27 @@ from ioc_enricher.ioc.extract import extract_iocs
 
 app = FastAPI(title="IOCForge API", version="0.1.0")
 api = APIRouter(prefix="/api/v1", tags=["enrichment"])
+rate_limiter = RateLimiter(limit=int(os.environ.get("IOC_API_RATE_LIMIT", "60")))
+
+
+@app.middleware("http")
+async def apply_rate_limit(request: Request, call_next):
+    """Protect versioned API operations while keeping health checks probe-safe."""
+    if request.url.path.startswith("/api/v1"):
+        client = request.client.host if request.client else "unknown"
+        allowed, remaining, retry_after = rate_limiter.check(client)
+        headers = {"X-RateLimit-Limit": str(rate_limiter.limit), "X-RateLimit-Remaining": str(remaining)}
+        if not allowed:
+            headers["Retry-After"] = str(retry_after)
+            return JSONResponse(
+                status_code=429,
+                content={"detail": {"code": "rate_limit_exceeded", "retry_after": retry_after}},
+                headers=headers,
+            )
+        response = await call_next(request)
+        response.headers.update(headers)
+        return response
+    return await call_next(request)
 
 
 class EnrichRequest(BaseModel):

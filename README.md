@@ -114,6 +114,10 @@ The service listens on port 8000, exposes `/health`, runs as a non-root user,
 and persists enrichment history in the `iocforge-data` volume. Put provider keys
 in a local `.env` file; it is not copied into the image.
 
+Versioned API routes use an in-process per-peer rolling limit (default 60 requests
+per minute; configure `IOC_API_RATE_LIMIT`, or set it to `0` to disable). A reverse
+proxy should enforce client-IP limits when it terminates traffic before IOCForge.
+
 ## Releases and supply chain
 
 Push a semantic version tag matching `pyproject.toml` (for example, `v0.1.0`) to
