@@ -60,7 +60,11 @@ ioc-enrich --extract alert.txt --report markdown
 ioc-enrich --extract ticket.txt --max-iocs 100 --fail-soft
 ioc-enrich -i iocs.txt --fail-on-malicious
 ioc-enrich --history evil.example --history-limit 20
+ioc-enrich --config-diagnostics
 ```
+
+`--config-diagnostics` reports provider availability, enablement, and the
+environment-variable name for each credential without printing credential values.
 
 ## Extraction
 

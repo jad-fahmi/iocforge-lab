@@ -4,7 +4,7 @@ import sys
 
 from ioc_enricher import __version__
 from ioc_enricher.cache import Cache
-from ioc_enricher.config import Config, load_dotenv
+from ioc_enricher.config import ENV_KEYS, Config, load_dotenv
 from ioc_enricher.context import InternalContext
 from ioc_enricher.engine import REGISTRY, Engine
 from ioc_enricher.history import HistoryStore
@@ -44,6 +44,8 @@ def build_parser():
                    help="exit 2 when any IOC is malicious")
     p.add_argument("--provider-status", action="store_true",
                    help="show enabled provider capabilities and exit")
+    p.add_argument("--config-diagnostics", action="store_true",
+                   help="show safe configuration readiness diagnostics and exit")
     p.add_argument("--history", nargs="?", const="",
                    help="show enrichment history, optionally for one IOC")
     p.add_argument("--history-limit", type=int, default=50,
@@ -104,6 +106,10 @@ def main(argv=None):
     if args.provider_status:
         status = Engine(config, cache=None).provider_status()
         print(json.dumps({"providers": status}, indent=2))
+        return 0
+    if args.config_diagnostics:
+        status = Engine(config, cache=None).provider_status()
+        print(json.dumps(_config_diagnostics(config, status), indent=2))
         return 0
     if args.history is not None:
         store = HistoryStore()
@@ -198,6 +204,20 @@ def _print_batch_summary(summary):
     if summary["source_errors"]:
         details = ", ".join(f"{k}={v}" for k, v in summary["source_errors"].items())
         print(f"source errors: {details}", file=sys.stderr)
+
+
+def _config_diagnostics(config, providers):
+    """Return configuration state without exposing provider credentials."""
+    return {
+        "cache_ttl_seconds": config.cache_ttl,
+        "providers": [
+            {
+                **provider,
+                "credential_environment_variable": ENV_KEYS.get(provider["name"]),
+            }
+            for provider in providers
+        ],
+    }
 
 
 if __name__ == "__main__":

@@ -46,6 +46,17 @@ def test_cli_provider_status_does_not_need_an_ioc(monkeypatch, capsys):
     assert '"rdap"' in capsys.readouterr().out
 
 
+def test_cli_config_diagnostics_never_prints_credentials(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "Engine", FakeEngine)
+
+    assert cli.main(["--config-diagnostics"]) == 0
+
+    output = capsys.readouterr().out
+    assert '"cache_ttl_seconds"' in output
+    assert '"credential_environment_variable"' in output
+    assert "VT_API_KEY" not in output
+
+
 def test_cli_history_query_does_not_enrich(monkeypatch, capsys):
     monkeypatch.setattr(cli, "HistoryStore", FakeHistory)
 
