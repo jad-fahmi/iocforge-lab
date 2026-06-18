@@ -25,6 +25,9 @@ def test_history_migrates_and_preserves_snapshots(tmp_path):
         "tags": [],
         "status": "open",
         "analyst_notes": "",
+        "verdict_override": None,
+        "override_reason": None,
+        "override_at": None,
     }
 
 
@@ -54,6 +57,29 @@ def test_history_updates_analyst_fields_and_records_an_event(tmp_path):
     assert indicator["status"] == "triaged"
     assert indicator["analyst_notes"] == "Validated against proxy telemetry."
     assert store.indicator_events("example.com")[0]["data"]["status"] == "triaged"
+
+
+def test_verdict_override_requires_reason_and_is_audited(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    store.record(EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN))
+
+    try:
+        store.set_verdict_override("evil.example", "malicious", " ")
+    except ValueError as error:
+        assert "reason" in str(error)
+    else:
+        raise AssertionError("an override must require a reason")
+
+    overridden = store.set_verdict_override("evil.example", "malicious", "EDR confirmation")
+    cleared = store.clear_verdict_override("evil.example")
+
+    assert overridden is not None
+    assert overridden["verdict_override"] == "malicious"
+    assert cleared is not None
+    assert cleared["verdict_override"] is None
+    assert [event["event_type"] for event in store.indicator_events("evil.example")[:2]] == [
+        "verdict_override_cleared", "verdict_override_set"
+    ]
 
 
 def test_investigation_groups_indicators_and_preserves_events(tmp_path):

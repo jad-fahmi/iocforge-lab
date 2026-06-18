@@ -100,6 +100,14 @@ class IndicatorResponse(BaseModel):
     tags: list[str]
     status: str
     analyst_notes: str
+    verdict_override: str | None = None
+    override_reason: str | None = None
+    override_at: str | None = None
+
+
+class VerdictOverrideRequest(BaseModel):
+    verdict: Literal["clean", "low", "suspicious", "malicious"]
+    reason: str = Field(min_length=1, max_length=10_000)
 
 
 class IndicatorEventResponse(BaseModel):
@@ -243,6 +251,22 @@ def update_indicator(ioc: str, request: IndicatorUpdateRequest) -> dict[str, Any
         status=request.status,
         analyst_notes=request.analyst_notes,
     )
+    if indicator is None:
+        raise HTTPException(status_code=404, detail="indicator not found")
+    return indicator
+
+
+@api.put("/indicators/{ioc}/verdict-override", response_model=IndicatorResponse, tags=["indicators"])
+def set_verdict_override(ioc: str, request: VerdictOverrideRequest) -> dict[str, Any]:
+    indicator = _history_store().set_verdict_override(ioc, request.verdict, request.reason)
+    if indicator is None:
+        raise HTTPException(status_code=404, detail="indicator not found")
+    return indicator
+
+
+@api.delete("/indicators/{ioc}/verdict-override", response_model=IndicatorResponse, tags=["indicators"])
+def clear_verdict_override(ioc: str) -> dict[str, Any]:
+    indicator = _history_store().clear_verdict_override(ioc)
     if indicator is None:
         raise HTTPException(status_code=404, detail="indicator not found")
     return indicator

@@ -128,6 +128,15 @@ class HistoryStore:
                     """
                 )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (4)")
+            if 5 not in applied:
+                self.conn.executescript(
+                    """
+                    ALTER TABLE indicators ADD COLUMN verdict_override TEXT;
+                    ALTER TABLE indicators ADD COLUMN override_reason TEXT;
+                    ALTER TABLE indicators ADD COLUMN override_at TEXT;
+                    """
+                )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (5)")
             self.conn.commit()
 
     def record(self, result: Any, looked_up_at: str | None = None) -> int:
@@ -266,6 +275,55 @@ class HistoryStore:
             }
             for row in rows
         ]
+
+    def set_verdict_override(
+        self, ioc: str, verdict: str, reason: str
+    ) -> dict[str, Any] | None:
+        """Set an auditable analyst verdict distinct from source-derived scoring."""
+        if verdict not in {"clean", "low", "suspicious", "malicious"}:
+            raise ValueError("invalid override verdict")
+        reason = reason.strip()
+        if not reason:
+            raise ValueError("override reason is required")
+        timestamp = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            exists = self.conn.execute(
+                "SELECT ioc FROM indicators WHERE ioc = ?", (ioc,)
+            ).fetchone()
+            if not exists:
+                return None
+            data = {"verdict_override": verdict, "override_reason": reason, "override_at": timestamp}
+            self.conn.execute(
+                "UPDATE indicators SET verdict_override = ?, override_reason = ?, override_at = ? "
+                "WHERE ioc = ?", (verdict, reason, timestamp, ioc),
+            )
+            self.conn.execute(
+                "INSERT INTO indicator_events(ioc, event_type, data_json, created_at) VALUES (?, ?, ?, ?)",
+                (ioc, "verdict_override_set", json.dumps(data, sort_keys=True), timestamp),
+            )
+            self.conn.commit()
+        return self.indicator(ioc)
+
+    def clear_verdict_override(self, ioc: str) -> dict[str, Any] | None:
+        """Clear an analyst override while retaining its audit event."""
+        timestamp = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT verdict_override FROM indicators WHERE ioc = ?", (ioc,)
+            ).fetchone()
+            if not row:
+                return None
+            if row["verdict_override"] is not None:
+                self.conn.execute(
+                    "UPDATE indicators SET verdict_override = NULL, override_reason = NULL, "
+                    "override_at = NULL WHERE ioc = ?", (ioc,),
+                )
+                self.conn.execute(
+                    "INSERT INTO indicator_events(ioc, event_type, data_json, created_at) VALUES (?, ?, ?, ?)",
+                    (ioc, "verdict_override_cleared", "{}", timestamp),
+                )
+                self.conn.commit()
+        return self.indicator(ioc)
 
     def create_investigation(self, title: str, description: str = "") -> dict[str, Any]:
         timestamp = datetime.now(timezone.utc).isoformat()

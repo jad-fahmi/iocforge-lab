@@ -69,6 +69,10 @@ environment-variable name for each credential without printing credential values
 `--explain` renders the scoring decision, evidence, counter-evidence, blind
 spots, reason codes, and recommended next action as JSON.
 
+Indicators support analyst verdict overrides through the API. Overrides require
+a reason, remain separate from source-derived scoring, and are recorded in the
+indicator event timeline; clear them when the analyst decision no longer applies.
+
 ## Extraction
 
 `--extract` reads messy SOC text instead of one-IOC-per-line input. It supports emails, SIEM alerts, firewall logs, proxy logs, EDR alerts, Slack messages and ticket text. It extracts IPs, domains, URLs, hashes, email addresses, CVEs and ASNs, while preserving line number, nearby source text, the original defanged form and the normalized IOC.

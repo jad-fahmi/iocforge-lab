@@ -98,6 +98,29 @@ def test_indicator_metadata_endpoints(monkeypatch, tmp_path):
     assert events.json()[0]["event_type"] == "indicator_updated"
 
 
+def test_verdict_override_endpoint_requires_reason_and_can_be_cleared(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    store.record(EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN))
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+    client = TestClient(api_module.app)
+
+    invalid = client.put(
+        "/api/v1/indicators/evil.example/verdict-override",
+        json={"verdict": "malicious", "reason": ""},
+    )
+    set_override = client.put(
+        "/api/v1/indicators/evil.example/verdict-override",
+        json={"verdict": "malicious", "reason": "EDR confirmation"},
+    )
+    cleared = client.delete("/api/v1/indicators/evil.example/verdict-override")
+
+    assert invalid.status_code == 422
+    assert set_override.json()["verdict_override"] == "malicious"
+    assert cleared.json()["verdict_override"] is None
+
+
 def test_investigation_endpoints_group_indicators(monkeypatch, tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     engine = Engine(Config(), history=store)
