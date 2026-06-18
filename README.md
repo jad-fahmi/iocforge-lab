@@ -110,6 +110,13 @@ The service listens on port 8000, exposes `/health`, runs as a non-root user,
 and persists enrichment history in the `iocforge-data` volume. Put provider keys
 in a local `.env` file; it is not copied into the image.
 
+## Releases and supply chain
+
+Push a semantic version tag matching `pyproject.toml` (for example, `v0.1.0`) to
+run the release workflow. It validates the project, builds wheel and source
+artifacts, produces an SPDX SBOM, and attaches all three to a GitHub Release.
+See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
 ## Scoring
 
 Each source gets a weight. Shodan is informational and never moves the verdict. Buckets: clean, low, suspicious, malicious.
