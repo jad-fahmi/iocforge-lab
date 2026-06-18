@@ -10,6 +10,7 @@ from ioc_enricher.cache import Cache
 from ioc_enricher.config import Config, load_dotenv
 from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
+from ioc_enricher.interoperability.stix import export_bundle
 from ioc_enricher.ioc.extract import extract_iocs
 
 app = FastAPI(title="IOCForge API", version="0.1.0")
@@ -67,6 +68,16 @@ class BatchEnrichmentResponse(BaseModel):
 
 class ExtractResponse(BaseModel):
     indicators: list[dict[str, Any]]
+
+
+class StixExportRequest(BaseModel):
+    iocs: list[str] = Field(min_length=1, max_length=1000)
+
+
+class StixBundleResponse(BaseModel):
+    type: Literal["bundle"]
+    id: str
+    objects: list[dict[str, Any]]
 
 
 class HistoryItem(BaseModel):
@@ -210,6 +221,12 @@ def enrich_batch(request: BatchEnrichRequest) -> dict[str, list[dict[str, Any]]]
 @api.post("/extract", response_model=ExtractResponse)
 def extract(request: ExtractRequest) -> dict[str, list[dict[str, Any]]]:
     return {"indicators": [item.to_dict() for item in extract_iocs(request.text)]}
+
+
+@api.post("/interoperability/stix/export", response_model=StixBundleResponse, tags=["interoperability"])
+def export_stix(request: StixExportRequest) -> dict[str, Any]:
+    """Enrich IOCs and export supported types as a STIX 2.1 Indicator bundle."""
+    return export_bundle(get_engine().enrich_many(request.iocs))
 
 
 @api.get("/history", response_model=HistoryResponse, tags=["history"])

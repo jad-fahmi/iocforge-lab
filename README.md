@@ -121,6 +121,13 @@ run the release workflow. It validates the project, builds wheel and source
 artifacts, produces an SPDX SBOM, and attaches all three to a GitHub Release.
 See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
+## Interoperability
+
+`POST /api/v1/interoperability/stix/export` enriches a batch and returns a STIX
+2.1 bundle of supported IP, domain, URL, email, and file-hash Indicators. CVE
+and ASN inputs are retained in IOCForge but omitted from STIX export until their
+semantics can be represented without vendor-specific objects.
+
 ## Scoring
 
 Each source gets a weight. Shodan is informational and never moves the verdict. Buckets: clean, low, suspicious, malicious.

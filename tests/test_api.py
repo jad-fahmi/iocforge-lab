@@ -52,6 +52,16 @@ def test_extract_endpoint_and_validation(monkeypatch):
     assert invalid.status_code == 422
 
 
+def test_stix_export_endpoint_returns_a_stix_21_bundle(monkeypatch):
+    response = _client(monkeypatch).post(
+        "/api/v1/interoperability/stix/export", json={"iocs": ["example.com"]}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["type"] == "bundle"
+    assert response.json()["objects"][0]["pattern_type"] == "stix"
+
+
 def test_history_endpoint_filters_and_paginates(monkeypatch, tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     store.record(
