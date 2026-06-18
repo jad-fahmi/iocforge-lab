@@ -46,6 +46,8 @@ def build_parser():
                    help="show enabled provider capabilities and exit")
     p.add_argument("--config-diagnostics", action="store_true",
                    help="show safe configuration readiness diagnostics and exit")
+    p.add_argument("--explain", action="store_true",
+                   help="render only scoring evidence and decision details as JSON")
     p.add_argument("--history", nargs="?", const="",
                    help="show enrichment history, optionally for one IOC")
     p.add_argument("--history-limit", type=int, default=50,
@@ -157,7 +159,9 @@ def main(argv=None):
 
     summary = _batch_summary(iocs, results, total_seen)
     _print_batch_summary(summary)
-    rendered = render(results, args.format, report=args.report, summary=summary)
+    rendered = _render_explanations(results) if args.explain else render(
+        results, args.format, report=args.report, summary=summary
+    )
     if args.output:
         with open(args.output, "w", encoding="utf-8") as output:
             output.write(rendered)
@@ -218,6 +222,18 @@ def _config_diagnostics(config, providers):
             for provider in providers
         ],
     }
+
+
+def _render_explanations(results):
+    fields = (
+        "ioc", "ioc_type", "scoring_version", "score", "verdict", "confidence",
+        "evidence", "counter_evidence", "no_data", "errors", "reason_codes",
+        "recommended_action",
+    )
+    return json.dumps(
+        {"explanations": [{field: result.to_dict()[field] for field in fields} for result in results]},
+        indent=2,
+    )
 
 
 if __name__ == "__main__":

@@ -61,10 +61,13 @@ ioc-enrich --extract ticket.txt --max-iocs 100 --fail-soft
 ioc-enrich -i iocs.txt --fail-on-malicious
 ioc-enrich --history evil.example --history-limit 20
 ioc-enrich --config-diagnostics
+ioc-enrich evil.example --explain
 ```
 
 `--config-diagnostics` reports provider availability, enablement, and the
 environment-variable name for each credential without printing credential values.
+`--explain` renders the scoring decision, evidence, counter-evidence, blind
+spots, reason codes, and recommended next action as JSON.
 
 ## Extraction
 
@@ -93,7 +96,7 @@ uvicorn ioc_enricher.api.app:app
 
 Provider capabilities and credential availability are available at `GET /providers`.
 New integrations should use the documented `/api/v1` endpoints: `POST /enrich`,
-`POST /enrich/batch`, `POST /extract`, and `GET /providers`.
+`POST /enrich/batch`, `POST /extract`, `POST /score/explain`, and `GET /providers`.
 
 ## Container deployment
 

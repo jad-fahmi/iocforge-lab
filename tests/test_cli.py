@@ -38,6 +38,16 @@ def test_cli_writes_output_file(monkeypatch, tmp_path, capsys):
     assert capsys.readouterr().out == ""
 
 
+def test_cli_explain_renders_scoring_decision(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "Engine", FakeEngine)
+
+    assert cli.main(["example.com", "--explain"]) == 0
+
+    rendered = capsys.readouterr().out
+    assert '"explanations"' in rendered
+    assert '"recommended_action"' in rendered
+
+
 def test_cli_provider_status_does_not_need_an_ioc(monkeypatch, capsys):
     monkeypatch.setattr(cli, "Engine", FakeEngine)
 

@@ -22,6 +22,17 @@ def test_versioned_enrich_endpoint_returns_typed_payload(monkeypatch):
     assert response.json()["sources"] == []
 
 
+def test_score_explanation_endpoint_returns_only_scoring_decision(monkeypatch):
+    response = _client(monkeypatch).post(
+        "/api/v1/score/explain", json={"ioc": "example.com"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["verdict"] == "clean"
+    assert "sources" not in response.json()
+    assert "recommended_action" in response.json()
+
+
 def test_batch_endpoint_deduplicates_iocs(monkeypatch):
     response = _client(monkeypatch).post(
         "/api/v1/enrich/batch", json={"iocs": ["example.com", "example.com"]}

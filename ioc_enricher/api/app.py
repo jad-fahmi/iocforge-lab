@@ -46,6 +46,21 @@ class EnrichmentResponse(BaseModel):
     sources: list[dict[str, Any]]
 
 
+class ScoreExplanationResponse(BaseModel):
+    ioc: str
+    ioc_type: str
+    scoring_version: str
+    score: float
+    verdict: str
+    confidence: str
+    evidence: list[dict[str, Any]]
+    counter_evidence: list[dict[str, Any]]
+    no_data: list[str]
+    errors: list[dict[str, str]]
+    reason_codes: list[str]
+    recommended_action: str
+
+
 class BatchEnrichmentResponse(BaseModel):
     results: list[EnrichmentResponse]
 
@@ -168,6 +183,14 @@ def provider_status() -> dict[str, list[dict[str, Any]]]:
 @api.post("/enrich", response_model=EnrichmentResponse)
 def enrich(request: EnrichRequest) -> dict[str, Any]:
     return get_engine().enrich(request.ioc).to_dict()
+
+
+@api.post("/score/explain", response_model=ScoreExplanationResponse, tags=["scoring"])
+def explain_score(request: EnrichRequest) -> dict[str, Any]:
+    """Enrich an IOC and return only the auditable scoring decision."""
+    result = get_engine().enrich(request.ioc).to_dict()
+    fields = set(ScoreExplanationResponse.model_fields)
+    return {key: value for key, value in result.items() if key in fields}
 
 
 @api.post("/enrich/batch", response_model=BatchEnrichmentResponse)
