@@ -2,9 +2,17 @@ import json
 import sqlite3
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_DB = Path.home() / ".cache" / "iocforge-lab" / "cache.db"
+
+
+@dataclass(frozen=True)
+class CacheLookup:
+    value: dict
+    stale: bool
+    age_seconds: float
 
 
 class Cache:
@@ -40,6 +48,11 @@ class Cache:
         return f"{source}:{ioc}"
 
     def get(self, source, ioc):
+        lookup = self.lookup(source, ioc)
+        return lookup.value if lookup else None
+
+    def lookup(self, source, ioc, allow_stale=False):
+        """Return a cache entry and age metadata; stale entries are opt-in."""
         key = self._key(source, ioc)
         with self._lock:
             row = self.conn.execute(
@@ -48,11 +61,11 @@ class Cache:
             if not row:
                 return None
             value, ts = row
-            if self.ttl and (time.time() - ts) > self.ttl:
-                self.conn.execute("DELETE FROM entries WHERE k = ?", (key,))
-                self.conn.commit()
+            age_seconds = max(0.0, time.time() - ts)
+            stale = bool(self.ttl and age_seconds > self.ttl)
+            if stale and not allow_stale:
                 return None
-            return json.loads(value)
+            return CacheLookup(json.loads(value), stale, age_seconds)
 
     def purge_expired(self):
         cutoff = time.time() - self.ttl

@@ -9,6 +9,7 @@ Threat intelligence enrichment tool for investigating IP addresses, domains, URL
 - canonicalizes Unicode domains and URL hosts to IDNA ASCII without altering URL paths or queries
 - queries several intel sources through pluggable connectors
 - caches answers in sqlite so repeat lookups are cheap
+- serves expired cache data only when a live provider fails, with explicit stale-cache metadata
 - extracts IOCs from pasted analyst text, alerts, tickets, emails and logs
 - scores results into an explainable verdict with evidence and counter-evidence
 - applies local business context so internal assets and vendors are not overflagged

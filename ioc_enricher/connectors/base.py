@@ -86,6 +86,24 @@ class Connector(abc.ABC):
 
         result = self.enrich(ioc, ioc_type)
 
+        # An expired result is never used as a normal cache hit. It can only
+        # keep an investigation moving when the live provider is unavailable,
+        # and is labeled so analysts do not mistake it for fresh evidence.
+        if cache is not None and result.error is not None:
+            stale = cache.lookup(self.name, ioc, allow_stale=True)
+            if stale is not None and stale.stale:
+                payload = dict(stale.value)
+                raw = dict(payload.get("raw", {}))
+                raw.update({
+                    "cache_stale": True,
+                    "cache_age_seconds": round(stale.age_seconds, 3),
+                    "live_lookup_error": result.error,
+                })
+                payload["raw"] = raw
+                payload["tags"] = sorted(set(payload.get("tags", [])) | {"stale_cache"})
+                payload["ioc_type"] = IocType(payload["ioc_type"])
+                return SourceResult(**payload)
+
         # only cache real answers, not transient errors
         if cache is not None and result.error is None:
             cache.set(self.name, ioc, result.to_dict())
