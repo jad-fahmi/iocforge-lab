@@ -31,6 +31,19 @@ def test_history_migrates_and_preserves_snapshots(tmp_path):
     }
 
 
+def test_dashboard_summary_aggregates_verdicts_and_case_states(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    store.record(EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN, verdict="malicious"))
+    store.record(EnrichmentResult(ioc="clean.example", ioc_type=IocType.DOMAIN, verdict="clean"))
+    store.create_investigation("Triage")
+
+    summary = store.dashboard_summary()
+
+    assert summary["verdict_counts"] == {"clean": 1, "malicious": 1}
+    assert summary["investigation_counts"] == {"open": 1}
+    assert summary["recent_enrichments"][0]["ioc"] == "clean.example"
+
+
 def test_engine_records_completed_enrichment(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     engine = Engine(Config(), sources=[], history=store)

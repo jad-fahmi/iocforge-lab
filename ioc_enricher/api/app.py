@@ -132,6 +132,13 @@ class HistoryResponse(BaseModel):
     offset: int
 
 
+class DashboardResponse(BaseModel):
+    providers: list[dict[str, Any]]
+    verdict_counts: dict[str, int]
+    investigation_counts: dict[str, int]
+    recent_enrichments: list[HistoryItem]
+
+
 class IndicatorUpdateRequest(BaseModel):
     tags: list[str] | None = Field(default=None, max_length=50)
     status: Literal["open", "triaged", "benign", "malicious", "closed"] | None = None
@@ -284,6 +291,15 @@ def history(
         "limit": limit,
         "offset": offset,
     }
+
+
+@api.get("/dashboard", response_model=DashboardResponse, tags=["dashboard"])
+def dashboard() -> dict[str, Any]:
+    engine = get_engine()
+    store = engine.history
+    if store is None:
+        raise HTTPException(status_code=503, detail="history storage is unavailable")
+    return {"providers": engine.provider_status(), **store.dashboard_summary()}
 
 
 def _history_store() -> HistoryStore:

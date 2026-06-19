@@ -203,6 +203,21 @@ class HistoryStore:
             for row in rows
         ]
 
+    def dashboard_summary(self, recent_limit: int = 10) -> dict[str, Any]:
+        """Return compact persisted metrics for an analyst dashboard."""
+        with self._lock:
+            verdict_rows = self.conn.execute(
+                "SELECT verdict, COUNT(*) AS count FROM enrichments GROUP BY verdict"
+            ).fetchall()
+            investigation_rows = self.conn.execute(
+                "SELECT status, COUNT(*) AS count FROM investigations GROUP BY status"
+            ).fetchall()
+        return {
+            "verdict_counts": {row["verdict"]: row["count"] for row in verdict_rows},
+            "investigation_counts": {row["status"]: row["count"] for row in investigation_rows},
+            "recent_enrichments": self.list_enrichments(limit=recent_limit),
+        }
+
     def indicator(self, ioc: str) -> dict[str, Any] | None:
         with self._lock:
             row = self.conn.execute(

@@ -114,6 +114,20 @@ def test_history_endpoint_filters_and_paginates(monkeypatch, tmp_path):
     assert response.json()["limit"] == 1
 
 
+def test_dashboard_endpoint_exposes_provider_and_persisted_metrics(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    store.record(EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN, verdict="malicious"))
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+
+    response = TestClient(api_module.app).get("/api/v1/dashboard")
+
+    assert response.status_code == 200
+    assert response.json()["verdict_counts"] == {"malicious": 1}
+    assert "providers" in response.json()
+
+
 def test_indicator_metadata_endpoints(monkeypatch, tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     store.record(EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN))

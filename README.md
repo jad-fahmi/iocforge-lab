@@ -141,6 +141,9 @@ to a MISP server; review and import the JSON through your approved MISP workflow
 `GET /api/v1/investigations/{id}/report` renders a Markdown case report from
 persisted investigation, indicator, enrichment, and timeline state.
 
+`GET /api/v1/dashboard` supplies provider readiness, persisted verdict counts,
+investigation lifecycle counts, and recent enrichment records for analyst UI clients.
+
 ## Scoring
 
 Each source gets a weight. Shodan is informational and never moves the verdict. Buckets: clean, low, suspicious, malicious.
