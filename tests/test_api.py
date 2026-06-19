@@ -21,6 +21,7 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
     assert response.status_code == 200
     assert "IOCForge Analyst Workbench" in response.text
     assert "IOC relationships" in response.text
+    assert "Create investigation" in response.text
     assert "const API = '/api/v1'" in response.text
 
 
