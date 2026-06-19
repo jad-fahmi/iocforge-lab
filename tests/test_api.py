@@ -15,6 +15,15 @@ def _client(monkeypatch):
     return TestClient(api_module.app)
 
 
+def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
+    response = _client(monkeypatch).get("/")
+
+    assert response.status_code == 200
+    assert "IOCForge Analyst Workbench" in response.text
+    assert "IOC relationships" in response.text
+    assert "const API = '/api/v1'" in response.text
+
+
 def test_versioned_enrich_endpoint_returns_typed_payload(monkeypatch):
     response = _client(monkeypatch).post("/api/v1/enrich", json={"ioc": "example.com"})
 

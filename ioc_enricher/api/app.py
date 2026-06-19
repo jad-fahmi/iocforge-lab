@@ -5,10 +5,11 @@ from functools import lru_cache
 from typing import Any, Literal
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from ioc_enricher.api.rate_limit import RateLimiter
+from ioc_enricher.api.ui import ANALYST_UI
 from ioc_enricher.cache import Cache
 from ioc_enricher.config import Config, load_dotenv
 from ioc_enricher.engine import Engine
@@ -228,6 +229,12 @@ def get_engine() -> Engine:
 @app.get("/health", tags=["operations"])
 def health() -> dict[str, bool]:
     return {"ok": True}
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def analyst_workbench() -> str:
+    """Serve the lightweight first-party analyst interface."""
+    return ANALYST_UI
 
 
 @app.get("/providers", tags=["operations"])

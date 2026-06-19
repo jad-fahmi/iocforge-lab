@@ -106,6 +106,8 @@ New integrations should use the documented `/api/v1` endpoints: `POST /enrich`,
 
 ## Container deployment
 
+The container also serves the lightweight analyst workbench at `http://localhost:8000/`.
+
 Run the API with Docker Compose:
 
 ```shell
