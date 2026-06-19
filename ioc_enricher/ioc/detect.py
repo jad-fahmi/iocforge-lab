@@ -31,8 +31,11 @@ def _try_ip(value):
 def _looks_like_url(value):
     if "://" not in value:
         return False
-    parsed = urlsplit(value)
-    return bool(parsed.scheme and parsed.netloc and parsed.hostname)
+    try:
+        parsed = urlsplit(value)
+        return bool(parsed.scheme and parsed.netloc and parsed.hostname)
+    except ValueError:
+        return False
 
 
 def _looks_like_domain(value):
@@ -90,7 +93,12 @@ def detect(value):
 
 def _looks_like_email(value):
     local, separator, domain = value.rpartition("@")
-    return bool(separator and EMAIL_RE.match(f"{local}@{_idna(domain)}")) if domain else False
+    if not separator or not domain:
+        return False
+    try:
+        return bool(EMAIL_RE.match(f"{local}@{_idna(domain)}"))
+    except UnicodeError:
+        return False
 
 
 def normalize(value, ioc_type):

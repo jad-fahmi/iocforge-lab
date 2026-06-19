@@ -59,5 +59,10 @@ def test_url_host_is_normalized_without_changing_case_sensitive_path():
     assert normalize(url, IocType.URL) == "https://xn--bcher-kva.example/CaseSensitive?Key=Value"
 
 
+def test_malformed_url_and_invalid_unicode_email_are_unknown_not_exceptions():
+    assert detect("https://[not-an-ipv6") == IocType.UNKNOWN
+    assert detect("analyst@\ud800.example") == IocType.UNKNOWN
+
+
 def test_unknown():
     assert detect("not an ioc") == IocType.UNKNOWN
