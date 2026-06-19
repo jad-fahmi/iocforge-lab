@@ -13,6 +13,7 @@ from ioc_enricher.cache import Cache
 from ioc_enricher.config import Config, load_dotenv
 from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
+from ioc_enricher.interoperability.misp import export_event
 from ioc_enricher.interoperability.stix import export_bundle
 from ioc_enricher.ioc.extract import extract_iocs
 
@@ -102,6 +103,15 @@ class StixBundleResponse(BaseModel):
     type: Literal["bundle"]
     id: str
     objects: list[dict[str, Any]]
+
+
+class MispExportRequest(BaseModel):
+    iocs: list[str] = Field(min_length=1, max_length=1000)
+    info: str = Field(default="IOCForge enrichment export", min_length=1, max_length=255)
+
+
+class MispEventResponse(BaseModel):
+    Event: dict[str, Any]
 
 
 class HistoryItem(BaseModel):
@@ -251,6 +261,12 @@ def extract(request: ExtractRequest) -> dict[str, list[dict[str, Any]]]:
 def export_stix(request: StixExportRequest) -> dict[str, Any]:
     """Enrich IOCs and export supported types as a STIX 2.1 Indicator bundle."""
     return export_bundle(get_engine().enrich_many(request.iocs))
+
+
+@api.post("/interoperability/misp/export", response_model=MispEventResponse, tags=["interoperability"])
+def export_misp(request: MispExportRequest) -> dict[str, Any]:
+    """Enrich IOCs and return an importable, unpublished MISP event."""
+    return export_event(get_engine().enrich_many(request.iocs), info=request.info)
 
 
 @api.get("/history", response_model=HistoryResponse, tags=["history"])

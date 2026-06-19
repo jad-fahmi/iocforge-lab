@@ -76,6 +76,17 @@ def test_stix_export_endpoint_returns_a_stix_21_bundle(monkeypatch):
     assert response.json()["objects"][0]["pattern_type"] == "stix"
 
 
+def test_misp_export_endpoint_returns_unpublished_event(monkeypatch):
+    response = _client(monkeypatch).post(
+        "/api/v1/interoperability/misp/export",
+        json={"iocs": ["example.com"], "info": "Case export"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["Event"]["published"] is False
+    assert response.json()["Event"]["Attribute"][0]["type"] == "domain"
+
+
 def test_history_endpoint_filters_and_paginates(monkeypatch, tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     store.record(

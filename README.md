@@ -133,6 +133,10 @@ See [CHANGELOG.md](CHANGELOG.md) for release notes.
 and ASN inputs are retained in IOCForge but omitted from STIX export until their
 semantics can be represented without vendor-specific objects.
 
+`POST /api/v1/interoperability/misp/export` returns an unpublished,
+MISP-compatible event with mapped IOC attributes. It does not contact or publish
+to a MISP server; review and import the JSON through your approved MISP workflow.
+
 ## Scoring
 
 Each source gets a weight. Shodan is informational and never moves the verdict. Buckets: clean, low, suspicious, malicious.
