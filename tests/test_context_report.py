@@ -1,7 +1,7 @@
 from ioc_enricher.context import InternalContext
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult, SourceResult
-from ioc_enricher.output.markdown import render
+from ioc_enricher.output.markdown import render, render_investigation
 from ioc_enricher.scoring import score
 
 
@@ -36,3 +36,20 @@ def test_markdown_report_contains_soc_sections():
     assert "## Source evidence" in report
     assert "## Recommended next steps" in report
     assert "## Errors and blind spots" in report
+
+
+def test_investigation_report_includes_persisted_case_context():
+    report = render_investigation(
+        {"title": "Malware triage", "description": "Review alert", "status": "open",
+         "created_at": "2026-01-01", "updated_at": "2026-01-02"},
+        [{"ioc": "evil.example", "ioc_type": "domain", "status": "triaged",
+          "verdict_override": "malicious", "analyst_notes": "EDR confirmed",
+          "latest": {"verdict": "suspicious"}}],
+        [{"created_at": "2026-01-02", "event_type": "indicator_added",
+          "data": {"ioc": "evil.example"}}],
+    )
+
+    assert "# Investigation: Malware triage" in report
+    assert "## Indicators" in report
+    assert "EDR confirmed" in report
+    assert "indicator_added" in report

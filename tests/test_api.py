@@ -177,6 +177,27 @@ def test_investigation_endpoints_group_indicators(monkeypatch, tmp_path):
     assert client.get(f"/api/v1/investigations/{investigation_id}/events").status_code == 200
 
 
+def test_investigation_report_endpoint_returns_markdown(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    store.record(EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN))
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+    client = TestClient(api_module.app)
+    investigation = client.post("/api/v1/investigations", json={"title": "Report case"})
+    investigation_id = investigation.json()["id"]
+    client.post(
+        f"/api/v1/investigations/{investigation_id}/indicators",
+        json={"ioc": "evil.example"},
+    )
+
+    response = client.get(f"/api/v1/investigations/{investigation_id}/report")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "# Investigation: Report case" in response.text
+
+
 def test_relationship_endpoints_return_graph_data(monkeypatch, tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     engine = Engine(Config(), history=store)

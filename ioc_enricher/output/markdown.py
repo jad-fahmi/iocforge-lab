@@ -72,6 +72,45 @@ def source_error_summary(results):
     return counts
 
 
+def render_investigation(investigation, indicators, events):
+    """Render a durable case report from stored analyst and enrichment state."""
+    lines = [f"# Investigation: {investigation['title']}", ""]
+    if investigation.get("description"):
+        lines.extend([investigation["description"], ""])
+    lines.extend([
+        "## Case details", "",
+        f"- Status: {investigation['status']}",
+        f"- Created: {investigation['created_at']}",
+        f"- Updated: {investigation['updated_at']}", "",
+        "## Indicators", "",
+        "| IOC | Type | Latest verdict | Analyst status | Override |", "|---|---|---|---|---|",
+    ])
+    for item in indicators:
+        latest = item.get("latest") or {}
+        override = item.get("verdict_override") or "-"
+        lines.append(
+            f"| `{item['ioc']}` | {item.get('ioc_type', 'unknown')} | "
+            f"{latest.get('verdict', 'not enriched')} | {item.get('status', 'open')} | {override} |"
+        )
+    if not indicators:
+        lines.append("| _No indicators assigned_ | - | - | - | - |")
+    lines.extend(["", "## Analyst notes", ""])
+    notes = [item for item in indicators if item.get("analyst_notes")]
+    if notes:
+        for item in notes:
+            lines.append(f"### `{item['ioc']}`\n{item['analyst_notes']}\n")
+    else:
+        lines.append("No analyst notes recorded.")
+    lines.extend(["", "## Investigation timeline", ""])
+    if events:
+        for event in reversed(events):
+            details = ", ".join(f"{key}={value}" for key, value in event["data"].items())
+            lines.append(f"- {event['created_at']}: {event['event_type']}" + (f" ({details})" if details else ""))
+    else:
+        lines.append("No investigation events recorded.")
+    return "\n".join(lines).rstrip()
+
+
 def _counts(results):
     counts = {"malicious": 0, "suspicious": 0, "low": 0, "clean": 0}
     for r in results:

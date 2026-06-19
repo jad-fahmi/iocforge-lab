@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import Any, Literal
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from ioc_enricher.api.rate_limit import RateLimiter
@@ -16,6 +16,7 @@ from ioc_enricher.history import HistoryStore
 from ioc_enricher.interoperability.misp import export_event
 from ioc_enricher.interoperability.stix import export_bundle
 from ioc_enricher.ioc.extract import extract_iocs
+from ioc_enricher.output.markdown import render_investigation
 
 app = FastAPI(title="IOCForge API", version="0.1.0")
 api = APIRouter(prefix="/api/v1", tags=["enrichment"])
@@ -404,6 +405,25 @@ def get_investigation(investigation_id: int) -> dict[str, Any]:
     if investigation is None:
         raise HTTPException(status_code=404, detail="investigation not found")
     return investigation
+
+
+@api.get(
+    "/investigations/{investigation_id}/report", response_class=PlainTextResponse,
+    tags=["investigations"],
+)
+def investigation_report(investigation_id: int) -> str:
+    store = _history_store()
+    investigation = store.investigation(investigation_id)
+    if investigation is None:
+        raise HTTPException(status_code=404, detail="investigation not found")
+    indicators = []
+    for ioc in investigation["indicators"]:
+        indicator = store.indicator(ioc) or {"ioc": ioc}
+        latest = store.list_enrichments(ioc=ioc, limit=1)
+        indicators.append({**indicator, "latest": latest[0] if latest else None})
+    return render_investigation(
+        investigation, indicators, store.investigation_events(investigation_id)
+    )
 
 
 @api.post(
