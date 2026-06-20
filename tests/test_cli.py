@@ -73,3 +73,17 @@ def test_cli_history_query_does_not_enrich(monkeypatch, capsys):
     assert cli.main(["--history", "example.com", "--history-limit", "3"]) == 0
 
     assert '"ioc": "example.com"' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected_level"),
+    [(["--provider-status", "--verbose"], "INFO"), (["--provider-status", "--debug"], "DEBUG")],
+)
+def test_cli_verbosity_selects_operational_log_level(monkeypatch, capsys, arguments, expected_level):
+    selected = []
+    monkeypatch.setattr(cli, "Engine", FakeEngine)
+    monkeypatch.setattr(cli, "setup", selected.append)
+
+    assert cli.main(arguments) == 0
+
+    assert selected == [expected_level]

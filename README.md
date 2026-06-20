@@ -170,5 +170,6 @@ See [architecture](docs/architecture.md), [scoring](docs/scoring.md), and the
 - [ ] passive dns source
 - [ ] whois enrichment
 - [ ] retry/backoff tuning per source
-- [ ] output to a file instead of stdout
-- [ ] dockerfile
+
+Use `-v` for operational logs and repeat it (or pass `--debug`) for connector-level
+debug logging. Logs go to stderr so JSON, CSV, and report output remain machine-readable.

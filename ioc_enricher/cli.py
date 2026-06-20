@@ -9,6 +9,7 @@ from ioc_enricher.context import InternalContext
 from ioc_enricher.engine import REGISTRY, Engine
 from ioc_enricher.history import HistoryStore
 from ioc_enricher.ioc.extract import extract_iocs
+from ioc_enricher.log import setup
 from ioc_enricher.output import csv_out, json_out, jsonl_out, markdown, table
 
 ALL_SOURCES = list(REGISTRY.names)
@@ -34,6 +35,10 @@ def build_parser():
     p.add_argument("--no-cache", action="store_true", help="skip the cache")
     p.add_argument("-q", "--quiet", action="store_true",
                    help="only print malicious/suspicious verdicts")
+    p.add_argument("-v", "--verbose", action="count", default=0,
+                   help="show operational logs; repeat for debug logs")
+    p.add_argument("--debug", action="store_true",
+                   help="show debug logs (equivalent to --verbose --verbose)")
     p.add_argument("--context", action="append",
                    help="JSON file with allowlist, blocklist, business_domains, cidrs")
     p.add_argument("--asset-inventory", help="CSV asset inventory")
@@ -103,6 +108,10 @@ def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
     args = build_parser().parse_args(argv)
 
+    if args.debug or args.verbose >= 2:
+        setup("DEBUG")
+    elif args.verbose:
+        setup("INFO")
     load_dotenv()
     config = Config.load()
     if args.provider_status:
