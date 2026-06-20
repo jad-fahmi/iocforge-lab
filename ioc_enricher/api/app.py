@@ -15,7 +15,7 @@ from ioc_enricher.config import Config, load_dotenv
 from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
 from ioc_enricher.interoperability.misp import export_event
-from ioc_enricher.interoperability.stix import export_bundle
+from ioc_enricher.interoperability.stix import export_bundle, import_bundle
 from ioc_enricher.ioc.extract import extract_iocs
 from ioc_enricher.output.markdown import render_investigation
 
@@ -105,6 +105,21 @@ class StixBundleResponse(BaseModel):
     type: Literal["bundle"]
     id: str
     objects: list[dict[str, Any]]
+
+
+class StixImportRequest(BaseModel):
+    bundle: dict[str, Any]
+
+
+class StixImportItem(BaseModel):
+    ioc: str
+    ioc_type: str
+    stix_id: str | None
+    labels: list[str]
+
+
+class StixImportResponse(BaseModel):
+    indicators: list[StixImportItem]
 
 
 class MispExportRequest(BaseModel):
@@ -276,6 +291,15 @@ def extract(request: ExtractRequest) -> dict[str, list[dict[str, Any]]]:
 def export_stix(request: StixExportRequest) -> dict[str, Any]:
     """Enrich IOCs and export supported types as a STIX 2.1 Indicator bundle."""
     return export_bundle(get_engine().enrich_many(request.iocs))
+
+
+@api.post("/interoperability/stix/import", response_model=StixImportResponse, tags=["interoperability"])
+def import_stix(request: StixImportRequest) -> dict[str, Any]:
+    """Validate and extract the simple STIX Indicator patterns IOCForge supports."""
+    try:
+        return {"indicators": import_bundle(request.bundle)}
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @api.post("/interoperability/misp/export", response_model=MispEventResponse, tags=["interoperability"])

@@ -1,4 +1,4 @@
-from ioc_enricher.interoperability.stix import export_bundle, pattern_for
+from ioc_enricher.interoperability.stix import export_bundle, import_bundle, pattern_for
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult
 
@@ -17,3 +17,17 @@ def test_stix_bundle_exports_supported_types_only():
     assert bundle["type"] == "bundle"
     assert bundle["objects"][0]["spec_version"] == "2.1"
     assert bundle["objects"][0]["pattern"] == "[domain-name:value = 'evil.example']"
+
+
+def test_stix_import_extracts_only_valid_simple_indicator_patterns():
+    indicators = import_bundle(
+        {
+            "type": "bundle",
+            "objects": [
+                {"type": "indicator", "id": "indicator--1", "pattern": "[domain-name:value = 'EVIL.EXAMPLE']", "labels": ["phishing"]},
+                {"type": "indicator", "pattern": "[domain-name:value = 'a'] OR [domain-name:value = 'b']"},
+            ],
+        }
+    )
+
+    assert indicators == [{"ioc": "evil.example", "ioc_type": "domain", "stix_id": "indicator--1", "labels": ["phishing"]}]

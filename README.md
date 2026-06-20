@@ -136,6 +136,10 @@ See [CHANGELOG.md](CHANGELOG.md) for release notes.
 and ASN inputs are retained in IOCForge but omitted from STIX export until their
 semantics can be represented without vendor-specific objects.
 
+`POST /api/v1/interoperability/stix/import` accepts a STIX bundle and safely
+extracts validated IOCForge-supported Indicator patterns. It deliberately does
+not evaluate compound STIX expressions or trigger enrichment on import.
+
 `POST /api/v1/interoperability/misp/export` returns an unpublished,
 MISP-compatible event with mapped IOC attributes. It does not contact or publish
 to a MISP server; review and import the JSON through your approved MISP workflow.

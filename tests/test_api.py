@@ -87,6 +87,16 @@ def test_stix_export_endpoint_returns_a_stix_21_bundle(monkeypatch):
     assert response.json()["objects"][0]["pattern_type"] == "stix"
 
 
+def test_stix_import_endpoint_extracts_validated_indicators(monkeypatch):
+    response = _client(monkeypatch).post(
+        "/api/v1/interoperability/stix/import",
+        json={"bundle": {"type": "bundle", "objects": [{"type": "indicator", "pattern": "[ipv4-addr:value = '198.51.100.9']"}]}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["indicators"][0]["ioc_type"] == "ipv4"
+
+
 def test_misp_export_endpoint_returns_unpublished_event(monkeypatch):
     response = _client(monkeypatch).post(
         "/api/v1/interoperability/misp/export",
