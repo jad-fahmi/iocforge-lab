@@ -8,6 +8,7 @@ from ioc_enricher.connectors.greynoise import GreyNoise
 from ioc_enricher.connectors.hashlookup import Hashlookup
 from ioc_enricher.connectors.malwarebazaar import MalwareBazaar
 from ioc_enricher.connectors.otx import OTX
+from ioc_enricher.connectors.passive_dns import PassiveDNS
 from ioc_enricher.connectors.rdap import RDAP
 from ioc_enricher.connectors.registry import ConnectorRegistry
 from ioc_enricher.connectors.shodan import Shodan
@@ -33,6 +34,7 @@ REGISTRY = ConnectorRegistry(
         GreyNoise,
         RDAP,
         DNS,
+        PassiveDNS,
         CrtSh,
         Hashlookup,
         Urlscan,

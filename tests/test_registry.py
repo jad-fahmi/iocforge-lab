@@ -44,6 +44,9 @@ def test_engine_reports_provider_capabilities_without_keys():
     assert virustotal["available"] is False
     assert "sha256" in virustotal["supported_types"]
     assert virustotal["reliability"] == 1.0
+    passive_dns = next(provider for provider in providers if provider["name"] == "passive_dns")
+    assert passive_dns["available"] is True
+    assert passive_dns["supported_types"] == ["ipv4", "ipv6", "domain"]
 
 
 def test_provider_status_uses_configured_reliability_weight():

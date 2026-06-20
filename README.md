@@ -24,6 +24,7 @@ Threat intelligence enrichment tool for investigating IP addresses, domains, URL
 - GreyNoise
 - RDAP (keyless domain and IP registration data)
 - DNS (keyless A, AAAA, CNAME, MX, and NS resolution)
+- CIRCL Passive DNS (keyless historical domain and IP observations; passive-only)
 - crt.sh (keyless certificate-transparency metadata)
 - URLhaus (authenticated malware URL lookup)
 - ThreatFox (authenticated curated malware IOC lookup)
@@ -171,7 +172,6 @@ See [architecture](docs/architecture.md), [scoring](docs/scoring.md), and the
 
 ## TODO
 
-- [ ] passive dns source
 - [ ] whois enrichment
 - [ ] retry/backoff tuning per source
 
