@@ -1,7 +1,8 @@
-"""MISP event JSON export for IOCForge enrichment results."""
+"""Conservative MISP event JSON import and export for IOCForge results."""
 
 from datetime import datetime, timezone
 
+from ioc_enricher.ioc.detect import detect, normalize
 from ioc_enricher.ioc.types import IocType
 
 MISP_TYPES = {
@@ -16,6 +17,17 @@ MISP_TYPES = {
     IocType.SHA512: ("sha512", "Payload delivery"),
     IocType.CVE: ("vulnerability", "External analysis"),
     IocType.ASN: ("AS", "Network activity"),
+}
+IMPORT_TYPES = {
+    "domain": IocType.DOMAIN,
+    "url": IocType.URL,
+    "email-dst": IocType.EMAIL,
+    "md5": IocType.MD5,
+    "sha1": IocType.SHA1,
+    "sha256": IocType.SHA256,
+    "sha512": IocType.SHA512,
+    "vulnerability": IocType.CVE,
+    "AS": IocType.ASN,
 }
 
 
@@ -56,3 +68,41 @@ def attribute_for(result):
             f"confidence={result.confidence}"
         ),
     }
+
+
+def import_event(event):
+    """Extract validated IOCForge-supported attributes from MISP event JSON."""
+    if not isinstance(event, dict):
+        raise ValueError("expected a MISP event object")
+    contents = event.get("Event", event)
+    if not isinstance(contents, dict) or not isinstance(contents.get("Attribute"), list):
+        raise ValueError("expected a MISP Event with an Attribute list")
+    imported = []
+    seen = set()
+    for attribute in contents["Attribute"]:
+        if not isinstance(attribute, dict):
+            continue
+        value = attribute.get("value")
+        expected = _expected_type(attribute.get("type"), value)
+        if not isinstance(value, str) or expected is None or detect(value) != expected:
+            continue
+        ioc = normalize(value, expected)
+        if ioc in seen:
+            continue
+        seen.add(ioc)
+        imported.append(
+            {
+                "ioc": ioc,
+                "ioc_type": expected.value,
+                "misp_type": attribute["type"],
+                "to_ids": bool(attribute.get("to_ids", False)),
+            }
+        )
+    return imported
+
+
+def _expected_type(attribute_type, value):
+    if attribute_type == "ip-dst" and isinstance(value, str):
+        found = detect(value)
+        return found if found in {IocType.IPV4, IocType.IPV6} else None
+    return IMPORT_TYPES.get(attribute_type)

@@ -144,6 +144,10 @@ not evaluate compound STIX expressions or trigger enrichment on import.
 MISP-compatible event with mapped IOC attributes. It does not contact or publish
 to a MISP server; review and import the JSON through your approved MISP workflow.
 
+`POST /api/v1/interoperability/misp/import` validates and extracts supported
+MISP attributes locally. It never contacts a MISP server, publishes an event,
+or triggers enrichment as a side effect.
+
 `GET /api/v1/investigations/{id}/report` renders a Markdown case report from
 persisted investigation, indicator, enrichment, and timeline state.
 

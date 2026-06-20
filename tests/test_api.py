@@ -108,6 +108,16 @@ def test_misp_export_endpoint_returns_unpublished_event(monkeypatch):
     assert response.json()["Event"]["Attribute"][0]["type"] == "domain"
 
 
+def test_misp_import_endpoint_extracts_validated_attributes(monkeypatch):
+    response = _client(monkeypatch).post(
+        "/api/v1/interoperability/misp/import",
+        json={"event": {"Event": {"Attribute": [{"type": "url", "value": "https://evil.example/path"}]}}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["indicators"][0]["ioc_type"] == "url"
+
+
 def test_history_endpoint_filters_and_paginates(monkeypatch, tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     store.record(

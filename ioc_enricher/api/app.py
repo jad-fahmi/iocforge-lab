@@ -14,7 +14,7 @@ from ioc_enricher.cache import Cache
 from ioc_enricher.config import Config, load_dotenv
 from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
-from ioc_enricher.interoperability.misp import export_event
+from ioc_enricher.interoperability.misp import export_event, import_event
 from ioc_enricher.interoperability.stix import export_bundle, import_bundle
 from ioc_enricher.ioc.extract import extract_iocs
 from ioc_enricher.output.markdown import render_investigation
@@ -129,6 +129,21 @@ class MispExportRequest(BaseModel):
 
 class MispEventResponse(BaseModel):
     Event: dict[str, Any]
+
+
+class MispImportRequest(BaseModel):
+    event: dict[str, Any]
+
+
+class MispImportItem(BaseModel):
+    ioc: str
+    ioc_type: str
+    misp_type: str
+    to_ids: bool
+
+
+class MispImportResponse(BaseModel):
+    indicators: list[MispImportItem]
 
 
 class HistoryItem(BaseModel):
@@ -306,6 +321,15 @@ def import_stix(request: StixImportRequest) -> dict[str, Any]:
 def export_misp(request: MispExportRequest) -> dict[str, Any]:
     """Enrich IOCs and return an importable, unpublished MISP event."""
     return export_event(get_engine().enrich_many(request.iocs), info=request.info)
+
+
+@api.post("/interoperability/misp/import", response_model=MispImportResponse, tags=["interoperability"])
+def import_misp(request: MispImportRequest) -> dict[str, Any]:
+    """Validate and extract supported MISP attributes without contacting MISP."""
+    try:
+        return {"indicators": import_event(request.event)}
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @api.get("/history", response_model=HistoryResponse, tags=["history"])
