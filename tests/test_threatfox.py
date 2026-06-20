@@ -11,15 +11,17 @@ def test_threatfox_returns_curated_malware_evidence():
             200,
             json={
                 "query_status": "ok",
-                "data": [{
-                    "ioc": "evil.example",
-                    "threat_type": "botnet_cc",
-                    "malware": "win.example",
-                    "confidence_level": 90,
-                    "tags": ["c2"],
-                    "reference": "https://example.test/report",
-                    "last_seen_utc": "2026-09-01T00:00:00Z",
-                }],
+                "data": [
+                    {
+                        "ioc": "evil.example",
+                        "threat_type": "botnet_cc",
+                        "malware": "win.example",
+                        "confidence_level": 90,
+                        "tags": ["c2"],
+                        "reference": "https://example.test/report",
+                        "last_seen_utc": "2026-09-01T00:00:00Z",
+                    }
+                ],
             },
         )
     )

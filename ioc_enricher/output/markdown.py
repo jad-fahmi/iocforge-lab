@@ -1,20 +1,31 @@
 def render(results, summary=None):
     lines = ["# IOC Investigation Report", ""]
     counts = _counts(results)
-    lines.extend([
-        "## Executive summary",
-        "",
-        f"Analyzed {len(results)} unique IOCs. Verdicts: "
-        + ", ".join(f"{k}: {v}" for k, v in counts.items() if v),
-        "",
-    ])
-    if summary:
-        lines.extend([
-            f"Deduplicated {summary.get('duplicates', 0)} repeated IOC(s).",
+    lines.extend(
+        [
+            "## Executive summary",
             "",
-        ])
+            f"Analyzed {len(results)} unique IOCs. Verdicts: "
+            + ", ".join(f"{k}: {v}" for k, v in counts.items() if v),
+            "",
+        ]
+    )
+    if summary:
+        lines.extend(
+            [
+                f"Deduplicated {summary.get('duplicates', 0)} repeated IOC(s).",
+                "",
+            ]
+        )
 
-    lines.extend(["## IOC table", "", "| IOC | Type | Verdict | Confidence | Reasons |", "|---|---|---|---|---|"])
+    lines.extend(
+        [
+            "## IOC table",
+            "",
+            "| IOC | Type | Verdict | Confidence | Reasons |",
+            "|---|---|---|---|---|",
+        ]
+    )
     for r in results:
         lines.append(
             f"| `{r.ioc}` | {r.ioc_type.value} | {r.verdict} | "
@@ -26,7 +37,9 @@ def render(results, summary=None):
     lines.extend(["## High-risk findings", ""])
     if high:
         for r in high:
-            lines.append(f"- `{r.ioc}`: {r.verdict} ({r.confidence}). {r.recommended_action}")
+            lines.append(
+                f"- `{r.ioc}`: {r.verdict} ({r.confidence}). {r.recommended_action}"
+            )
     else:
         lines.append("No malicious or suspicious IOCs were identified.")
     lines.append("")
@@ -46,7 +59,10 @@ def render(results, summary=None):
         if r.no_data:
             lines.append(f"- No data: {', '.join(r.no_data)}")
         if r.errors:
-            lines.append("- Errors: " + ", ".join(f"{e['source']} ({e['error']})" for e in r.errors))
+            lines.append(
+                "- Errors: "
+                + ", ".join(f"{e['source']} ({e['error']})" for e in r.errors)
+            )
         lines.append("")
 
     lines.extend(["## Recommended next steps", ""])
@@ -77,14 +93,20 @@ def render_investigation(investigation, indicators, events):
     lines = [f"# Investigation: {investigation['title']}", ""]
     if investigation.get("description"):
         lines.extend([investigation["description"], ""])
-    lines.extend([
-        "## Case details", "",
-        f"- Status: {investigation['status']}",
-        f"- Created: {investigation['created_at']}",
-        f"- Updated: {investigation['updated_at']}", "",
-        "## Indicators", "",
-        "| IOC | Type | Latest verdict | Analyst status | Override |", "|---|---|---|---|---|",
-    ])
+    lines.extend(
+        [
+            "## Case details",
+            "",
+            f"- Status: {investigation['status']}",
+            f"- Created: {investigation['created_at']}",
+            f"- Updated: {investigation['updated_at']}",
+            "",
+            "## Indicators",
+            "",
+            "| IOC | Type | Latest verdict | Analyst status | Override |",
+            "|---|---|---|---|---|",
+        ]
+    )
     for item in indicators:
         latest = item.get("latest") or {}
         override = item.get("verdict_override") or "-"
@@ -104,8 +126,13 @@ def render_investigation(investigation, indicators, events):
     lines.extend(["", "## Investigation timeline", ""])
     if events:
         for event in reversed(events):
-            details = ", ".join(f"{key}={value}" for key, value in event["data"].items())
-            lines.append(f"- {event['created_at']}: {event['event_type']}" + (f" ({details})" if details else ""))
+            details = ", ".join(
+                f"{key}={value}" for key, value in event["data"].items()
+            )
+            lines.append(
+                f"- {event['created_at']}: {event['event_type']}"
+                + (f" ({details})" if details else "")
+            )
     else:
         lines.append("No investigation events recorded.")
     return "\n".join(lines).rstrip()

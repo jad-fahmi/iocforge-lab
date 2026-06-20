@@ -77,9 +77,14 @@ def test_cli_history_query_does_not_enrich(monkeypatch, capsys):
 
 @pytest.mark.parametrize(
     ("arguments", "expected_level"),
-    [(["--provider-status", "--verbose"], "INFO"), (["--provider-status", "--debug"], "DEBUG")],
+    [
+        (["--provider-status", "--verbose"], "INFO"),
+        (["--provider-status", "--debug"], "DEBUG"),
+    ],
 )
-def test_cli_verbosity_selects_operational_log_level(monkeypatch, capsys, arguments, expected_level):
+def test_cli_verbosity_selects_operational_log_level(
+    monkeypatch, capsys, arguments, expected_level
+):
     selected = []
     monkeypatch.setattr(cli, "Engine", FakeEngine)
     monkeypatch.setattr(cli, "setup", selected.append)

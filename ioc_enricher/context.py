@@ -21,7 +21,9 @@ class InternalContext:
     ):
         self.allowlist = {v.lower() for v in (allowlist or [])}
         self.blocklist = {v.lower() for v in (blocklist or [])}
-        self.business_domains = {v.lower().lstrip(".") for v in (business_domains or [])}
+        self.business_domains = {
+            v.lower().lstrip(".") for v in (business_domains or [])
+        }
         self.cidrs = [ipaddress.ip_network(c, strict=False) for c in (cidrs or [])]
         self.assets = assets or {}
 
@@ -97,8 +99,10 @@ class InternalContext:
         }
 
     def _is_business_domain(self, host):
-        return any(host == domain or host.endswith("." + domain)
-                   for domain in self.business_domains)
+        return any(
+            host == domain or host.endswith("." + domain)
+            for domain in self.business_domains
+        )
 
 
 def _host_for(ioc, ioc_type):
@@ -114,15 +118,28 @@ def load_asset_inventory(path):
     with open(path, newline="") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
-            value = (row.get("ioc") or row.get("ip") or row.get("host")
-                     or row.get("domain") or row.get("asset") or "").strip()
+            value = (
+                row.get("ioc")
+                or row.get("ip")
+                or row.get("host")
+                or row.get("domain")
+                or row.get("asset")
+                or ""
+            ).strip()
             if not value:
                 continue
             tags: list[str] = []
             for field in ("tags", "tag"):
                 if row.get(field):
-                    tags.extend(t.strip() for t in row[field].replace(";", ",").split(","))
-            for flag in ("internal_asset", "known_vendor", "vpn_endpoint", "scanner_ip"):
+                    tags.extend(
+                        t.strip() for t in row[field].replace(";", ",").split(",")
+                    )
+            for flag in (
+                "internal_asset",
+                "known_vendor",
+                "vpn_endpoint",
+                "scanner_ip",
+            ):
                 if row.get(flag, "").strip().lower() in ("1", "true", "yes", "y"):
                     tags.append(flag)
             assets[value.lower()] = {

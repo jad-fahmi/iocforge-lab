@@ -145,4 +145,6 @@ def _normalize_url(value):
     netloc = f"{credentials}{normalized_host}"
     if port is not None:
         netloc += f":{port}"
-    return urlunsplit((parsed.scheme.lower(), netloc, parsed.path, parsed.query, parsed.fragment))
+    return urlunsplit(
+        (parsed.scheme.lower(), netloc, parsed.path, parsed.query, parsed.fragment)
+    )

@@ -31,12 +31,18 @@ class RDAP(Connector):
     def _parse(self, ioc, ioc_type, payload) -> SourceResult:
         events = payload.get("events", [])
         last_changed = next(
-            (event.get("eventDate") for event in events
-             if event.get("eventAction") in {"last changed", "last update"}),
+            (
+                event.get("eventDate")
+                for event in events
+                if event.get("eventAction") in {"last changed", "last update"}
+            ),
             None,
         )
-        tags = [value for value in (payload.get("objectClassName"), payload.get("type"))
-                if value]
+        tags = [
+            value
+            for value in (payload.get("objectClassName"), payload.get("type"))
+            if value
+        ]
         raw = {
             "handle": payload.get("handle"),
             "name": payload.get("name"),

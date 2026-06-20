@@ -3,11 +3,11 @@ import sys
 
 RESET = "\033[0m"
 COLORS = {
-    "malicious": "\033[31m",   # red
+    "malicious": "\033[31m",  # red
     "suspicious": "\033[33m",  # yellow
-    "low": "\033[36m",         # cyan
-    "clean": "\033[32m",       # green
-    "unknown": "\033[90m",     # grey
+    "low": "\033[36m",  # cyan
+    "clean": "\033[32m",  # green
+    "unknown": "\033[90m",  # grey
 }
 
 

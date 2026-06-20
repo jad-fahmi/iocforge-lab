@@ -66,16 +66,15 @@ class Engine:
         ioc_type = detect(ioc)
         ioc = normalize(ioc, ioc_type)
         log.debug("detected %s as %s", ioc, ioc_type)
-        result = EnrichmentResult(ioc=ioc, ioc_type=ioc_type,
-                                  source_context=source_context)
+        result = EnrichmentResult(
+            ioc=ioc, ioc_type=ioc_type, source_context=source_context
+        )
         result.internal_context = self.internal_context.evaluate(ioc, ioc_type)
 
         active = [c for c in self.connectors if c.supports(ioc_type)]
 
         with ThreadPoolExecutor(max_workers=len(active) or 1) as pool:
-            futures = {
-                pool.submit(c.run, ioc, ioc_type, self.cache): c for c in active
-            }
+            futures = {pool.submit(c.run, ioc, ioc_type, self.cache): c for c in active}
             for f, conn in futures.items():
                 try:
                     result.add(f.result())
@@ -102,10 +101,7 @@ class Engine:
             contexts.setdefault(ioc, source_context)
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {
-                pool.submit(self.enrich, i, contexts.get(i)): i
-                for i in seen
-            }
+            futures = {pool.submit(self.enrich, i, contexts.get(i)): i for i in seen}
             done = 0
             for f in futures:
                 seen[futures[f]] = f.result()

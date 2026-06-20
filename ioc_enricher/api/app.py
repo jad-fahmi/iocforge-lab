@@ -30,12 +30,20 @@ async def apply_rate_limit(request: Request, call_next):
     if request.url.path.startswith("/api/v1"):
         client = request.client.host if request.client else "unknown"
         allowed, remaining, retry_after = rate_limiter.check(client)
-        headers = {"X-RateLimit-Limit": str(rate_limiter.limit), "X-RateLimit-Remaining": str(remaining)}
+        headers = {
+            "X-RateLimit-Limit": str(rate_limiter.limit),
+            "X-RateLimit-Remaining": str(remaining),
+        }
         if not allowed:
             headers["Retry-After"] = str(retry_after)
             return JSONResponse(
                 status_code=429,
-                content={"detail": {"code": "rate_limit_exceeded", "retry_after": retry_after}},
+                content={
+                    "detail": {
+                        "code": "rate_limit_exceeded",
+                        "retry_after": retry_after,
+                    }
+                },
                 headers=headers,
             )
         response = await call_next(request)
@@ -124,7 +132,9 @@ class StixImportResponse(BaseModel):
 
 class MispExportRequest(BaseModel):
     iocs: list[str] = Field(min_length=1, max_length=1000)
-    info: str = Field(default="IOCForge enrichment export", min_length=1, max_length=255)
+    info: str = Field(
+        default="IOCForge enrichment export", min_length=1, max_length=255
+    )
 
 
 class MispEventResponse(BaseModel):
@@ -308,13 +318,21 @@ def extract(request: ExtractRequest) -> dict[str, list[dict[str, Any]]]:
     return {"indicators": [item.to_dict() for item in extract_iocs(request.text)]}
 
 
-@api.post("/interoperability/stix/export", response_model=StixBundleResponse, tags=["interoperability"])
+@api.post(
+    "/interoperability/stix/export",
+    response_model=StixBundleResponse,
+    tags=["interoperability"],
+)
 def export_stix(request: StixExportRequest) -> dict[str, Any]:
     """Enrich IOCs and export supported types as a STIX 2.1 Indicator bundle."""
     return export_bundle(get_engine().enrich_many(request.iocs))
 
 
-@api.post("/interoperability/stix/import", response_model=StixImportResponse, tags=["interoperability"])
+@api.post(
+    "/interoperability/stix/import",
+    response_model=StixImportResponse,
+    tags=["interoperability"],
+)
 def import_stix(request: StixImportRequest) -> dict[str, Any]:
     """Validate and extract the simple STIX Indicator patterns IOCForge supports."""
     try:
@@ -323,13 +341,21 @@ def import_stix(request: StixImportRequest) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 
-@api.post("/interoperability/misp/export", response_model=MispEventResponse, tags=["interoperability"])
+@api.post(
+    "/interoperability/misp/export",
+    response_model=MispEventResponse,
+    tags=["interoperability"],
+)
 def export_misp(request: MispExportRequest) -> dict[str, Any]:
     """Enrich IOCs and return an importable, unpublished MISP event."""
     return export_event(get_engine().enrich_many(request.iocs), info=request.info)
 
 
-@api.post("/interoperability/misp/import", response_model=MispImportResponse, tags=["interoperability"])
+@api.post(
+    "/interoperability/misp/import",
+    response_model=MispImportResponse,
+    tags=["interoperability"],
+)
 def import_misp(request: MispImportRequest) -> dict[str, Any]:
     """Validate and extract supported MISP attributes without contacting MISP."""
     try:
@@ -391,15 +417,25 @@ def update_indicator(ioc: str, request: IndicatorUpdateRequest) -> dict[str, Any
     return indicator
 
 
-@api.put("/indicators/{ioc}/verdict-override", response_model=IndicatorResponse, tags=["indicators"])
+@api.put(
+    "/indicators/{ioc}/verdict-override",
+    response_model=IndicatorResponse,
+    tags=["indicators"],
+)
 def set_verdict_override(ioc: str, request: VerdictOverrideRequest) -> dict[str, Any]:
-    indicator = _history_store().set_verdict_override(ioc, request.verdict, request.reason)
+    indicator = _history_store().set_verdict_override(
+        ioc, request.verdict, request.reason
+    )
     if indicator is None:
         raise HTTPException(status_code=404, detail="indicator not found")
     return indicator
 
 
-@api.delete("/indicators/{ioc}/verdict-override", response_model=IndicatorResponse, tags=["indicators"])
+@api.delete(
+    "/indicators/{ioc}/verdict-override",
+    response_model=IndicatorResponse,
+    tags=["indicators"],
+)
 def clear_verdict_override(ioc: str) -> dict[str, Any]:
     indicator = _history_store().clear_verdict_override(ioc)
     if indicator is None:
@@ -418,7 +454,12 @@ def indicator_events(
     return _history_store().indicator_events(ioc, limit=limit)
 
 
-@api.post("/relationships", response_model=RelationshipResponse, status_code=201, tags=["relationships"])
+@api.post(
+    "/relationships",
+    response_model=RelationshipResponse,
+    status_code=201,
+    tags=["relationships"],
+)
 def create_relationship(request: RelationshipCreateRequest) -> dict[str, Any]:
     try:
         return _history_store().add_relationship(
@@ -455,13 +496,18 @@ def indicator_graph(
 
 
 @api.post(
-    "/investigations", response_model=InvestigationResponse, status_code=201, tags=["investigations"]
+    "/investigations",
+    response_model=InvestigationResponse,
+    status_code=201,
+    tags=["investigations"],
 )
 def create_investigation(request: InvestigationCreateRequest) -> dict[str, Any]:
     return _history_store().create_investigation(request.title, request.description)
 
 
-@api.get("/investigations", response_model=InvestigationsResponse, tags=["investigations"])
+@api.get(
+    "/investigations", response_model=InvestigationsResponse, tags=["investigations"]
+)
 def list_investigations(
     limit: int = Query(default=50, ge=1, le=500), offset: int = Query(default=0, ge=0)
 ) -> dict[str, Any]:
@@ -508,7 +554,8 @@ def update_investigation(
 
 
 @api.get(
-    "/investigations/{investigation_id}/report", response_class=PlainTextResponse,
+    "/investigations/{investigation_id}/report",
+    response_class=PlainTextResponse,
     tags=["investigations"],
 )
 def investigation_report(investigation_id: int) -> str:
@@ -534,7 +581,9 @@ def investigation_report(investigation_id: int) -> str:
 def add_investigation_indicator(
     investigation_id: int, request: InvestigationIndicatorRequest
 ) -> dict[str, Any]:
-    investigation = _history_store().add_investigation_indicator(investigation_id, request.ioc)
+    investigation = _history_store().add_investigation_indicator(
+        investigation_id, request.ioc
+    )
     if investigation is None:
         raise HTTPException(status_code=404, detail="investigation not found")
     return investigation

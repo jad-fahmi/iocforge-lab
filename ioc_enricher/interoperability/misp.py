@@ -36,7 +36,9 @@ def export_event(results, info="IOCForge enrichment export"):
     attributes = [attribute_for(result) for result in results]
     usable = [attribute for attribute in attributes if attribute is not None]
     verdicts = {result.verdict for result in results}
-    threat_level = 1 if "malicious" in verdicts else 2 if "suspicious" in verdicts else 3
+    threat_level = (
+        1 if "malicious" in verdicts else 2 if "suspicious" in verdicts else 3
+    )
     return {
         "Event": {
             "date": datetime.now(timezone.utc).date().isoformat(),
@@ -75,7 +77,9 @@ def import_event(event):
     if not isinstance(event, dict):
         raise ValueError("expected a MISP event object")
     contents = event.get("Event", event)
-    if not isinstance(contents, dict) or not isinstance(contents.get("Attribute"), list):
+    if not isinstance(contents, dict) or not isinstance(
+        contents.get("Attribute"), list
+    ):
         raise ValueError("expected a MISP Event with an Attribute list")
     imported = []
     seen = set()

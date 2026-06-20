@@ -11,12 +11,21 @@ def test_urlscan_returns_historical_scan_metadata_without_verdict_signal():
             200,
             json={
                 "total": 3,
-                "results": [{
-                    "_id": "scan-id",
-                    "page": {"url": "https://example.com/a", "domain": "example.com", "country": "US"},
-                    "task": {"time": "2026-09-20T10:00:00.000Z", "visibility": "public"},
-                    "stats": {"uniqIPs": 2, "uniqDomains": 4},
-                }],
+                "results": [
+                    {
+                        "_id": "scan-id",
+                        "page": {
+                            "url": "https://example.com/a",
+                            "domain": "example.com",
+                            "country": "US",
+                        },
+                        "task": {
+                            "time": "2026-09-20T10:00:00.000Z",
+                            "visibility": "public",
+                        },
+                        "stats": {"uniqIPs": 2, "uniqDomains": 4},
+                    }
+                ],
             },
         )
     )
@@ -24,7 +33,10 @@ def test_urlscan_returns_historical_scan_metadata_without_verdict_signal():
     result = Urlscan(api_key="key").enrich("https://example.com/a", IocType.URL)
 
     assert route.calls.last.request.headers["API-Key"] == "key"
-    assert route.calls.last.request.url.params["q"] == 'canonical.page.url:"https://example.com/a"'
+    assert (
+        route.calls.last.request.url.params["q"]
+        == 'canonical.page.url:"https://example.com/a"'
+    )
     assert result.found is True
     assert result.malicious is None
     assert result.raw["scan_count"] == 3

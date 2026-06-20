@@ -59,7 +59,8 @@ class ConnectorRegistry:
         return [
             connector_type(api_key=config.key_for(name))
             for name, connector_type in self._types.items()
-            if (requested is None or name in requested) and config.provider_enabled(name)
+            if (requested is None or name in requested)
+            and config.provider_enabled(name)
         ]
 
     def status(self, config) -> list[ProviderStatus]:
@@ -68,9 +69,13 @@ class ConnectorRegistry:
                 name=name,
                 enabled=config.provider_enabled(name),
                 configured=bool(config.key_for(name)),
-                available=(config.provider_enabled(name) and (
-                    not connector_type.requires_api_key or bool(config.key_for(name))
-                )),
+                available=(
+                    config.provider_enabled(name)
+                    and (
+                        not connector_type.requires_api_key
+                        or bool(config.key_for(name))
+                    )
+                ),
                 requires_api_key=connector_type.requires_api_key,
                 reliability=float(
                     config.scoring.get("weights", {}).get(

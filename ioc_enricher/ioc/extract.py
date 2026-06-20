@@ -62,12 +62,14 @@ def extract_iocs(text):
             if key in seen:
                 continue
             seen.add(key)
-            found.append(ExtractedIOC(
-                value=normalized,
-                ioc_type=ioc_type,
-                original=original,
-                normalized=normalized,
-                line_number=line_number,
-                context=_context(line, match.start(), match.end()),
-            ))
+            found.append(
+                ExtractedIOC(
+                    value=normalized,
+                    ioc_type=ioc_type,
+                    original=original,
+                    normalized=normalized,
+                    line_number=line_number,
+                    context=_context(line, match.start(), match.end()),
+                )
+            )
     return found

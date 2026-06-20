@@ -11,23 +11,32 @@ def _res(sources):
 
 
 def test_clean_when_nothing_flags():
-    r = _res([SourceResult("virustotal", "x", IocType.IPV4, found=True,
-                           malicious=False, score=0.0)])
+    r = _res(
+        [
+            SourceResult(
+                "virustotal", "x", IocType.IPV4, found=True, malicious=False, score=0.0
+            )
+        ]
+    )
     val, verdict = score(r)
     assert verdict == "clean"
     assert val == 0.0
 
 
 def test_malicious_from_strong_source():
-    r = _res([SourceResult("virustotal", "x", IocType.IPV4, found=True,
-                           malicious=True, score=1.0)])
+    r = _res(
+        [
+            SourceResult(
+                "virustotal", "x", IocType.IPV4, found=True, malicious=True, score=1.0
+            )
+        ]
+    )
     val, verdict = score(r)
     assert verdict == "malicious"
 
 
 def test_shodan_does_not_move_score():
-    r = _res([SourceResult("shodan", "x", IocType.IPV4, found=True,
-                           malicious=None)])
+    r = _res([SourceResult("shodan", "x", IocType.IPV4, found=True, malicious=None)])
     val, _ = score(r)
     assert val == 0.0
 
@@ -40,16 +49,30 @@ def test_verdict_buckets():
 
 
 def test_score_attaches_explainable_evidence():
-    r = _res([
-        SourceResult("virustotal", "x", IocType.IPV4, found=True,
-                     malicious=True, score=0.7,
-                     raw={"stats": {"malicious": 4, "suspicious": 0}}),
-        SourceResult("greynoise", "x", IocType.IPV4, found=True,
-                     malicious=False, score=0.0,
-                     raw={"classification": "benign"}),
-        SourceResult("otx", "x", IocType.IPV4, found=False),
-        SourceResult("abuseipdb", "x", IocType.IPV4, error="timeout"),
-    ])
+    r = _res(
+        [
+            SourceResult(
+                "virustotal",
+                "x",
+                IocType.IPV4,
+                found=True,
+                malicious=True,
+                score=0.7,
+                raw={"stats": {"malicious": 4, "suspicious": 0}},
+            ),
+            SourceResult(
+                "greynoise",
+                "x",
+                IocType.IPV4,
+                found=True,
+                malicious=False,
+                score=0.0,
+                raw={"classification": "benign"},
+            ),
+            SourceResult("otx", "x", IocType.IPV4, found=False),
+            SourceResult("abuseipdb", "x", IocType.IPV4, error="timeout"),
+        ]
+    )
 
     score(r)
 
@@ -63,20 +86,38 @@ def test_score_attaches_explainable_evidence():
 
 
 def test_stale_observation_has_less_weight():
-    fresh = _res([
-        SourceResult("virustotal", "x", IocType.IPV4, found=True,
-                     malicious=True, score=1.0,
-                     raw={"last_seen": "2026-08-01T00:00:00+00:00"}),
-        SourceResult("abuseipdb", "x", IocType.IPV4, found=True,
-                     malicious=False, score=0.0),
-    ])
-    stale = _res([
-        SourceResult("virustotal", "x", IocType.IPV4, found=True,
-                     malicious=True, score=1.0,
-                     raw={"last_seen": "2024-01-01T00:00:00+00:00"}),
-        SourceResult("abuseipdb", "x", IocType.IPV4, found=True,
-                     malicious=False, score=0.0),
-    ])
+    fresh = _res(
+        [
+            SourceResult(
+                "virustotal",
+                "x",
+                IocType.IPV4,
+                found=True,
+                malicious=True,
+                score=1.0,
+                raw={"last_seen": "2026-08-01T00:00:00+00:00"},
+            ),
+            SourceResult(
+                "abuseipdb", "x", IocType.IPV4, found=True, malicious=False, score=0.0
+            ),
+        ]
+    )
+    stale = _res(
+        [
+            SourceResult(
+                "virustotal",
+                "x",
+                IocType.IPV4,
+                found=True,
+                malicious=True,
+                score=1.0,
+                raw={"last_seen": "2024-01-01T00:00:00+00:00"},
+            ),
+            SourceResult(
+                "abuseipdb", "x", IocType.IPV4, found=True, malicious=False, score=0.0
+            ),
+        ]
+    )
 
     score(fresh)
     score(stale)
@@ -86,10 +127,18 @@ def test_stale_observation_has_less_weight():
 
 
 def test_allowlisted_internal_context_reduces_score():
-    r = _res([
-        SourceResult("virustotal", "10.0.0.4", IocType.IPV4, found=True,
-                     malicious=True, score=1.0)
-    ])
+    r = _res(
+        [
+            SourceResult(
+                "virustotal",
+                "10.0.0.4",
+                IocType.IPV4,
+                found=True,
+                malicious=True,
+                score=1.0,
+            )
+        ]
+    )
     r.internal_context = {
         "tags": ["internal_asset"],
         "reasons": ["allowlisted_asset", "private_ip"],
@@ -103,12 +152,24 @@ def test_allowlisted_internal_context_reduces_score():
 
 
 def test_configured_thresholds_change_verdict_and_record_version():
-    r = _res([SourceResult("custom", "x", IocType.IPV4, found=True,
-                           malicious=True, score=0.4)])
+    r = _res(
+        [
+            SourceResult(
+                "custom", "x", IocType.IPV4, found=True, malicious=True, score=0.4
+            )
+        ]
+    )
 
-    score(r, settings={"weights": {"custom": 1.0}, "thresholds": {
-        "suspicious": 0.2, "malicious": 0.4,
-    }})
+    score(
+        r,
+        settings={
+            "weights": {"custom": 1.0},
+            "thresholds": {
+                "suspicious": 0.2,
+                "malicious": 0.4,
+            },
+        },
+    )
 
     assert r.verdict == "malicious"
     assert r.scoring_version == "1"

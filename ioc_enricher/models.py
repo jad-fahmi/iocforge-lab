@@ -7,6 +7,7 @@ from ioc_enricher.ioc.types import IocType
 @dataclass
 class SourceResult:
     """result of enriching one ioc against one source."""
+
     source: str
     ioc: str
     ioc_type: IocType
@@ -27,6 +28,7 @@ class SourceResult:
 @dataclass
 class EnrichmentResult:
     """aggregated result across all sources for one ioc."""
+
     ioc: str
     ioc_type: IocType
     sources: list = field(default_factory=list)

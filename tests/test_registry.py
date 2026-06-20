@@ -38,13 +38,17 @@ def test_registry_rejects_unknown_requested_connector():
 
 def test_engine_reports_provider_capabilities_without_keys():
     providers = Engine(Config()).provider_status()
-    virustotal = next(provider for provider in providers if provider["name"] == "virustotal")
+    virustotal = next(
+        provider for provider in providers if provider["name"] == "virustotal"
+    )
 
     assert virustotal["configured"] is False
     assert virustotal["available"] is False
     assert "sha256" in virustotal["supported_types"]
     assert virustotal["reliability"] == 1.0
-    passive_dns = next(provider for provider in providers if provider["name"] == "passive_dns")
+    passive_dns = next(
+        provider for provider in providers if provider["name"] == "passive_dns"
+    )
     assert passive_dns["available"] is True
     assert passive_dns["supported_types"] == ["ipv4", "ipv6", "domain"]
 

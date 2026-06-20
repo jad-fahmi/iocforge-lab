@@ -46,9 +46,13 @@ class FailingConnector(Connector):
 
 def test_live_failure_uses_labeled_stale_result(tmp_path):
     c = Cache(path=tmp_path / "c.db", ttl=0.01)
-    c.set("failing", "example.com", SourceResult(
-        source="failing", ioc="example.com", ioc_type=IocType.DOMAIN, found=True
-    ).to_dict())
+    c.set(
+        "failing",
+        "example.com",
+        SourceResult(
+            source="failing", ioc="example.com", ioc_type=IocType.DOMAIN, found=True
+        ).to_dict(),
+    )
     time.sleep(0.05)
 
     result = FailingConnector().run("example.com", IocType.DOMAIN, cache=c)

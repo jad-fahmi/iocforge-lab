@@ -25,7 +25,9 @@ class DNS(Connector):
             for record_type in self.record_types:
                 try:
                     answer = resolver.resolve(ioc, record_type)
-                    records[record_type] = [str(record).rstrip(".") for record in answer]
+                    records[record_type] = [
+                        str(record).rstrip(".") for record in answer
+                    ]
                 except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
                     continue
         except dns.exception.DNSException as exc:

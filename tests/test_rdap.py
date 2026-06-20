@@ -7,12 +7,17 @@ from ioc_enricher.ioc.types import IocType
 @respx.mock
 def test_rdap_enriches_domain_without_api_key():
     respx.get("https://rdap.org/domain/example.com").mock(
-        return_value=httpx.Response(200, json={
-            "objectClassName": "domain",
-            "handle": "EXAMPLE1",
-            "status": ["active"],
-            "events": [{"eventAction": "last changed", "eventDate": "2025-01-02T00:00:00Z"}],
-        })
+        return_value=httpx.Response(
+            200,
+            json={
+                "objectClassName": "domain",
+                "handle": "EXAMPLE1",
+                "status": ["active"],
+                "events": [
+                    {"eventAction": "last changed", "eventDate": "2025-01-02T00:00:00Z"}
+                ],
+            },
+        )
     )
 
     result = RDAP().enrich("example.com", IocType.DOMAIN)

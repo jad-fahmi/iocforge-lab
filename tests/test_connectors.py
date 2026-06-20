@@ -9,13 +9,22 @@ from ioc_enricher.ioc.types import IocType
 @respx.mock
 def test_virustotal_malicious():
     respx.get("https://www.virustotal.com/api/v3/ip_addresses/6.6.6.6").mock(
-        return_value=httpx.Response(200, json={
-            "data": {"attributes": {
-                "last_analysis_stats": {"malicious": 5, "harmless": 60,
-                                        "suspicious": 1, "undetected": 4},
-                "tags": ["malware"],
-            }}
-        })
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "attributes": {
+                        "last_analysis_stats": {
+                            "malicious": 5,
+                            "harmless": 60,
+                            "suspicious": 1,
+                            "undetected": 4,
+                        },
+                        "tags": ["malware"],
+                    }
+                }
+            },
+        )
     )
     c = VirusTotal(api_key="x")
     r = c.enrich("6.6.6.6", IocType.IPV4)
@@ -38,9 +47,16 @@ def test_virustotal_not_found():
 @respx.mock
 def test_abuseipdb_uses_key_header():
     route = respx.get("https://api.abuseipdb.com/api/v2/check").mock(
-        return_value=httpx.Response(200, json={"data": {
-            "abuseConfidenceScore": 80, "totalReports": 12,
-            "usageType": "Data Center"}})
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "abuseConfidenceScore": 80,
+                    "totalReports": 12,
+                    "usageType": "Data Center",
+                }
+            },
+        )
     )
     c = AbuseIPDB(api_key="secret")
     r = c.enrich("9.9.9.9", IocType.IPV4)

@@ -16,8 +16,9 @@ class RecordingConnector(Connector):
 
     def enrich(self, ioc, ioc_type):
         self.calls.append(ioc)
-        return SourceResult(source=self.name, ioc=ioc, ioc_type=ioc_type,
-                             found=True, malicious=False)
+        return SourceResult(
+            source=self.name, ioc=ioc, ioc_type=ioc_type, found=True, malicious=False
+        )
 
 
 class OtherConnector(RecordingConnector):

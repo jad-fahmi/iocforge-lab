@@ -6,9 +6,7 @@ from ioc_enricher.ioc.types import IocType
 
 @respx.mock
 def test_hashlookup_returns_known_file_metadata_without_verdict_signal():
-    respx.get(
-        "https://hashlookup.circl.lu/lookup/sha256/" + "a" * 64
-    ).mock(
+    respx.get("https://hashlookup.circl.lu/lookup/sha256/" + "a" * 64).mock(
         return_value=httpx.Response(
             200,
             json={

@@ -61,11 +61,14 @@ class PassiveDNS(Connector):
             timestamp = _timestamp(record.get("time_last"))
             if timestamp is not None:
                 timestamps.append(timestamp)
-        tags = sorted({str(record["rrtype"]) for record in records if record.get("rrtype")})
+        tags = sorted(
+            {str(record["rrtype"]) for record in records if record.get("rrtype")}
+        )
         raw = {
             "record_count": len(records),
             "records": records,
-            "truncated": len(records) == MAX_RECORDS or bool(response.headers.get("x-dribble-errors")),
+            "truncated": len(records) == MAX_RECORDS
+            or bool(response.headers.get("x-dribble-errors")),
         }
         return SourceResult(
             source=self.name,

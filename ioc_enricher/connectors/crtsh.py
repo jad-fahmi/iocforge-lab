@@ -33,17 +33,21 @@ class CrtSh(Connector):
     def _parse(self, ioc, ioc_type, payload) -> SourceResult:
         if not isinstance(payload, list) or not payload:
             return self._empty(ioc, ioc_type)
-        names = sorted({
-            name.lower().lstrip("*.")
-            for certificate in payload[:100]
-            for name in str(certificate.get("name_value", "")).splitlines()
-            if name
-        })[:200]
-        issuers = sorted({
-            certificate.get("issuer_name")
-            for certificate in payload[:100]
-            if certificate.get("issuer_name")
-        })[:20]
+        names = sorted(
+            {
+                name.lower().lstrip("*.")
+                for certificate in payload[:100]
+                for name in str(certificate.get("name_value", "")).splitlines()
+                if name
+            }
+        )[:200]
+        issuers = sorted(
+            {
+                certificate.get("issuer_name")
+                for certificate in payload[:100]
+                if certificate.get("issuer_name")
+            }
+        )[:20]
         latest = max(
             (certificate.get("not_after", "") for certificate in payload[:100]),
             default=None,

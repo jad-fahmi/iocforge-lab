@@ -214,7 +214,9 @@ class HistoryStore:
             ).fetchall()
         return {
             "verdict_counts": {row["verdict"]: row["count"] for row in verdict_rows},
-            "investigation_counts": {row["status"]: row["count"] for row in investigation_rows},
+            "investigation_counts": {
+                row["status"]: row["count"] for row in investigation_rows
+            },
             "recent_enrichments": self.list_enrichments(limit=recent_limit),
         }
 
@@ -237,11 +239,19 @@ class HistoryStore:
         analyst_notes: str | None = None,
     ) -> dict[str, Any] | None:
         """Update analyst-managed fields and preserve a timestamped audit event."""
-        if status and status not in {"open", "triaged", "benign", "malicious", "closed"}:
+        if status and status not in {
+            "open",
+            "triaged",
+            "benign",
+            "malicious",
+            "closed",
+        }:
             raise ValueError("invalid indicator status")
         fields: dict[str, Any] = {}
         if tags is not None:
-            fields["tags"] = json.dumps(sorted({tag.strip().lower() for tag in tags if tag.strip()}))
+            fields["tags"] = json.dumps(
+                sorted({tag.strip().lower() for tag in tags if tag.strip()})
+            )
         if status is not None:
             fields["status"] = status
         if analyst_notes is not None:
@@ -307,14 +317,24 @@ class HistoryStore:
             ).fetchone()
             if not exists:
                 return None
-            data = {"verdict_override": verdict, "override_reason": reason, "override_at": timestamp}
+            data = {
+                "verdict_override": verdict,
+                "override_reason": reason,
+                "override_at": timestamp,
+            }
             self.conn.execute(
                 "UPDATE indicators SET verdict_override = ?, override_reason = ?, override_at = ? "
-                "WHERE ioc = ?", (verdict, reason, timestamp, ioc),
+                "WHERE ioc = ?",
+                (verdict, reason, timestamp, ioc),
             )
             self.conn.execute(
                 "INSERT INTO indicator_events(ioc, event_type, data_json, created_at) VALUES (?, ?, ?, ?)",
-                (ioc, "verdict_override_set", json.dumps(data, sort_keys=True), timestamp),
+                (
+                    ioc,
+                    "verdict_override_set",
+                    json.dumps(data, sort_keys=True),
+                    timestamp,
+                ),
             )
             self.conn.commit()
         return self.indicator(ioc)
@@ -331,7 +351,8 @@ class HistoryStore:
             if row["verdict_override"] is not None:
                 self.conn.execute(
                     "UPDATE indicators SET verdict_override = NULL, override_reason = NULL, "
-                    "override_at = NULL WHERE ioc = ?", (ioc,),
+                    "override_at = NULL WHERE ioc = ?",
+                    (ioc,),
                 )
                 self.conn.execute(
                     "INSERT INTO indicator_events(ioc, event_type, data_json, created_at) VALUES (?, ?, ?, ?)",
@@ -352,7 +373,10 @@ class HistoryStore:
                 raise RuntimeError("failed to create investigation")
             investigation_id = int(cursor.lastrowid)
             self._record_investigation_event(
-                investigation_id, "investigation_created", {"title": title.strip()}, timestamp
+                investigation_id,
+                "investigation_created",
+                {"title": title.strip()},
+                timestamp,
             )
             self.conn.commit()
         return self.investigation(investigation_id) or {}
@@ -366,13 +390,16 @@ class HistoryStore:
                 return None
             indicators = self.conn.execute(
                 "SELECT ioc FROM investigation_indicators WHERE investigation_id = ? "
-                "ORDER BY added_at", (investigation_id,)
+                "ORDER BY added_at",
+                (investigation_id,),
             ).fetchall()
         result = dict(row)
         result["indicators"] = [item["ioc"] for item in indicators]
         return result
 
-    def list_investigations(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+    def list_investigations(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 500))
         offset = max(0, offset)
         with self._lock:
@@ -424,7 +451,8 @@ class HistoryStore:
                 [*fields.values(), timestamp, investigation_id],
             )
             event_type = (
-                "investigation_status_updated" if set(fields) == {"status"}
+                "investigation_status_updated"
+                if set(fields) == {"status"}
                 else "investigation_updated"
             )
             self._record_investigation_event(
@@ -480,7 +508,11 @@ class HistoryStore:
         ]
 
     def _record_investigation_event(
-        self, investigation_id: int, event_type: str, data: dict[str, Any], timestamp: str
+        self,
+        investigation_id: int,
+        event_type: str,
+        data: dict[str, Any],
+        timestamp: str,
     ) -> None:
         self.conn.execute(
             "INSERT INTO investigation_events(investigation_id, event_type, data_json, created_at) "
@@ -524,7 +556,12 @@ class HistoryStore:
                 WHERE source_ioc = ? AND target_ioc = ? AND relationship_type = ?
                   AND evidence_source = ?
                 """,
-                (source_ioc, target_ioc, relationship_type.strip(), evidence_source.strip() or "analyst"),
+                (
+                    source_ioc,
+                    target_ioc,
+                    relationship_type.strip(),
+                    evidence_source.strip() or "analyst",
+                ),
             ).fetchone()
         return dict(row)
 
@@ -543,8 +580,13 @@ class HistoryStore:
 
     def relationship_graph(self, ioc: str, limit: int = 100) -> dict[str, Any]:
         edges = self.relationships(ioc, limit=limit)
-        nodes = sorted({ioc, *(edge["source_ioc"] for edge in edges),
-                        *(edge["target_ioc"] for edge in edges)})
+        nodes = sorted(
+            {
+                ioc,
+                *(edge["source_ioc"] for edge in edges),
+                *(edge["target_ioc"] for edge in edges),
+            }
+        )
         return {"nodes": [{"id": node} for node in nodes], "edges": edges}
 
     def close(self) -> None:

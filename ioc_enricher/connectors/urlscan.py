@@ -59,7 +59,9 @@ class Urlscan(Connector):
             "uniq_ips": stats.get("uniqIPs"),
             "uniq_domains": stats.get("uniqDomains"),
         }
-        tags = [value for value in (page.get("country"), task.get("visibility")) if value]
+        tags = [
+            value for value in (page.get("country"), task.get("visibility")) if value
+        ]
         return SourceResult(
             source=self.name,
             ioc=ioc,

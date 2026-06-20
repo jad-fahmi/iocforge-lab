@@ -53,20 +53,31 @@ class ThreatFox(Connector):
             for record in records
             if str(record.get("confidence_level", "")).isdigit()
         ]
-        tags = sorted({
-            tag
-            for record in records
-            for tag in record.get("tags", []) + [record.get("malware", "")]
-            if tag
-        })[:20]
+        tags = sorted(
+            {
+                tag
+                for record in records
+                for tag in record.get("tags", []) + [record.get("malware", "")]
+                if tag
+            }
+        )[:20]
         raw = {
             "ioc_count": len(records),
-            "threat_types": sorted({record.get("threat_type") for record in records
-                                    if record.get("threat_type")}),
-            "malware": sorted({record.get("malware") for record in records
-                                if record.get("malware")}),
-            "references": [record.get("reference") for record in records[:10]
-                           if record.get("reference")],
+            "threat_types": sorted(
+                {
+                    record.get("threat_type")
+                    for record in records
+                    if record.get("threat_type")
+                }
+            ),
+            "malware": sorted(
+                {record.get("malware") for record in records if record.get("malware")}
+            ),
+            "references": [
+                record.get("reference")
+                for record in records[:10]
+                if record.get("reference")
+            ],
         }
         return SourceResult(
             source=self.name,
@@ -77,5 +88,6 @@ class ThreatFox(Connector):
             score=max(confidence, default=0.8),
             raw=raw,
             tags=tags,
-            observed_at=records[0].get("last_seen_utc") or records[0].get("first_seen_utc"),
+            observed_at=records[0].get("last_seen_utc")
+            or records[0].get("first_seen_utc"),
         )

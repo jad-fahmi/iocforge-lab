@@ -33,7 +33,9 @@ class AbuseIPDB(Connector):
             found=True,
             malicious=confidence >= 25,
             score=round(confidence / 100, 3),
-            raw={"abuseConfidenceScore": confidence,
-                 "totalReports": data.get("totalReports")},
+            raw={
+                "abuseConfidenceScore": confidence,
+                "totalReports": data.get("totalReports"),
+            },
             tags=[data["usageType"]] if data.get("usageType") else [],
         )

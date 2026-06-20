@@ -37,7 +37,9 @@ def test_versioned_enrich_endpoint_returns_typed_payload(monkeypatch):
 
 
 def test_api_rate_limit_returns_retry_headers(monkeypatch):
-    monkeypatch.setattr(api_module, "rate_limiter", RateLimiter(limit=1, window_seconds=60))
+    monkeypatch.setattr(
+        api_module, "rate_limiter", RateLimiter(limit=1, window_seconds=60)
+    )
     client = _client(monkeypatch)
 
     first = client.get("/api/v1/providers")
@@ -92,7 +94,17 @@ def test_stix_export_endpoint_returns_a_stix_21_bundle(monkeypatch):
 def test_stix_import_endpoint_extracts_validated_indicators(monkeypatch):
     response = _client(monkeypatch).post(
         "/api/v1/interoperability/stix/import",
-        json={"bundle": {"type": "bundle", "objects": [{"type": "indicator", "pattern": "[ipv4-addr:value = '198.51.100.9']"}]}},
+        json={
+            "bundle": {
+                "type": "bundle",
+                "objects": [
+                    {
+                        "type": "indicator",
+                        "pattern": "[ipv4-addr:value = '198.51.100.9']",
+                    }
+                ],
+            }
+        },
     )
 
     assert response.status_code == 200
@@ -113,7 +125,13 @@ def test_misp_export_endpoint_returns_unpublished_event(monkeypatch):
 def test_misp_import_endpoint_extracts_validated_attributes(monkeypatch):
     response = _client(monkeypatch).post(
         "/api/v1/interoperability/misp/import",
-        json={"event": {"Event": {"Attribute": [{"type": "url", "value": "https://evil.example/path"}]}}},
+        json={
+            "event": {
+                "Event": {
+                    "Attribute": [{"type": "url", "value": "https://evil.example/path"}]
+                }
+            }
+        },
     )
 
     assert response.status_code == 200
@@ -147,9 +165,15 @@ def test_history_endpoint_filters_and_paginates(monkeypatch, tmp_path):
     assert response.json()["limit"] == 1
 
 
-def test_dashboard_endpoint_exposes_provider_and_persisted_metrics(monkeypatch, tmp_path):
+def test_dashboard_endpoint_exposes_provider_and_persisted_metrics(
+    monkeypatch, tmp_path
+):
     store = HistoryStore(tmp_path / "history.db")
-    store.record(EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN, verdict="malicious"))
+    store.record(
+        EnrichmentResult(
+            ioc="evil.example", ioc_type=IocType.DOMAIN, verdict="malicious"
+        )
+    )
     engine = Engine(Config(), history=store)
     engine.connectors = []
     monkeypatch.setattr(api_module, "get_engine", lambda: engine)
@@ -180,7 +204,9 @@ def test_indicator_metadata_endpoints(monkeypatch, tmp_path):
     assert events.json()[0]["event_type"] == "indicator_updated"
 
 
-def test_verdict_override_endpoint_requires_reason_and_can_be_cleared(monkeypatch, tmp_path):
+def test_verdict_override_endpoint_requires_reason_and_can_be_cleared(
+    monkeypatch, tmp_path
+):
     store = HistoryStore(tmp_path / "history.db")
     store.record(EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN))
     engine = Engine(Config(), history=store)
@@ -211,7 +237,8 @@ def test_investigation_endpoints_group_indicators(monkeypatch, tmp_path):
     client = TestClient(api_module.app)
 
     created = client.post(
-        "/api/v1/investigations", json={"title": "Malware triage", "description": "Review"}
+        "/api/v1/investigations",
+        json={"title": "Malware triage", "description": "Review"},
     )
     investigation_id = created.json()["id"]
     updated = client.post(
@@ -221,7 +248,10 @@ def test_investigation_endpoints_group_indicators(monkeypatch, tmp_path):
 
     assert created.status_code == 201
     assert updated.json()["indicators"] == ["evil.example"]
-    assert client.get(f"/api/v1/investigations/{investigation_id}/events").status_code == 200
+    assert (
+        client.get(f"/api/v1/investigations/{investigation_id}/events").status_code
+        == 200
+    )
 
 
 def test_investigation_endpoint_updates_lifecycle(monkeypatch, tmp_path):

@@ -84,12 +84,19 @@ def indicator_for(result):
         "modified": timestamp,
         "name": f"IOCForge {result.ioc_type.value}: {result.ioc}",
         "description": f"IOCForge enrichment verdict: {result.verdict}.",
-        "indicator_types": ["malicious-activity" if result.verdict in {"malicious", "suspicious"} else "anomalous-activity"],
+        "indicator_types": [
+            "malicious-activity"
+            if result.verdict in {"malicious", "suspicious"}
+            else "anomalous-activity"
+        ],
         "pattern": pattern,
         "pattern_type": "stix",
         "valid_from": timestamp,
         "confidence": round(max(0, min(1, result.score)) * 100),
-        "labels": [f"iocforge:verdict={result.verdict}", f"iocforge:confidence={result.confidence}"],
+        "labels": [
+            f"iocforge:verdict={result.verdict}",
+            f"iocforge:confidence={result.confidence}",
+        ],
     }
 
 
@@ -119,11 +126,17 @@ def _parse_pattern(pattern):
     match = PATTERN_RE.fullmatch(pattern)
     if match is None:
         return None
-    ioc_type = HASH_ALGORITHMS_INV.get(match.group("hash")) if match.group("hash") else OBSERVABLE_TYPES[match.group("observable")]
+    ioc_type = (
+        HASH_ALGORITHMS_INV.get(match.group("hash"))
+        if match.group("hash")
+        else OBSERVABLE_TYPES[match.group("observable")]
+    )
     value = match.group("value").replace("\\'", "'").replace("\\\\", "\\")
     if detect(value) != ioc_type:
         return None
     return normalize(value, ioc_type), ioc_type
 
 
-HASH_ALGORITHMS_INV = {algorithm: ioc_type for ioc_type, algorithm in HASH_ALGORITHMS.items()}
+HASH_ALGORITHMS_INV = {
+    algorithm: ioc_type for ioc_type, algorithm in HASH_ALGORITHMS.items()
+}

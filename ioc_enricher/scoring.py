@@ -70,7 +70,9 @@ def explain(result, settings=None):
         if source.malicious:
             evidence.append(item)
             if adjusted_weight:
-                weighted_signal += adjusted_weight * (source.score if source.score is not None else 1.0)
+                weighted_signal += adjusted_weight * (
+                    source.score if source.score is not None else 1.0
+                )
                 total_weight += adjusted_weight
         elif source.malicious is False:
             counter_evidence.append(item)
@@ -122,11 +124,16 @@ def _settings(settings):
     suspicious = float(thresholds["suspicious"])
     malicious = float(thresholds["malicious"])
     if not 0 <= suspicious <= malicious <= 1:
-        raise ValueError("scoring thresholds must satisfy 0 <= suspicious <= malicious <= 1")
-    return ({name: float(weight) for name, weight in weights.items()}, {
-        "suspicious": suspicious,
-        "malicious": malicious,
-    })
+        raise ValueError(
+            "scoring thresholds must satisfy 0 <= suspicious <= malicious <= 1"
+        )
+    return (
+        {name: float(weight) for name, weight in weights.items()},
+        {
+            "suspicious": suspicious,
+            "malicious": malicious,
+        },
+    )
 
 
 def confidence_for(evidence, counter_evidence, errors, no_data):
@@ -169,7 +176,11 @@ def reason_codes_for(source):
         if raw.get("noise"):
             codes.append("known_scanner")
     if _observed_at(source):
-        codes.append("recent_observation" if _freshness_factor(source) >= 0.75 else "stale_observation")
+        codes.append(
+            "recent_observation"
+            if _freshness_factor(source) >= 0.75
+            else "stale_observation"
+        )
     return codes
 
 

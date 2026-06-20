@@ -16,7 +16,10 @@ def test_history_migrates_and_preserves_snapshots(tmp_path):
     second_id = store.record(result, looked_up_at="2026-01-02T00:00:00+00:00")
 
     assert second_id > first_id
-    assert [item["score"] for item in store.list_enrichments("example.com")] == [0.8, 0.4]
+    assert [item["score"] for item in store.list_enrichments("example.com")] == [
+        0.8,
+        0.4,
+    ]
     assert store.indicator("example.com") == {
         "ioc": "example.com",
         "ioc_type": "domain",
@@ -33,8 +36,14 @@ def test_history_migrates_and_preserves_snapshots(tmp_path):
 
 def test_dashboard_summary_aggregates_verdicts_and_case_states(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
-    store.record(EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN, verdict="malicious"))
-    store.record(EnrichmentResult(ioc="clean.example", ioc_type=IocType.DOMAIN, verdict="clean"))
+    store.record(
+        EnrichmentResult(
+            ioc="evil.example", ioc_type=IocType.DOMAIN, verdict="malicious"
+        )
+    )
+    store.record(
+        EnrichmentResult(ioc="clean.example", ioc_type=IocType.DOMAIN, verdict="clean")
+    )
     store.create_investigation("Triage")
 
     summary = store.dashboard_summary()
@@ -83,16 +92,18 @@ def test_verdict_override_requires_reason_and_is_audited(tmp_path):
     else:
         raise AssertionError("an override must require a reason")
 
-    overridden = store.set_verdict_override("evil.example", "malicious", "EDR confirmation")
+    overridden = store.set_verdict_override(
+        "evil.example", "malicious", "EDR confirmation"
+    )
     cleared = store.clear_verdict_override("evil.example")
 
     assert overridden is not None
     assert overridden["verdict_override"] == "malicious"
     assert cleared is not None
     assert cleared["verdict_override"] is None
-    assert [event["event_type"] for event in store.indicator_events("evil.example")[:2]] == [
-        "verdict_override_cleared", "verdict_override_set"
-    ]
+    assert [
+        event["event_type"] for event in store.indicator_events("evil.example")[:2]
+    ] == ["verdict_override_cleared", "verdict_override_set"]
 
 
 def test_investigation_groups_indicators_and_preserves_events(tmp_path):
@@ -103,7 +114,9 @@ def test_investigation_groups_indicators_and_preserves_events(tmp_path):
     store.add_investigation_indicator(investigation["id"], "evil.example")
 
     assert updated["indicators"] == ["evil.example"]
-    assert [event["event_type"] for event in store.investigation_events(investigation["id"])] == [
+    assert [
+        event["event_type"] for event in store.investigation_events(investigation["id"])
+    ] == [
         "indicator_added",
         "investigation_created",
     ]
@@ -128,7 +141,11 @@ def test_investigation_lifecycle_update_is_audited(tmp_path):
 def test_relationship_graph_returns_nodes_and_evidence(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     relationship = store.add_relationship(
-        "evil.example", "203.0.113.7", "resolves_to", confidence=0.8, evidence_source="dns"
+        "evil.example",
+        "203.0.113.7",
+        "resolves_to",
+        confidence=0.8,
+        evidence_source="dns",
     )
 
     graph = store.relationship_graph("evil.example")

@@ -56,7 +56,10 @@ def test_url_host_is_normalized_without_changing_case_sensitive_path():
     url = "HTTPS://BÜCHER.example/CaseSensitive?Key=Value"
 
     assert detect(url) == IocType.URL
-    assert normalize(url, IocType.URL) == "https://xn--bcher-kva.example/CaseSensitive?Key=Value"
+    assert (
+        normalize(url, IocType.URL)
+        == "https://xn--bcher-kva.example/CaseSensitive?Key=Value"
+    )
 
 
 def test_malformed_url_and_invalid_unicode_email_are_unknown_not_exceptions():
