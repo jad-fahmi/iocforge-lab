@@ -222,6 +222,24 @@ def test_investigation_endpoints_group_indicators(monkeypatch, tmp_path):
     assert client.get(f"/api/v1/investigations/{investigation_id}/events").status_code == 200
 
 
+def test_investigation_endpoint_updates_lifecycle(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+    client = TestClient(api_module.app)
+    created = client.post("/api/v1/investigations", json={"title": "Case"})
+
+    response = client.patch(
+        f"/api/v1/investigations/{created.json()['id']}",
+        json={"description": "Remediated", "status": "closed"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "closed"
+    assert response.json()["description"] == "Remediated"
+
+
 def test_investigation_report_endpoint_returns_markdown(monkeypatch, tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     store.record(EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN))

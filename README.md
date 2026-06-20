@@ -151,6 +151,10 @@ or triggers enrichment as a side effect.
 `GET /api/v1/investigations/{id}/report` renders a Markdown case report from
 persisted investigation, indicator, enrichment, and timeline state.
 
+`PATCH /api/v1/investigations/{id}` updates the title or description and moves
+a case through `open`, `triaged`, and `closed` states. Every change is retained
+in the investigation timeline.
+
 `GET /api/v1/dashboard` supplies provider readiness, persisted verdict counts,
 investigation lifecycle counts, and recent enrichment records for analyst UI clients.
 

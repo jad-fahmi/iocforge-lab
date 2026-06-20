@@ -206,6 +206,12 @@ class InvestigationCreateRequest(BaseModel):
     description: str = Field(default="", max_length=10_000)
 
 
+class InvestigationUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=10_000)
+    status: Literal["open", "triaged", "closed"] | None = None
+
+
 class InvestigationIndicatorRequest(BaseModel):
     ioc: str = Field(min_length=1, max_length=4096)
 
@@ -473,6 +479,29 @@ def list_investigations(
 )
 def get_investigation(investigation_id: int) -> dict[str, Any]:
     investigation = _history_store().investigation(investigation_id)
+    if investigation is None:
+        raise HTTPException(status_code=404, detail="investigation not found")
+    return investigation
+
+
+@api.patch(
+    "/investigations/{investigation_id}",
+    response_model=InvestigationResponse,
+    tags=["investigations"],
+)
+def update_investigation(
+    investigation_id: int, request: InvestigationUpdateRequest
+) -> dict[str, Any]:
+    """Update case metadata or transition its lifecycle state."""
+    try:
+        investigation = _history_store().update_investigation(
+            investigation_id,
+            title=request.title,
+            description=request.description,
+            status=request.status,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     if investigation is None:
         raise HTTPException(status_code=404, detail="investigation not found")
     return investigation

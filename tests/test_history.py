@@ -109,6 +109,22 @@ def test_investigation_groups_indicators_and_preserves_events(tmp_path):
     ]
 
 
+def test_investigation_lifecycle_update_is_audited(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    investigation = store.create_investigation("Credential phishing")
+
+    updated = store.update_investigation(
+        investigation["id"], description="Contained", status="closed"
+    )
+
+    assert updated is not None
+    assert updated["status"] == "closed"
+    assert updated["description"] == "Contained"
+    event = store.investigation_events(investigation["id"])[0]
+    assert event["event_type"] == "investigation_updated"
+    assert event["data"] == {"description": "Contained", "status": "closed"}
+
+
 def test_relationship_graph_returns_nodes_and_evidence(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     relationship = store.add_relationship(

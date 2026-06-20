@@ -387,6 +387,52 @@ class HistoryStore:
                 investigations.append(investigation)
         return investigations
 
+    def update_investigation(
+        self,
+        investigation_id: int,
+        title: str | None = None,
+        description: str | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Update case metadata and retain an auditable lifecycle event."""
+        if status is not None and status not in {"open", "triaged", "closed"}:
+            raise ValueError("invalid investigation status")
+
+        fields: dict[str, Any] = {}
+        if title is not None:
+            title = title.strip()
+            if not title:
+                raise ValueError("investigation title is required")
+            fields["title"] = title
+        if description is not None:
+            fields["description"] = description.strip()
+        if status is not None:
+            fields["status"] = status
+        if not fields:
+            return self.investigation(investigation_id)
+
+        timestamp = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            existing = self.conn.execute(
+                "SELECT id FROM investigations WHERE id = ?", (investigation_id,)
+            ).fetchone()
+            if not existing:
+                return None
+            assignments = ", ".join(f"{field} = ?" for field in fields)
+            self.conn.execute(
+                f"UPDATE investigations SET {assignments}, updated_at = ? WHERE id = ?",
+                [*fields.values(), timestamp, investigation_id],
+            )
+            event_type = (
+                "investigation_status_updated" if set(fields) == {"status"}
+                else "investigation_updated"
+            )
+            self._record_investigation_event(
+                investigation_id, event_type, fields, timestamp
+            )
+            self.conn.commit()
+        return self.investigation(investigation_id)
+
     def add_investigation_indicator(
         self, investigation_id: int, ioc: str
     ) -> dict[str, Any] | None:
