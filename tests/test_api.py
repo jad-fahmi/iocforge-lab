@@ -24,6 +24,8 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
     assert "Create investigation" in response.text
     assert "Add to investigation" in response.text
     assert "const API = '/api/v1'" in response.text
+    assert "p.available" in response.text
+    assert "p.healthy" not in response.text
 
 
 def test_versioned_enrich_endpoint_returns_typed_payload(monkeypatch):
