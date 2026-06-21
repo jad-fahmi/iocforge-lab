@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -13,6 +14,25 @@ from ioc_enricher.models import EnrichmentResult, SourceResult
 from ioc_enricher.scoring import METHODOLOGY_VERSION, score
 
 DEFAULT_HISTORY_DB = Path.home() / ".local" / "share" / "iocforge-lab" / "history.db"
+log = logging.getLogger(__name__)
+
+
+def _normalize_timestamp(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("timestamps must use ISO 8601 format") from error
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc).isoformat()
+
+
+def _relationship_dict(row: sqlite3.Row) -> dict[str, Any]:
+    relationship = dict(row)
+    relationship["attributes"] = json.loads(relationship.pop("attributes_json"))
+    return relationship
 
 
 class HistoryStore:
@@ -26,6 +46,7 @@ class HistoryStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(self.path), check_same_thread=False)
+        self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.row_factory = sqlite3.Row
         self._lock = threading.Lock()
         self._migrate()
@@ -227,6 +248,55 @@ class HistoryStore:
                             migrated_source, row["id"], ordinal
                         )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (7)")
+            if 8 not in applied:
+                self.conn.executescript(
+                    """
+                    CREATE TABLE indicator_relationships_v8 (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        source_ioc TEXT NOT NULL,
+                        target_ioc TEXT NOT NULL,
+                        relationship_type TEXT NOT NULL,
+                        confidence REAL NOT NULL DEFAULT 1.0,
+                        evidence_source TEXT NOT NULL DEFAULT 'analyst',
+                        created_at TEXT NOT NULL,
+                        valid_from TEXT NOT NULL,
+                        valid_to TEXT,
+                        evidence_observation_id INTEGER,
+                        attributes_json TEXT NOT NULL DEFAULT '{}',
+                        FOREIGN KEY(evidence_observation_id)
+                            REFERENCES evidence_observations(id),
+                        CHECK(valid_to IS NULL OR valid_to >= valid_from)
+                    );
+                    INSERT INTO indicator_relationships_v8(
+                        id, source_ioc, target_ioc, relationship_type, confidence,
+                        evidence_source, created_at, valid_from
+                    ) SELECT id, source_ioc, target_ioc, relationship_type, confidence,
+                             evidence_source, created_at, created_at
+                      FROM indicator_relationships;
+                    DROP TABLE indicator_relationships;
+                    ALTER TABLE indicator_relationships_v8
+                      RENAME TO indicator_relationships;
+                    CREATE INDEX idx_relationships_source
+                    ON indicator_relationships(source_ioc);
+                    CREATE INDEX idx_relationships_target
+                    ON indicator_relationships(target_ioc);
+                    CREATE INDEX idx_relationships_evidence
+                    ON indicator_relationships(evidence_observation_id);
+                    CREATE INDEX idx_relationships_recorded
+                    ON indicator_relationships(created_at DESC);
+                    CREATE UNIQUE INDEX idx_relationships_evidence_edge
+                    ON indicator_relationships(
+                        evidence_observation_id, source_ioc, target_ioc,
+                        relationship_type, valid_from, COALESCE(valid_to, '')
+                    ) WHERE evidence_observation_id IS NOT NULL;
+                    CREATE UNIQUE INDEX idx_relationships_analyst_edge
+                    ON indicator_relationships(
+                        source_ioc, target_ioc, relationship_type, evidence_source,
+                        valid_from, COALESCE(valid_to, '')
+                    ) WHERE evidence_observation_id IS NULL;
+                    """
+                )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (8)")
             self.conn.commit()
 
     def record(self, result: Any, looked_up_at: str | None = None) -> int:
@@ -270,6 +340,35 @@ class HistoryStore:
                 observation_id = self._store_observation(
                     source, enrichment_id, ordinal
                 )
+                for related in source.get("related_entities", []):
+                    if not all(
+                        related.get(key)
+                        for key in ("source_ioc", "target_ioc", "relationship_type")
+                    ):
+                        continue
+                    try:
+                        self._insert_relationship(
+                            source_ioc=related["source_ioc"],
+                            target_ioc=related["target_ioc"],
+                            relationship_type=related["relationship_type"],
+                            confidence=related.get("confidence", 1.0),
+                            evidence_source=source["source"],
+                            evidence_observation_id=observation_id,
+                            valid_from=(
+                                related.get("valid_from")
+                                or related.get("observed_at")
+                                or source.get("observed_at")
+                                or source.get("collected_at")
+                            ),
+                            valid_to=related.get("valid_to"),
+                            attributes=related.get("attributes", {}),
+                        )
+                    except (ValueError, TypeError, AttributeError) as error:
+                        log.warning(
+                            "skipped malformed relationship from %s: %s",
+                            source["source"],
+                            error,
+                        )
                 if ordinal < len(trace_observations):
                     trace_observations[ordinal]["observation_id"] = observation_id
             self.conn.execute(
@@ -805,59 +904,230 @@ class HistoryStore:
         relationship_type: str,
         confidence: float = 1.0,
         evidence_source: str = "analyst",
+        evidence_observation_id: int | None = None,
+        valid_from: str | None = None,
+        valid_to: str | None = None,
+        attributes: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        if source_ioc == target_ioc:
-            raise ValueError("an indicator cannot relate to itself")
-        if not 0 <= confidence <= 1:
-            raise ValueError("relationship confidence must be between 0 and 1")
-        timestamp = datetime.now(timezone.utc).isoformat()
         with self._lock:
-            self.conn.execute(
-                """
-                INSERT OR IGNORE INTO indicator_relationships(
-                    source_ioc, target_ioc, relationship_type, confidence, evidence_source, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    source_ioc,
-                    target_ioc,
-                    relationship_type.strip(),
-                    confidence,
-                    evidence_source.strip() or "analyst",
-                    timestamp,
-                ),
+            edge = self._insert_relationship(
+                source_ioc=source_ioc,
+                target_ioc=target_ioc,
+                relationship_type=relationship_type,
+                confidence=confidence,
+                evidence_source=evidence_source,
+                evidence_observation_id=evidence_observation_id,
+                valid_from=valid_from,
+                valid_to=valid_to,
+                attributes=attributes,
             )
             self.conn.commit()
-            row = self.conn.execute(
-                """
-                SELECT * FROM indicator_relationships
-                WHERE source_ioc = ? AND target_ioc = ? AND relationship_type = ?
-                  AND evidence_source = ?
-                """,
-                (
-                    source_ioc,
-                    target_ioc,
-                    relationship_type.strip(),
-                    evidence_source.strip() or "analyst",
-                ),
-            ).fetchone()
-        return dict(row)
+            return edge
 
-    def relationships(self, ioc: str, limit: int = 100) -> list[dict[str, Any]]:
+    def _insert_relationship(
+        self,
+        source_ioc: str,
+        target_ioc: str,
+        relationship_type: str,
+        confidence: float,
+        evidence_source: str,
+        evidence_observation_id: int | None = None,
+        valid_from: str | None = None,
+        valid_to: str | None = None,
+        attributes: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        source_ioc = source_ioc.strip()
+        target_ioc = target_ioc.strip()
+        if source_ioc == target_ioc:
+            raise ValueError("an indicator cannot relate to itself")
+        if not source_ioc or not target_ioc:
+            raise ValueError("relationship endpoints must not be empty")
+        if not 0 <= confidence <= 1:
+            raise ValueError("relationship confidence must be between 0 and 1")
+        relationship_type = relationship_type.strip()
+        if not relationship_type:
+            raise ValueError("relationship type must not be empty")
+        timestamp = datetime.now(timezone.utc).isoformat()
+        requested_valid_from = _normalize_timestamp(valid_from)
+        requested_valid_to = _normalize_timestamp(valid_to)
+        evidence_source = evidence_source.strip() or "analyst"
+        attributes = attributes or {}
+        if evidence_observation_id is not None:
+            observation = self.conn.execute(
+                "SELECT source, observation_json FROM evidence_observations WHERE id = ?",
+                (evidence_observation_id,),
+            ).fetchone()
+            if observation is None:
+                raise ValueError("evidence observation was not found")
+            if observation["source"] != evidence_source:
+                raise ValueError("evidence source does not match the observation")
+            evidence = json.loads(observation["observation_json"])
+            candidates = [
+                item
+                for item in evidence.get("related_entities", [])
+                if item.get("source_ioc") == source_ioc
+                and item.get("target_ioc") == target_ioc
+                and item.get("relationship_type") == relationship_type
+            ]
+            support = next(
+                (
+                    item
+                    for item in candidates
+                    if (
+                        requested_valid_from is None
+                        or _normalize_timestamp(
+                            item.get("valid_from")
+                            or item.get("observed_at")
+                            or evidence.get("observed_at")
+                            or evidence.get("collected_at")
+                        )
+                        == requested_valid_from
+                    )
+                    and (
+                        requested_valid_to is None
+                        or _normalize_timestamp(item.get("valid_to"))
+                        == requested_valid_to
+                    )
+                    and (
+                        not attributes
+                        or attributes == item.get("attributes", {})
+                    )
+                ),
+                None,
+            )
+            if support is None:
+                raise ValueError("the observation does not support this relationship")
+            valid_from = (
+                _normalize_timestamp(
+                    support.get("valid_from")
+                    or support.get("observed_at")
+                    or evidence.get("observed_at")
+                    or evidence.get("collected_at")
+                )
+                or timestamp
+            )
+            valid_to = _normalize_timestamp(support.get("valid_to"))
+            if not attributes:
+                attributes = support.get("attributes", {})
+        else:
+            valid_from = requested_valid_from or timestamp
+            valid_to = requested_valid_to
+        if valid_to and valid_to < valid_from:
+            raise ValueError("relationship valid_to must not precede valid_from")
+        self.conn.execute(
+            """
+            INSERT OR IGNORE INTO indicator_relationships(
+                source_ioc, target_ioc, relationship_type, confidence,
+                evidence_source, created_at, valid_from, valid_to,
+                evidence_observation_id, attributes_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                source_ioc,
+                target_ioc,
+                relationship_type,
+                confidence,
+                evidence_source,
+                timestamp,
+                valid_from,
+                valid_to,
+                evidence_observation_id,
+                json.dumps(attributes, sort_keys=True),
+            ),
+        )
+        row = self.conn.execute(
+            """
+            SELECT * FROM indicator_relationships
+            WHERE source_ioc = ? AND target_ioc = ? AND relationship_type = ?
+              AND evidence_source = ? AND evidence_observation_id IS ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (
+                source_ioc,
+                target_ioc,
+                relationship_type,
+                evidence_source,
+                evidence_observation_id,
+            ),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("failed to persist indicator relationship")
+        return _relationship_dict(row)
+
+    def relationships(
+        self, ioc: str, limit: int = 100, as_of: str | None = None
+    ) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 500))
+        at = _normalize_timestamp(as_of)
+        time_filter = (
+            " AND created_at <= ? AND valid_from <= ? "
+            "AND (valid_to IS NULL OR valid_to >= ?)"
+            if at
+            else ""
+        )
+        params: list[Any] = [ioc, ioc]
+        if at:
+            params.extend([at, at, at])
+        params.append(limit)
         with self._lock:
             rows = self.conn.execute(
-                """
+                f"""
                 SELECT * FROM indicator_relationships
-                WHERE source_ioc = ? OR target_ioc = ?
+                WHERE (source_ioc = ? OR target_ioc = ?){time_filter}
                 ORDER BY id DESC LIMIT ?
                 """,
-                (ioc, ioc, limit),
+                params,
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [_relationship_dict(row) for row in rows]
 
-    def relationship_graph(self, ioc: str, limit: int = 100) -> dict[str, Any]:
-        edges = self.relationships(ioc, limit=limit)
+    def relationship_graph(
+        self,
+        ioc: str,
+        limit: int = 100,
+        max_depth: int = 1,
+        as_of: str | None = None,
+    ) -> dict[str, Any]:
+        limit = max(1, min(limit, 500))
+        max_depth = max(1, min(max_depth, 5))
+        at = _normalize_timestamp(as_of)
+        edges_by_id: dict[int, dict[str, Any]] = {}
+        visited = {ioc}
+        frontier = [ioc]
+        depth = 0
+        while frontier and depth < max_depth and len(edges_by_id) < limit:
+            next_frontier: dict[str, float] = {}
+            for current in frontier:
+                incident = self.relationships(
+                    current,
+                    limit=limit - len(edges_by_id),
+                    as_of=at,
+                )
+                incident.sort(
+                    key=lambda edge: (-float(edge["confidence"]), -int(edge["id"]))
+                )
+                for edge in incident:
+                    edges_by_id.setdefault(edge["id"], edge)
+                    other = (
+                        edge["target_ioc"]
+                        if edge["source_ioc"] == current
+                        else edge["source_ioc"]
+                    )
+                    if other not in visited:
+                        visited.add(other)
+                        next_frontier[other] = max(
+                            next_frontier.get(other, 0.0),
+                            float(edge["confidence"]),
+                        )
+                    if len(edges_by_id) >= limit:
+                        break
+                if len(edges_by_id) >= limit:
+                    break
+            frontier = sorted(
+                next_frontier,
+                key=lambda node: (-next_frontier[node], node),
+            )
+            depth += 1
+        edges = sorted(edges_by_id.values(), key=lambda edge: edge["id"])
         nodes = sorted(
             {
                 ioc,
@@ -865,7 +1135,13 @@ class HistoryStore:
                 *(edge["target_ioc"] for edge in edges),
             }
         )
-        return {"nodes": [{"id": node} for node in nodes], "edges": edges}
+        return {
+            "nodes": [{"id": node} for node in nodes],
+            "edges": edges,
+            "max_depth": max_depth,
+            "as_of": at,
+            "truncated": len(edges) >= limit,
+        }
 
     def close(self) -> None:
         self.conn.close()

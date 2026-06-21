@@ -16,7 +16,7 @@ def test_passive_dns_returns_historical_records_without_a_verdict_signal():
         )
     )
 
-    result = PassiveDNS().enrich("example.com", IocType.DOMAIN)
+    result = PassiveDNS().run("example.com", IocType.DOMAIN)
 
     assert route.called
     assert route.calls[0].request.headers["dribble-disable-active-query"] == "1"
@@ -25,8 +25,19 @@ def test_passive_dns_returns_historical_records_without_a_verdict_signal():
     assert result.raw["record_count"] == 2
     assert result.tags == ["A", "MX"]
     assert result.observed_at == "2023-11-14T22:15:00+00:00"
-
-
+    assert [edge["target_ioc"] for edge in result.related_entities] == [
+        "203.0.113.5",
+        "mail.example.com",
+    ]
+    assert result.related_entities[0]["relationship_type"] == "resolves_to"
+    assert result.related_entities[0]["valid_from"] == (
+        "2023-11-14T22:13:20+00:00"
+    )
+    assert result.related_entities[0]["valid_to"] == (
+        "2023-11-14T22:13:20+00:00"
+    )
+    assert result.connector_version == "2"
+    assert result.normalization_version == "2"
 @respx.mock
 def test_passive_dns_returns_no_data_for_a_missing_observation():
     respx.get("https://www.circl.lu/pdns/query/192.0.2.1").mock(

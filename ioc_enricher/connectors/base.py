@@ -18,6 +18,7 @@ class Connector(abc.ABC):
 
     name = "base"
     version = "1"
+    normalization_version = "1"
     supported: tuple = ()
     requires_api_key = True
 
@@ -94,6 +95,8 @@ class Connector(abc.ABC):
         result = self.enrich(ioc, ioc_type)
         if result.connector_version == "unknown":
             result.connector_version = self.version
+        if result.normalization_version == "1":
+            result.normalization_version = self.normalization_version
 
         # An expired result is never used as a normal cache hit. It can only
         # keep an investigation moving when the live provider is unavailable,
@@ -131,6 +134,7 @@ class Connector(abc.ABC):
             found=False,
             error=error,
             connector_version=self.version,
+            normalization_version=self.normalization_version,
         )
 
 

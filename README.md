@@ -70,7 +70,7 @@ Analysts can override a verdict through the API. An override requires a reason, 
 
 An investigation has a title, description, lifecycle state, indicators, enrichment history, and timeline. Cases can move through `open`, `triaged`, and `closed`. Changes to the case and analyst decisions are retained as events. A Markdown report can be generated from the persisted case state.
 
-The longer-term interface direction is to make these relationships visible as an evidence graph and chronological timeline. The graph should show why entities are connected and retain provenance for each observation. This is planned work; the current interface is a lightweight workbench, not yet a complete graph-based analyst environment.
+IOCForge records sourced, time-bounded IOC relationships from DNS, passive DNS, and certificate-transparency observations. Each provider-derived edge links to its supporting evidence observation. The API supports bounded graph traversal and time filtering; typed infrastructure entities and a graph-focused workbench remain in progress.
 
 ## Intelligence sources
 
@@ -176,7 +176,11 @@ ioc-enrich --extract ticket.txt --max-iocs 100 --fail-soft
 # Explain a decision and inspect prior observations
 ioc-enrich evil.example --explain
 ioc-enrich --history evil.example --history-limit 20
+ioc-enrich --replay 17
 ```
+
+`--replay` accepts the enrichment history ID shown by `--history` and outputs
+the original and recalculated scoring traces without querying providers.
 
 `--fail-on-malicious` returns a nonzero exit code when a malicious verdict is found. Use `-v` for operational logs and repeat it, or pass `--debug`, for connector-level debugging. Logs go to stderr so JSON, CSV, and report output remain machine-readable.
 
@@ -198,6 +202,10 @@ The versioned API includes:
 | `POST /api/v1/score/explain` | Explain a scoring result |
 | `GET /api/v1/providers` | Inspect provider capability and readiness |
 | `GET /api/v1/dashboard` | Read provider status, verdict counts, and recent records |
+| `GET /api/v1/history` | Browse saved enrichment snapshots |
+| `GET /api/v1/history/{enrichment_id}/replay` | Reproduce a saved decision from its stored evidence and scoring configuration |
+| `POST /api/v1/relationships` | Record an analyst relationship or one tied to a supporting observation |
+| `GET /api/v1/indicators/{ioc}/graph?depth=2&as_of=...` | Traverse relationships with depth, edge, and time bounds |
 | `GET /api/v1/investigations/{id}/report` | Render a Markdown case report |
 
 Investigation routes support creating and updating cases, changing lifecycle state, reviewing their timeline, and applying indicator verdict overrides. The API also provides STIX and MISP import/export routes under `/api/v1/interoperability/`.
@@ -219,7 +227,7 @@ MISP export returns an unpublished MISP-compatible event with mapped IOC attribu
 - Enrichment sends submitted indicators to whichever external providers are enabled. Review provider terms and your organization's data handling requirements before submitting sensitive indicators.
 - STIX support intentionally excludes compound pattern evaluation and unsupported indicator types.
 - MISP interoperability produces or consumes local JSON; IOCForge does not publish directly to a MISP server.
-- The browser workbench is lightweight and the evidence graph described above is planned rather than complete.
+- The browser workbench is lightweight and does not yet expose graph traversal, historical replay comparison, or typed infrastructure nodes.
 
 See [`docs/threat-model.md`](docs/threat-model.md) for operating assumptions and security details.
 

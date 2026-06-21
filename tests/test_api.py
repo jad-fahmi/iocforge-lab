@@ -5,7 +5,7 @@ from ioc_enricher.config import Config
 from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
 from ioc_enricher.ioc.types import IocType
-from ioc_enricher.models import EnrichmentResult
+from ioc_enricher.models import EnrichmentResult, SourceResult
 
 
 def _client(monkeypatch):
@@ -344,3 +344,47 @@ def test_relationship_endpoints_return_graph_data(monkeypatch, tmp_path):
 
     assert created.status_code == 201
     assert graph.json()["edges"][0]["target_ioc"] == "203.0.113.7"
+    assert graph.json()["max_depth"] == 1
+    invalid_time = client.get(
+        "/api/v1/indicators/evil.example/graph", params={"as_of": "not-a-date"}
+    )
+    assert invalid_time.status_code == 422
+
+
+def test_relationship_api_accepts_matching_observation_provenance(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.add(
+        SourceResult(
+            source="passive_dns",
+            ioc="example.com",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            related_entities=[
+                {
+                    "source_ioc": "example.com",
+                    "target_ioc": "203.0.113.7",
+                    "relationship_type": "resolves_to",
+                }
+            ],
+        )
+    )
+    enrichment_id = store.record(result)
+    observation_id = store.observations_for_enrichment(enrichment_id)[0]["id"]
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+
+    response = TestClient(api_module.app).post(
+        "/api/v1/relationships",
+        json={
+            "source_ioc": "example.com",
+            "target_ioc": "203.0.113.7",
+            "relationship_type": "resolves_to",
+            "evidence_source": "passive_dns",
+            "evidence_observation_id": observation_id,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["evidence_observation_id"] == observation_id

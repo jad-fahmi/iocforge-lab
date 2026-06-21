@@ -1,5 +1,7 @@
 """Certificate Transparency enrichment through crt.sh."""
 
+from datetime import datetime, timezone
+
 from ioc_enricher.connectors.base import Connector, log
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import SourceResult
@@ -11,6 +13,8 @@ class CrtSh(Connector):
     """Find certificate names and issuer metadata for a domain without a key."""
 
     name = "crtsh"
+    version = "2"
+    normalization_version = "2"
     requires_api_key = False
     supported = (IocType.DOMAIN,)
 
@@ -33,25 +37,49 @@ class CrtSh(Connector):
     def _parse(self, ioc, ioc_type, payload) -> SourceResult:
         if not isinstance(payload, list) or not payload:
             return self._empty(ioc, ioc_type)
+        certificates = [item for item in payload[:100] if isinstance(item, dict)]
         names = sorted(
             {
                 name.lower().lstrip("*.")
-                for certificate in payload[:100]
+                for certificate in certificates
                 for name in str(certificate.get("name_value", "")).splitlines()
                 if name
             }
         )[:200]
         issuers = sorted(
             {
-                certificate.get("issuer_name")
-                for certificate in payload[:100]
+                str(certificate.get("issuer_name"))
+                for certificate in certificates
                 if certificate.get("issuer_name")
             }
         )[:20]
         latest = max(
-            (certificate.get("not_after", "") for certificate in payload[:100]),
+            (str(certificate.get("not_after") or "") for certificate in certificates),
             default=None,
         )
+        related_entities = []
+        for certificate in certificates:
+            valid_from = _normalize_date(certificate.get("not_before"))
+            valid_to = _normalize_date(certificate.get("not_after"))
+            if valid_from and valid_to and valid_from > valid_to:
+                continue
+            for name in str(certificate.get("name_value", "")).splitlines():
+                target = name.lower().lstrip("*.").rstrip(".")
+                if not target or target == ioc.lower().rstrip("."):
+                    continue
+                related_entities.append(
+                    {
+                        "source_ioc": ioc,
+                        "target_ioc": target,
+                        "relationship_type": "certificate_name",
+                        "valid_from": valid_from,
+                        "valid_to": valid_to,
+                        "attributes": {
+                            "certificate_id": certificate.get("id"),
+                            "issuer_name": certificate.get("issuer_name"),
+                        },
+                    }
+                )
         return SourceResult(
             source=self.name,
             ioc=ioc,
@@ -65,4 +93,17 @@ class CrtSh(Connector):
             },
             tags=["certificate_transparency"],
             observed_at=latest,
+            related_entities=related_entities,
         )
+
+
+def _normalize_date(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc).isoformat()

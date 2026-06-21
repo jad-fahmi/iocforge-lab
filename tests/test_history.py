@@ -190,6 +190,20 @@ def test_migration_backfills_observations_from_existing_snapshots(tmp_path):
         "id INTEGER PRIMARY KEY, ioc TEXT, ioc_type TEXT, verdict TEXT, score REAL, "
         "confidence TEXT, looked_up_at TEXT, result_json TEXT)"
     )
+    conn.execute(
+        "CREATE TABLE indicator_relationships ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, source_ioc TEXT NOT NULL, "
+        "target_ioc TEXT NOT NULL, relationship_type TEXT NOT NULL, "
+        "confidence REAL NOT NULL DEFAULT 1.0, "
+        "evidence_source TEXT NOT NULL DEFAULT 'analyst', created_at TEXT NOT NULL, "
+        "UNIQUE(source_ioc, target_ioc, relationship_type, evidence_source))"
+    )
+    conn.execute(
+        "INSERT INTO indicator_relationships(source_ioc, target_ioc, "
+        "relationship_type, confidence, evidence_source, created_at) "
+        "VALUES ('old.example', '203.0.113.9', 'resolves_to', 0.7, 'dns', "
+        "'2025-01-01T00:00:00+00:00')"
+    )
     raw = {"answer": "203.0.113.7"}
     legacy_result = {
         "sources": [
@@ -229,6 +243,9 @@ def test_migration_backfills_observations_from_existing_snapshots(tmp_path):
 
     assert evidence["collected_at"] == "2026-01-01T00:00:00+00:00"
     assert evidence["raw_response_sha256"] == hashlib.sha256(canonical_raw).hexdigest()
+    migrated_edge = store.relationships("old.example")[0]
+    assert migrated_edge["valid_from"] == "2025-01-01T00:00:00+00:00"
+    assert migrated_edge["evidence_observation_id"] is None
 
 
 def test_replay_reproduces_historical_score_from_pinned_time_and_config(tmp_path):
@@ -372,3 +389,121 @@ def test_relationship_graph_returns_nodes_and_evidence(tmp_path):
     assert relationship["relationship_type"] == "resolves_to"
     assert graph["nodes"] == [{"id": "203.0.113.7"}, {"id": "evil.example"}]
     assert graph["edges"][0]["evidence_source"] == "dns"
+    assert graph["edges"][0]["valid_from"] == relationship["valid_from"]
+    assert graph["edges"][0]["attributes"] == {}
+
+
+def test_provider_relationships_link_to_observations_and_pivots(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.add(
+        SourceResult(
+            source="passive_dns",
+            ioc="example.com",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            raw={"records": []},
+            collected_at="2026-01-10T00:00:00+00:00",
+            related_entities=[
+                {
+                    "source_ioc": "example.com",
+                    "target_ioc": "203.0.113.7",
+                    "relationship_type": "resolves_to",
+                    "valid_from": "2025-12-01T00:00:00+00:00",
+                    "valid_to": "2026-01-09T00:00:00+00:00",
+                    "attributes": {"record_type": "A"},
+                }
+            ],
+        )
+    )
+    enrichment_id = store.record(result)
+    observation_id = store.observations_for_enrichment(enrichment_id)[0]["id"]
+    edge = store.relationships("example.com")[0]
+
+    assert edge["evidence_source"] == "passive_dns"
+    assert edge["evidence_observation_id"] == observation_id
+    assert edge["valid_from"] == "2025-12-01T00:00:00+00:00"
+    assert edge["valid_to"] == "2026-01-09T00:00:00+00:00"
+    assert edge["attributes"] == {"record_type": "A"}
+    try:
+        store.add_relationship(
+            "example.com",
+            "198.51.100.5",
+            "resolves_to",
+            evidence_source="passive_dns",
+            evidence_observation_id=observation_id,
+        )
+    except ValueError as error:
+        assert "does not support" in str(error)
+    else:
+        raise AssertionError("unobserved relationships must not cite evidence")
+
+
+def test_bad_edge_metadata_does_not_drop_provider_observation(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.add(
+        SourceResult(
+            source="passive_dns",
+            ioc="example.com",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            raw={"record_count": 1},
+            related_entities=[
+                {
+                    "source_ioc": "example.com",
+                    "target_ioc": "203.0.113.7",
+                    "relationship_type": "resolves_to",
+                    "valid_from": "not-a-timestamp",
+                }
+            ],
+        )
+    )
+
+    enrichment_id = store.record(result)
+
+    assert store.observations_for_enrichment(enrichment_id)
+    assert store.relationships("example.com") == []
+
+
+def test_relationship_graph_traverses_with_temporal_and_depth_budgets(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    store.add_relationship(
+        "root.example",
+        "203.0.113.7",
+        "resolves_to",
+        valid_from="2020-01-01T00:00:00+00:00",
+        valid_to="2100-01-01T00:00:00+00:00",
+    )
+    store.add_relationship(
+        "203.0.113.7",
+        "sha256:abc",
+        "hosted_payload",
+        valid_from="2020-01-01T00:00:00+00:00",
+    )
+    store.add_relationship(
+        "root.example",
+        "old.example",
+        "cname_to",
+        valid_from="2020-01-01T00:00:00+00:00",
+        valid_to="2025-01-01T00:00:00+00:00",
+    )
+
+    shallow = store.relationship_graph(
+        "root.example", max_depth=1, as_of="2099-01-01T00:00:00+00:00"
+    )
+    deep = store.relationship_graph(
+        "root.example", max_depth=3, as_of="2099-01-01T00:00:00+00:00"
+    )
+
+    assert {node["id"] for node in shallow["nodes"]} == {
+        "root.example",
+        "203.0.113.7",
+    }
+    assert {node["id"] for node in deep["nodes"]} == {
+        "root.example",
+        "203.0.113.7",
+        "sha256:abc",
+    }
+    assert deep["max_depth"] == 3
+    assert deep["as_of"] == "2099-01-01T00:00:00+00:00"

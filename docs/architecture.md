@@ -6,9 +6,11 @@ The current system already has provider adapters, a concurrent single-process
 engine, a SQLite cache, append-only enrichment snapshots, analyst and
 investigation event logs, basic indicator relationships, and versioned scoring
 explanations. These pieces are the base for the investigation engine; the
-history database is not yet a complete temporal evidence store. In particular,
-relationships are not linked to provider observations, historical-vs-current
-comparison is not available, and analyst event logs are not yet tamper-evident.
+history database is not yet a complete temporal evidence store. Relationships
+now carry validity intervals and can link to provider observations, but the
+graph still uses string IOC endpoints rather than typed entity nodes.
+Historical-vs-current comparison is not available, and analyst event logs are
+not yet tamper-evident.
 
 The transformation proceeds in dependency order:
 
@@ -21,8 +23,9 @@ The transformation proceeds in dependency order:
    at a chosen time. The first replay path now reproduces a saved score and
    exposes its trace through the CLI and API; historical-vs-current comparison
    remains future work.
-3. **Temporal graph and pivots:** attach sourced, time-bounded relationships to
-   observations and add budgeted traversal over the graph.
+3. **Temporal graph and pivots:** extend the initial time-bounded, evidence-linked
+   IOC graph to typed entities and add prioritized pivot discovery. Current API
+   traversal has a depth limit of five and a 500-edge budget.
 4. **Investigation integrity and bundles:** hash-chain analyst events and define
    a portable format that can be imported and replayed without live providers.
 5. **Provider evaluation and scheduling:** measure provider behavior on
@@ -42,9 +45,13 @@ snapshots. Scoring now pins the effective thresholds and weights, evaluation
 time, per-observation contribution, exclusions, and local-context adjustments.
 The CLI and API can replay decisions when those inputs are present and the
 methodology version is supported. Replay reports legacy records with missing
-inputs as unavailable instead of silently applying current defaults.
-Temporal relationship edges and historical-vs-current comparison remain later
-steps.
+inputs as unavailable instead of silently applying current defaults. DNS,
+passive-DNS, and certificate-transparency observations emit relationship
+candidates; the history store creates edges linked to their source observation
+and stores both provider validity and IOCForge recording times. API graph reads
+support bounded-depth traversal and an `as_of` filter. Typed certificate,
+ASN, investigation, and provider-observation nodes plus historical-vs-current
+comparison remain later steps.
 
 IOCForge has four layers:
 

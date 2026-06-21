@@ -254,6 +254,10 @@ class RelationshipCreateRequest(BaseModel):
     relationship_type: str = Field(min_length=1, max_length=100)
     confidence: float = Field(default=1.0, ge=0, le=1)
     evidence_source: str = Field(default="analyst", min_length=1, max_length=100)
+    evidence_observation_id: int | None = Field(default=None, ge=1)
+    valid_from: str | None = Field(default=None, max_length=40)
+    valid_to: str | None = Field(default=None, max_length=40)
+    attributes: dict[str, Any] = Field(default_factory=dict)
 
 
 class RelationshipResponse(BaseModel):
@@ -264,11 +268,18 @@ class RelationshipResponse(BaseModel):
     confidence: float
     evidence_source: str
     created_at: str
+    valid_from: str
+    valid_to: str | None
+    evidence_observation_id: int | None
+    attributes: dict[str, Any]
 
 
 class RelationshipGraphResponse(BaseModel):
     nodes: list[dict[str, str]]
     edges: list[RelationshipResponse]
+    max_depth: int
+    as_of: str | None
+    truncated: bool
 
 
 @lru_cache
@@ -486,6 +497,10 @@ def create_relationship(request: RelationshipCreateRequest) -> dict[str, Any]:
             request.relationship_type,
             request.confidence,
             request.evidence_source,
+            request.evidence_observation_id,
+            request.valid_from,
+            request.valid_to,
+            request.attributes,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
@@ -497,9 +512,14 @@ def create_relationship(request: RelationshipCreateRequest) -> dict[str, Any]:
     tags=["relationships"],
 )
 def indicator_relationships(
-    ioc: str, limit: int = Query(default=100, ge=1, le=500)
+    ioc: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    as_of: str | None = None,
 ) -> list[dict[str, Any]]:
-    return _history_store().relationships(ioc, limit=limit)
+    try:
+        return _history_store().relationships(ioc, limit=limit, as_of=as_of)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @api.get(
@@ -508,9 +528,17 @@ def indicator_relationships(
     tags=["relationships"],
 )
 def indicator_graph(
-    ioc: str, limit: int = Query(default=100, ge=1, le=500)
+    ioc: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    depth: int = Query(default=1, ge=1, le=5),
+    as_of: str | None = None,
 ) -> dict[str, Any]:
-    return _history_store().relationship_graph(ioc, limit=limit)
+    try:
+        return _history_store().relationship_graph(
+            ioc, limit=limit, max_depth=depth, as_of=as_of
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @api.post(

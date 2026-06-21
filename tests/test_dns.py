@@ -26,8 +26,20 @@ def test_dns_returns_available_record_sets(monkeypatch):
         "MX": ["10 mail.example.com"],
     }
     assert result.tags == ["dns:a", "dns:mx"]
-
-
+    assert result.related_entities == [
+        {
+            "source_ioc": "example.com",
+            "target_ioc": "203.0.113.7",
+            "relationship_type": "resolves_to",
+            "attributes": {"record_type": "A"},
+        },
+        {
+            "source_ioc": "example.com",
+            "target_ioc": "mail.example.com",
+            "relationship_type": "mail_exchange",
+            "attributes": {"record_type": "MX"},
+        },
+    ]
 def test_dns_returns_soft_error_for_timeout(monkeypatch):
     resolver = Mock()
     resolver.resolve.side_effect = dns.exception.Timeout("timed out")

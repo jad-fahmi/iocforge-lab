@@ -31,6 +31,11 @@ def test_crtsh_collects_unique_certificate_names_and_issuers():
     assert result.malicious is None
     assert result.raw["names"] == ["api.example.com", "www.example.com"]
     assert result.raw["certificate_count"] == 2
+    assert any(
+        edge["target_ioc"] == "api.example.com"
+        and edge["relationship_type"] == "certificate_name"
+        for edge in result.related_entities
+    )
 
 
 @respx.mock
