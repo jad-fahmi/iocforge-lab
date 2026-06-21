@@ -2,7 +2,7 @@ from ioc_enricher.config import Config
 from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
 from ioc_enricher.ioc.types import IocType
-from ioc_enricher.models import EnrichmentResult
+from ioc_enricher.models import EnrichmentResult, SourceResult
 
 
 def test_history_migrates_and_preserves_snapshots(tmp_path):
@@ -62,6 +62,38 @@ def test_engine_records_completed_enrichment(tmp_path):
 
     history = store.list_enrichments("example.com")
     assert history[0]["result"]["verdict"] == result.verdict
+
+
+def test_source_provenance_survives_snapshot_persistence(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    source = SourceResult(
+        source="test-provider",
+        ioc="example.com",
+        ioc_type=IocType.DOMAIN,
+        raw={"answer": ["203.0.113.7"]},
+        connector_version="2.1",
+        normalization_version="3",
+        confidence=0.8,
+        freshness={"state": "fresh"},
+        extraction_metadata={"field": "answer", "count": 1},
+        related_entities=[{"type": "ip", "value": "203.0.113.7"}],
+    )
+    result.add(source)
+
+    store.record(result, looked_up_at="2026-01-01T00:00:00+00:00")
+    saved = store.list_enrichments("example.com")[0]["result"]["sources"][0]
+
+    assert saved["raw_response_sha256"] == source.raw_response_sha256
+    assert len(saved["raw_response_sha256"]) == 64
+    assert saved["connector_version"] == "2.1"
+    assert saved["normalization_version"] == "3"
+    assert saved["confidence"] == 0.8
+    assert saved["freshness"] == {"state": "fresh"}
+    assert saved["extraction_metadata"] == {"field": "answer", "count": 1}
+    assert saved["related_entities"] == [
+        {"type": "ip", "value": "203.0.113.7"}
+    ]
 
 
 def test_history_updates_analyst_fields_and_records_an_event(tmp_path):

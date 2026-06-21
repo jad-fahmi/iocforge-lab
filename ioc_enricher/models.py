@@ -1,4 +1,7 @@
+import hashlib
+import json
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from ioc_enricher.ioc.types import IocType
@@ -6,7 +9,13 @@ from ioc_enricher.ioc.types import IocType
 
 @dataclass
 class SourceResult:
-    """result of enriching one ioc against one source."""
+    """One provider observation about an IOC.
+
+    ``observed_at`` is provider-supplied event time. ``collected_at`` records
+    when IOCForge received the observation. The response hash fingerprints the
+    structured raw payload retained by this connector; it is not a claim that
+    an unretained HTTP body can be reconstructed from the hash.
+    """
 
     source: str
     ioc: str
@@ -18,6 +27,23 @@ class SourceResult:
     error: Optional[str] = None
     tags: list = field(default_factory=list)
     observed_at: Optional[str] = None
+    collected_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    raw_response_sha256: Optional[str] = None
+    connector_version: str = "unknown"
+    normalization_version: str = "1"
+    confidence: Optional[float] = None
+    freshness: Optional[dict] = None
+    extraction_metadata: dict = field(default_factory=dict)
+    related_entities: list = field(default_factory=list)
+
+    def __post_init__(self):
+        if self.raw_response_sha256 is None:
+            canonical = json.dumps(
+                self.raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode("utf-8")
+            self.raw_response_sha256 = hashlib.sha256(canonical).hexdigest()
 
     def to_dict(self):
         d = asdict(self)

@@ -1,5 +1,43 @@
 # Architecture
 
+## Current foundations and implementation sequence
+
+The current system already has provider adapters, a concurrent single-process
+engine, a SQLite cache, append-only enrichment snapshots, analyst and
+investigation event logs, basic indicator relationships, and versioned scoring
+explanations. These pieces are the base for the investigation engine; the
+history database is not yet a complete temporal evidence store. In particular,
+relationships are not linked to provider observations, historical replay does
+not re-run a pinned scoring configuration, and analyst event logs are not yet
+tamper-evident.
+
+The transformation proceeds in dependency order:
+
+1. **Evidence identity and retention:** capture provider and collection times,
+   response fingerprints, connector and normalization versions, and structured
+   extraction and entity metadata for each source observation. Persist evidence
+   independently of current lookup views.
+2. **Decision trace and replay:** persist complete scoring inputs and methodology
+   configuration, then reconstruct and compare decisions from evidence available
+   at a chosen time.
+3. **Temporal graph and pivots:** attach sourced, time-bounded relationships to
+   observations and add budgeted traversal over the graph.
+4. **Investigation integrity and bundles:** hash-chain analyst events and define
+   a portable format that can be imported and replayed without live providers.
+5. **Provider evaluation and scheduling:** measure provider behavior on
+   reproducible fixtures, then use that evidence to improve the existing
+   single-process orchestration, quotas, retry policy, and backpressure.
+6. **Interfaces and engineering evidence:** expose evidence, timeline, replay,
+   graph, and bundle operations through current CLI/API/UI surfaces, with
+   adversarial fixtures and measured performance for each subsystem.
+
+The first step adds provenance fields to each `SourceResult`. The SHA-256 value
+fingerprints the structured `raw` payload retained by the connector; because
+connectors currently normalize or filter upstream responses, it is not a hash
+of an unretained wire-level HTTP body. The existing enrichment history stores
+these fields inside each immutable lookup snapshot. A dedicated observation
+store and observation-to-relationship foreign keys are follow-on work.
+
 IOCForge has four layers:
 
 1. **IOC handling** refangs, detects, normalizes, and extracts indicators.

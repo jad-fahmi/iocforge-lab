@@ -17,6 +17,7 @@ class Connector(abc.ABC):
     """base class for a threat intel source."""
 
     name = "base"
+    version = "1"
     supported: tuple = ()
     requires_api_key = True
 
@@ -85,9 +86,14 @@ class Connector(abc.ABC):
             hit = cache.get(self.name, ioc)
             if hit is not None:
                 hit["ioc_type"] = IocType(hit["ioc_type"])
-                return SourceResult(**hit)
+                result = SourceResult(**hit)
+                if result.connector_version == "unknown":
+                    result.connector_version = self.version
+                return result
 
         result = self.enrich(ioc, ioc_type)
+        if result.connector_version == "unknown":
+            result.connector_version = self.version
 
         # An expired result is never used as a normal cache hit. It can only
         # keep an investigation moving when the live provider is unavailable,
@@ -107,7 +113,10 @@ class Connector(abc.ABC):
                 payload["raw"] = raw
                 payload["tags"] = sorted(set(payload.get("tags", [])) | {"stale_cache"})
                 payload["ioc_type"] = IocType(payload["ioc_type"])
-                return SourceResult(**payload)
+                stale_result = SourceResult(**payload)
+                if stale_result.connector_version == "unknown":
+                    stale_result.connector_version = self.version
+                return stale_result
 
         # only cache real answers, not transient errors
         if cache is not None and result.error is None:
@@ -121,6 +130,7 @@ class Connector(abc.ABC):
             ioc_type=ioc_type,
             found=False,
             error=error,
+            connector_version=self.version,
         )
 
 
