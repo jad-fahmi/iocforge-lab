@@ -1,5 +1,6 @@
 """Durable SQLite history for enrichment investigations."""
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -137,6 +138,54 @@ class HistoryStore:
                     """
                 )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (5)")
+            if 6 not in applied:
+                self.conn.executescript(
+                    """
+                    CREATE TABLE evidence_observations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        observation_key TEXT NOT NULL UNIQUE,
+                        source TEXT NOT NULL,
+                        ioc TEXT NOT NULL,
+                        ioc_type TEXT NOT NULL,
+                        collected_at TEXT NOT NULL,
+                        observed_at TEXT,
+                        raw_response_sha256 TEXT NOT NULL,
+                        connector_version TEXT NOT NULL,
+                        normalization_version TEXT NOT NULL,
+                        observation_json TEXT NOT NULL
+                    );
+                    CREATE INDEX idx_evidence_ioc_time
+                    ON evidence_observations(ioc, collected_at DESC);
+                    CREATE INDEX idx_evidence_source_ioc_time
+                    ON evidence_observations(source, ioc, collected_at DESC);
+                    CREATE TABLE enrichment_observations (
+                        enrichment_id INTEGER NOT NULL,
+                        observation_id INTEGER NOT NULL,
+                        ordinal INTEGER NOT NULL,
+                        PRIMARY KEY(enrichment_id, ordinal),
+                        UNIQUE(enrichment_id, observation_id),
+                        FOREIGN KEY(enrichment_id) REFERENCES enrichments(id),
+                        FOREIGN KEY(observation_id) REFERENCES evidence_observations(id)
+                    );
+                    CREATE INDEX idx_enrichment_observations_observation
+                    ON enrichment_observations(observation_id, enrichment_id);
+                    """
+                )
+                # Enrichments predating this schema version keep their original
+                # snapshots and gain normalized evidence rows during migration.
+                prior = self.conn.execute(
+                    "SELECT id, looked_up_at, result_json FROM enrichments ORDER BY id"
+                ).fetchall()
+                for row in prior:
+                    for ordinal, source in enumerate(
+                        json.loads(row["result_json"]).get("sources", [])
+                    ):
+                        migrated_source = dict(source)
+                        migrated_source.setdefault("collected_at", row["looked_up_at"])
+                        self._store_observation(
+                            migrated_source, row["id"], ordinal
+                        )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (6)")
             self.conn.commit()
 
     def record(self, result: Any, looked_up_at: str | None = None) -> int:
@@ -170,10 +219,107 @@ class HistoryStore:
                     json.dumps(payload, sort_keys=True),
                 ),
             )
-            self.conn.commit()
-            if cursor.lastrowid is None:
+            enrichment_id = cursor.lastrowid
+            if enrichment_id is None:
                 raise RuntimeError("failed to persist enrichment history")
-            return int(cursor.lastrowid)
+            for ordinal, source in enumerate(payload.get("sources", [])):
+                self._store_observation(source, enrichment_id, ordinal)
+            self.conn.commit()
+            return int(enrichment_id)
+
+    def _store_observation(
+        self, source: dict[str, Any], enrichment_id: int, ordinal: int
+    ) -> int:
+        """Insert an immutable provider observation and link it to a snapshot."""
+        source = dict(source)
+        source.setdefault("collected_at", "")
+        source.setdefault("connector_version", "unknown")
+        source.setdefault("normalization_version", "1")
+        raw_sha256 = source.get("raw_response_sha256")
+        if not raw_sha256:
+            raw = json.dumps(
+                source.get("raw", {}),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+            raw_sha256 = hashlib.sha256(raw).hexdigest()
+            source["raw_response_sha256"] = raw_sha256
+        observation_json = json.dumps(
+            source, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        identity = {
+            "source": source["source"],
+            "ioc": source["ioc"],
+            "collected_at": source.get("collected_at", ""),
+            "raw_response_sha256": raw_sha256,
+            "connector_version": source.get("connector_version", "unknown"),
+            "normalization_version": source.get("normalization_version", "1"),
+        }
+        observation_key = hashlib.sha256(
+            json.dumps(identity, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        self.conn.execute(
+            """
+            INSERT OR IGNORE INTO evidence_observations(
+                observation_key, source, ioc, ioc_type, collected_at, observed_at,
+                raw_response_sha256, connector_version, normalization_version,
+                observation_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                observation_key,
+                source["source"],
+                source["ioc"],
+                source["ioc_type"],
+                source.get("collected_at", ""),
+                source.get("observed_at"),
+                raw_sha256,
+                source.get("connector_version", "unknown"),
+                source.get("normalization_version", "1"),
+                observation_json,
+            ),
+        )
+        row = self.conn.execute(
+            "SELECT id FROM evidence_observations WHERE observation_key = ?",
+            (observation_key,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("failed to persist source observation")
+        observation_id = int(row["id"])
+        self.conn.execute(
+            """
+            INSERT OR IGNORE INTO enrichment_observations(
+                enrichment_id, observation_id, ordinal
+            ) VALUES (?, ?, ?)
+            """,
+            (enrichment_id, observation_id, ordinal),
+        )
+        return observation_id
+
+    def observations_for_enrichment(self, enrichment_id: int) -> list[dict[str, Any]]:
+        """Return stable observation IDs and immutable payloads for a snapshot."""
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT eo.ordinal, obs.id, obs.observation_key, obs.observation_json
+                FROM enrichment_observations AS eo
+                JOIN evidence_observations AS obs ON obs.id = eo.observation_id
+                WHERE eo.enrichment_id = ? ORDER BY eo.ordinal
+                """,
+                (enrichment_id,),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "observation_key": row["observation_key"],
+                "ordinal": row["ordinal"],
+                "observation": json.loads(row["observation_json"]),
+            }
+            for row in rows
+        ]
 
     def list_enrichments(
         self, ioc: str | None = None, limit: int = 50, offset: int = 0

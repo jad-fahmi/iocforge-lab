@@ -31,12 +31,14 @@ The transformation proceeds in dependency order:
    graph, and bundle operations through current CLI/API/UI surfaces, with
    adversarial fixtures and measured performance for each subsystem.
 
-The first step adds provenance fields to each `SourceResult`. The SHA-256 value
-fingerprints the structured `raw` payload retained by the connector; because
-connectors currently normalize or filter upstream responses, it is not a hash
-of an unretained wire-level HTTP body. The existing enrichment history stores
-these fields inside each immutable lookup snapshot. A dedicated observation
-store and observation-to-relationship foreign keys are follow-on work.
+The evidence foundation now stores provenance on each `SourceResult` and in a
+normalized `evidence_observations` table linked to enrichment snapshots by
+stable observation IDs. The SHA-256 value fingerprints the structured `raw`
+payload retained by the connector; because connectors currently normalize or
+filter upstream responses, it is not a hash of an unretained wire-level HTTP
+body. Schema migration backfills observation rows from existing enrichment
+snapshots. Temporal relationship edges and deterministic replay remain later
+steps.
 
 IOCForge has four layers:
 

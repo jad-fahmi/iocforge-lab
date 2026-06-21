@@ -1,3 +1,7 @@
+import hashlib
+import json
+import sqlite3
+
 from ioc_enricher.config import Config
 from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
@@ -94,6 +98,115 @@ def test_source_provenance_survives_snapshot_persistence(tmp_path):
     assert saved["related_entities"] == [
         {"type": "ip", "value": "203.0.113.7"}
     ]
+
+
+def test_evidence_observations_have_stable_ids_and_are_immutable(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    first_source = SourceResult(
+        source="passive-dns",
+        ioc="example.com",
+        ioc_type=IocType.DOMAIN,
+        found=True,
+        raw={"answer": "203.0.113.7"},
+        collected_at="2026-01-01T00:00:00+00:00",
+    )
+    first = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    first.add(first_source)
+    first_enrichment_id = store.record(first)
+
+    repeated = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    repeated.add(first_source)
+    repeated_enrichment_id = store.record(repeated)
+
+    original = store.observations_for_enrichment(first_enrichment_id)[0]
+    same_evidence = store.observations_for_enrichment(repeated_enrichment_id)[0]
+    first_source.raw["answer"] = "198.51.100.4"
+    still_original = store.observations_for_enrichment(first_enrichment_id)[0]
+
+    assert original["id"] == same_evidence["id"]
+    assert original["observation_key"] == same_evidence["observation_key"]
+    assert still_original["observation"]["raw"] == {"answer": "203.0.113.7"}
+
+
+def test_changed_provider_observation_gets_a_new_evidence_id(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    results = []
+    for address, collected_at in [
+        ("203.0.113.7", "2026-01-01T00:00:00+00:00"),
+        ("198.51.100.4", "2026-01-02T00:00:00+00:00"),
+    ]:
+        result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+        result.add(
+            SourceResult(
+                source="passive-dns",
+                ioc="example.com",
+                ioc_type=IocType.DOMAIN,
+                found=True,
+                raw={"answer": address},
+                collected_at=collected_at,
+            )
+        )
+        results.append(store.record(result))
+
+    first = store.observations_for_enrichment(results[0])[0]
+    second = store.observations_for_enrichment(results[1])[0]
+
+    assert first["id"] != second["id"]
+    assert first["observation"]["raw"] != second["observation"]["raw"]
+
+
+def test_migration_backfills_observations_from_existing_snapshots(tmp_path):
+    path = tmp_path / "legacy-history.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
+    conn.executemany(
+        "INSERT INTO schema_migrations(version) VALUES (?)",
+        [(version,) for version in range(1, 6)],
+    )
+    conn.execute(
+        "CREATE TABLE enrichments ("
+        "id INTEGER PRIMARY KEY, ioc TEXT, ioc_type TEXT, verdict TEXT, score REAL, "
+        "confidence TEXT, looked_up_at TEXT, result_json TEXT)"
+    )
+    raw = {"answer": "203.0.113.7"}
+    legacy_result = {
+        "sources": [
+            {
+                "source": "passive-dns",
+                "ioc": "example.com",
+                "ioc_type": "domain",
+                "found": True,
+                "malicious": None,
+                "score": None,
+                "raw": raw,
+                "error": None,
+                "tags": [],
+                "observed_at": None,
+            }
+        ]
+    }
+    conn.execute(
+        "INSERT INTO enrichments VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            1,
+            "example.com",
+            "domain",
+            "unknown",
+            0.0,
+            "low",
+            "2026-01-01T00:00:00+00:00",
+            json.dumps(legacy_result),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    store = HistoryStore(path)
+    evidence = store.observations_for_enrichment(1)[0]["observation"]
+    canonical_raw = json.dumps(raw, sort_keys=True, separators=(",", ":")).encode()
+
+    assert evidence["collected_at"] == "2026-01-01T00:00:00+00:00"
+    assert evidence["raw_response_sha256"] == hashlib.sha256(canonical_raw).hexdigest()
 
 
 def test_history_updates_analyst_fields_and_records_an_event(tmp_path):
