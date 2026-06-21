@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from ioc_enricher.api import app as api_module
 from ioc_enricher.api.rate_limit import RateLimiter
+from ioc_enricher.bundles import inspect_bundle
 from ioc_enricher.config import Config
 from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
@@ -225,6 +226,33 @@ def test_investigation_integrity_endpoint_checks_event_chain(monkeypatch, tmp_pa
     assert response.status_code == 200
     assert response.json()["valid"] is True
     assert response.json()["checked_events"] == 2
+
+
+def test_investigation_bundle_api_exports_and_loads_offline(
+    monkeypatch, tmp_path
+):
+    store = HistoryStore(tmp_path / "history.db")
+    investigation = store.create_investigation("Bundle case")
+    store.add_investigation_indicator(investigation["id"], "evil.example")
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+    client = TestClient(api_module.app)
+
+    exported = client.get(
+        f"/api/v1/investigations/{investigation['id']}/bundle"
+    )
+    loaded = client.post(
+        "/api/v1/investigations/bundles/inspect",
+        content=exported.content,
+        headers={"content-type": "application/zip"},
+    )
+
+    assert exported.status_code == 200
+    assert exported.headers["content-disposition"].endswith(".iocforge\"")
+    assert inspect_bundle(exported.content)["investigation"]["title"] == "Bundle case"
+    assert loaded.status_code == 200
+    assert loaded.json()["event_integrity"]["investigation"]["valid"] is True
 
 
 def test_dashboard_endpoint_exposes_provider_and_persisted_metrics(

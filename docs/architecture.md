@@ -30,8 +30,9 @@ The transformation proceeds in dependency order:
    IOC graph to typed entities and add prioritized pivot discovery. Current API
    traversal has a depth limit of five and a 500-edge budget.
 4. **Investigation integrity and bundles:** per-indicator and per-investigation
-   event chains can now be verified; define a portable format that includes
-   verified events and can be replayed without live providers.
+   event chains can now be verified. A versioned `.iocforge` archive packages
+   case metadata, linked snapshots and evidence, bounded graph state, and event
+   chains; CLI and API inspection verifies and replays it without live providers.
 5. **Provider evaluation and scheduling:** measure provider behavior on
    reproducible fixtures, then use that evidence to improve the existing
    single-process orchestration, quotas, retry policy, and backpressure.
@@ -58,7 +59,9 @@ and stores both provider validity and IOCForge recording times. API graph reads
 support bounded-depth traversal and an `as_of` filter. Event history responses
 include chain hashes, and integrity endpoints verify each scope. Typed
 certificate, ASN, investigation, and provider-observation graph nodes remain
-later steps.
+later steps. Bundle checksums detect archive corruption, and raw-response hashes
+are checked again on load. The archive checksum is not a digital signature;
+authenticity still depends on a trusted transfer channel.
 
 IOCForge has four layers:
 

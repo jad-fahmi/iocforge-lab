@@ -99,6 +99,41 @@ def test_cli_compares_two_enrichment_history_ids(monkeypatch, capsys):
     assert '"comparison": 21' in output
 
 
+def test_cli_inspects_investigation_bundle_offline(monkeypatch, tmp_path, capsys):
+    bundle_path = tmp_path / "case.iocforge"
+    bundle_path.write_bytes(b"local bundle")
+    monkeypatch.setattr(
+        cli,
+        "inspect_bundle",
+        lambda _path: {"investigation": {"title": "Offline case"}},
+    )
+
+    assert cli.main(["--bundle-inspect", str(bundle_path)]) == 0
+
+    assert '"title": "Offline case"' in capsys.readouterr().out
+
+
+def test_cli_exports_investigation_bundle(monkeypatch, tmp_path, capsys):
+    destination = tmp_path / "case.iocforge"
+
+    class BundleHistory:
+        def investigation_bundle_payload(self, investigation_id):
+            return {"investigation": {"id": investigation_id}}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(cli, "HistoryStore", BundleHistory)
+    monkeypatch.setattr(cli, "build_bundle", lambda _payload: b"bundle bytes")
+
+    assert cli.main(
+        ["--bundle-export", "7", "--bundle-output", str(destination)]
+    ) == 0
+
+    assert destination.read_bytes() == b"bundle bytes"
+    assert '"bytes": 12' in capsys.readouterr().out
+
+
 @pytest.mark.parametrize(
     ("arguments", "expected_level"),
     [

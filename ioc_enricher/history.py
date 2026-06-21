@@ -1198,6 +1198,124 @@ class HistoryStore:
         result["indicators"] = [item["ioc"] for item in indicators]
         return result
 
+    def investigation_bundle_payload(
+        self, investigation_id: int
+    ) -> dict[str, Any] | None:
+        """Capture case history and its bounded graph for offline replay/export."""
+        investigation = self.investigation(investigation_id)
+        if investigation is None:
+            return None
+        iocs = investigation["indicators"]
+        snapshots: list[dict[str, Any]] = []
+        indicators: dict[str, Any] = {}
+        indicator_events: dict[str, list[dict[str, Any]]] = {}
+        with self._lock:
+            for ioc in iocs:
+                indicator_row = self.conn.execute(
+                    "SELECT * FROM indicators WHERE ioc = ?", (ioc,)
+                ).fetchone()
+                if indicator_row:
+                    indicator = dict(indicator_row)
+                    indicator["tags"] = json.loads(indicator["tags"])
+                    indicators[ioc] = indicator
+                event_rows = self.conn.execute(
+                    "SELECT id, event_type, data_json, created_at, previous_hash, event_hash "
+                    "FROM indicator_events WHERE ioc = ? ORDER BY id",
+                    (ioc,),
+                ).fetchall()
+                indicator_events[ioc] = [
+                    {
+                        **dict(event),
+                        "ioc": ioc,
+                    }
+                    for event in event_rows
+                ]
+                enrichment_rows = self.conn.execute(
+                    "SELECT id, ioc, ioc_type, verdict, score, confidence, looked_up_at, result_json "
+                    "FROM enrichments WHERE ioc = ? ORDER BY id",
+                    (ioc,),
+                ).fetchall()
+                for snapshot in enrichment_rows:
+                    snapshot_data = dict(snapshot)
+                    snapshot_data["result"] = json.loads(
+                        snapshot_data.pop("result_json")
+                    )
+                    snapshots.append(snapshot_data)
+            case_events = self.conn.execute(
+                "SELECT id, event_type, data_json, created_at, previous_hash, event_hash "
+                "FROM investigation_events WHERE investigation_id = ? ORDER BY id",
+                (investigation_id,),
+            ).fetchall()
+            case_events_payload = [
+                {**dict(event), "investigation_id": investigation_id}
+                for event in case_events
+            ]
+
+        for snapshot in snapshots:
+            snapshot["observations"] = self.observations_for_enrichment(snapshot["id"])
+
+        edges: dict[int, dict[str, Any]] = {}
+        graph_truncated = False
+        for ioc in iocs:
+            remaining = 500 - len(edges)
+            if remaining <= 0:
+                graph_truncated = True
+                break
+            graph = self.relationship_graph(ioc, limit=remaining, max_depth=5)
+            edges.update({edge["id"]: edge for edge in graph["edges"]})
+            graph_truncated = graph_truncated or graph["truncated"]
+        graph_edges = [edges[key] for key in sorted(edges)]
+        nodes = sorted(
+            {
+                *iocs,
+                *(edge["source_ioc"] for edge in graph_edges),
+                *(edge["target_ioc"] for edge in graph_edges),
+            }
+        )
+        observation_map: dict[int, dict[str, Any]] = {}
+        for snapshot in snapshots:
+            for observation in snapshot["observations"]:
+                observation_map[observation["id"]] = observation
+        graph_observation_ids = {
+            edge["evidence_observation_id"]
+            for edge in graph_edges
+            if edge["evidence_observation_id"] is not None
+        } - observation_map.keys()
+        if graph_observation_ids:
+            placeholders = ",".join("?" for _ in graph_observation_ids)
+            with self._lock:
+                evidence_rows = self.conn.execute(
+                    "SELECT id, observation_key, observation_json FROM evidence_observations "
+                    f"WHERE id IN ({placeholders})",
+                    sorted(graph_observation_ids),
+                ).fetchall()
+            for row in evidence_rows:
+                observation_map[row["id"]] = {
+                    "id": row["id"],
+                    "observation_key": row["observation_key"],
+                    "ordinal": None,
+                    "observation": json.loads(row["observation_json"]),
+                }
+        return {
+            "bundle_schema": 1,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "investigation": investigation,
+            "indicators": indicators,
+            "indicator_events": indicator_events,
+            "investigation_events": case_events_payload,
+            "snapshots": snapshots,
+            "observations": [
+                observation_map[key] for key in sorted(observation_map)
+            ],
+            "graph": {
+                "nodes": [{"id": node} for node in nodes],
+                "edges": graph_edges,
+                "max_depth": 5,
+                "edge_limit": 500,
+                "truncated": graph_truncated,
+            },
+        }
+
     def list_investigations(
         self, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:

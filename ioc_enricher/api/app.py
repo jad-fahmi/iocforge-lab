@@ -5,11 +5,20 @@ from functools import lru_cache
 from typing import Any, Literal
 
 from fastapi import APIRouter, FastAPI, HTTPException, Path, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
 from ioc_enricher.api.rate_limit import RateLimiter
 from ioc_enricher.api.ui import ANALYST_UI
+from ioc_enricher.bundles import (
+    MAX_BUNDLE_BYTES,
+)
+from ioc_enricher.bundles import (
+    build_bundle as build_investigation_bundle,
+)
+from ioc_enricher.bundles import (
+    inspect_bundle as inspect_investigation_bundle,
+)
 from ioc_enricher.cache import Cache
 from ioc_enricher.config import Config, load_dotenv
 from ioc_enricher.engine import Engine
@@ -682,6 +691,38 @@ def investigation_event_integrity(investigation_id: int) -> dict[str, Any]:
     if store.investigation(investigation_id) is None:
         raise HTTPException(status_code=404, detail="investigation not found")
     return store.verify_investigation_event_chain(investigation_id)
+
+
+@api.get("/investigations/{investigation_id}/bundle", tags=["investigations"])
+def download_investigation_bundle(investigation_id: int) -> Response:
+    store = _history_store()
+    payload = store.investigation_bundle_payload(investigation_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="investigation not found")
+    return Response(
+        content=build_investigation_bundle(payload),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="iocforge-investigation-{investigation_id}.iocforge"'
+            )
+        },
+    )
+
+
+@api.post("/investigations/bundles/inspect", tags=["investigations"])
+async def inspect_uploaded_investigation_bundle(request: Request) -> dict[str, Any]:
+    """Load, validate, and replay a bundle without contacting providers."""
+    content_length = request.headers.get("content-length", "")
+    if content_length.isdigit() and int(content_length) > MAX_BUNDLE_BYTES:
+        raise HTTPException(status_code=413, detail="bundle exceeds the 100 MiB limit")
+    body = await request.body()
+    if len(body) > MAX_BUNDLE_BYTES:
+        raise HTTPException(status_code=413, detail="bundle exceeds the 100 MiB limit")
+    try:
+        return inspect_investigation_bundle(body)
+    except (ValueError, KeyError, TypeError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 app.include_router(api)

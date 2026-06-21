@@ -1,8 +1,10 @@
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from ioc_enricher import __version__
+from ioc_enricher.bundles import build_bundle, inspect_bundle
 from ioc_enricher.cache import Cache
 from ioc_enricher.config import ENV_KEYS, Config, load_dotenv
 from ioc_enricher.context import InternalContext
@@ -108,6 +110,22 @@ def build_parser():
         metavar=("BASELINE_ID", "COMPARISON_ID"),
         help="compare evidence, verdict, and graph between two history IDs",
     )
+    p.add_argument(
+        "--bundle-export",
+        type=int,
+        metavar="INVESTIGATION_ID",
+        help="export an investigation to a portable .iocforge bundle",
+    )
+    p.add_argument(
+        "--bundle-output",
+        metavar="PATH",
+        help="destination path for --bundle-export",
+    )
+    p.add_argument(
+        "--bundle-inspect",
+        metavar="PATH",
+        help="validate and replay a .iocforge bundle offline",
+    )
     return p
 
 
@@ -200,6 +218,36 @@ def main(argv=None):
             print("one or both enrichment history IDs were not found", file=sys.stderr)
             return 1
         print(json.dumps({"comparison": comparison}, indent=2))
+        return 0
+    if args.bundle_export is not None:
+        if not args.bundle_output:
+            print("--bundle-export requires --bundle-output", file=sys.stderr)
+            return 2
+        store = HistoryStore()
+        try:
+            payload = store.investigation_bundle_payload(args.bundle_export)
+        finally:
+            store.close()
+        if payload is None:
+            print(
+                f"investigation {args.bundle_export} was not found", file=sys.stderr
+            )
+            return 1
+        try:
+            bundle = build_bundle(payload)
+            Path(args.bundle_output).write_bytes(bundle)
+        except (OSError, ValueError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        print(json.dumps({"bundle": args.bundle_output, "bytes": len(bundle)}))
+        return 0
+    if args.bundle_inspect is not None:
+        try:
+            report = inspect_bundle(args.bundle_inspect)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        print(json.dumps({"bundle": report}, indent=2))
         return 0
 
     iocs = read_iocs(args)
