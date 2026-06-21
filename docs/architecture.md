@@ -9,7 +9,11 @@ explanations. These pieces are the base for the investigation engine; the
 history database is not yet a complete temporal evidence store. Relationships
 now carry validity intervals and can link to provider observations, but the
 graph still uses string IOC endpoints rather than typed entity nodes.
-Snapshot comparison is available; analyst event logs are not yet tamper-evident.
+Snapshot comparison is available. Indicator and investigation events now use
+per-scope SHA-256 chains, migration backfill, SQLite append-only guards, and
+explicit integrity verification. These local chains detect edits but are not
+anchored outside the database, so a privileged database operator could rewrite
+or truncate a whole chain.
 
 The transformation proceeds in dependency order:
 
@@ -25,8 +29,9 @@ The transformation proceeds in dependency order:
 3. **Temporal graph and pivots:** extend the initial time-bounded, evidence-linked
    IOC graph to typed entities and add prioritized pivot discovery. Current API
    traversal has a depth limit of five and a 500-edge budget.
-4. **Investigation integrity and bundles:** hash-chain analyst events and define
-   a portable format that can be imported and replayed without live providers.
+4. **Investigation integrity and bundles:** per-indicator and per-investigation
+   event chains can now be verified; define a portable format that includes
+   verified events and can be replayed without live providers.
 5. **Provider evaluation and scheduling:** measure provider behavior on
    reproducible fixtures, then use that evidence to improve the existing
    single-process orchestration, quotas, retry policy, and backpressure.
@@ -50,8 +55,10 @@ unavailable instead of silently applying current defaults. DNS,
 passive-DNS, and certificate-transparency observations emit relationship
 candidates; the history store creates edges linked to their source observation
 and stores both provider validity and IOCForge recording times. API graph reads
-support bounded-depth traversal and an `as_of` filter. Typed certificate, ASN,
-investigation, and provider-observation nodes remain later steps.
+support bounded-depth traversal and an `as_of` filter. Event history responses
+include chain hashes, and integrity endpoints verify each scope. Typed
+certificate, ASN, investigation, and provider-observation graph nodes remain
+later steps.
 
 IOCForge has four layers:
 

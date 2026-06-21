@@ -420,6 +420,71 @@ def test_investigation_lifecycle_update_is_audited(tmp_path):
     assert event["data"] == {"description": "Contained", "status": "closed"}
 
 
+def test_event_chains_verify_and_sqlite_guards_reject_edits(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    store.record(EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN))
+    store.update_indicator("evil.example", status="triaged")
+    investigation = store.create_investigation("Triage")
+    store.add_investigation_indicator(investigation["id"], "evil.example")
+
+    indicator_events = store.indicator_events("evil.example")
+    case_events = store.investigation_events(investigation["id"])
+    assert indicator_events[0]["event_hash"]
+    assert indicator_events[0]["previous_hash"] == "0" * 64
+    assert case_events[0]["previous_hash"] == case_events[1]["event_hash"]
+    assert case_events[1]["previous_hash"] == "0" * 64
+    assert store.verify_indicator_event_chain("evil.example")["valid"] is True
+    assert store.verify_investigation_event_chain(investigation["id"])["valid"] is True
+
+    try:
+        store.conn.execute("DELETE FROM indicator_events WHERE id = ?", (indicator_events[0]["id"],))
+    except sqlite3.IntegrityError as error:
+        assert "append-only" in str(error)
+    else:
+        raise AssertionError("SQLite guards must reject event deletion")
+
+    store.conn.execute("DROP TRIGGER indicator_events_no_update")
+    store.conn.execute(
+        "UPDATE indicator_events SET data_json = ? WHERE id = ?",
+        ('{"status":"closed"}', indicator_events[0]["id"]),
+    )
+    store.conn.commit()
+    integrity = store.verify_indicator_event_chain("evil.example")
+    assert integrity["valid"] is False
+    assert integrity["first_invalid_event_id"] == indicator_events[0]["id"]
+
+
+def test_event_chain_migration_backfills_preexisting_events(tmp_path):
+    path = tmp_path / "history.db"
+    store = HistoryStore(path)
+    store.record(EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN))
+    store.update_indicator("example.com", status="triaged")
+    investigation = store.create_investigation("Case")
+    store.add_investigation_indicator(investigation["id"], "example.com")
+    store.conn.executescript(
+        """
+        DROP TRIGGER indicator_events_no_update;
+        DROP TRIGGER indicator_events_no_delete;
+        DROP TRIGGER investigation_events_no_update;
+        DROP TRIGGER investigation_events_no_delete;
+        ALTER TABLE indicator_events DROP COLUMN previous_hash;
+        ALTER TABLE indicator_events DROP COLUMN event_hash;
+        ALTER TABLE investigation_events DROP COLUMN previous_hash;
+        ALTER TABLE investigation_events DROP COLUMN event_hash;
+        DELETE FROM schema_migrations WHERE version = 9;
+        """
+    )
+    store.conn.commit()
+    store.conn.close()
+
+    migrated = HistoryStore(path)
+
+    assert migrated.verify_indicator_event_chain("example.com")["valid"] is True
+    assert migrated.verify_indicator_event_chain("example.com")["checked_events"] == 1
+    assert migrated.verify_investigation_event_chain(investigation["id"])["valid"] is True
+    assert migrated.verify_investigation_event_chain(investigation["id"])["checked_events"] == 2
+
+
 def test_relationship_graph_returns_nodes_and_evidence(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     relationship = store.add_relationship(

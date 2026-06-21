@@ -208,6 +208,8 @@ The versioned API includes:
 | `GET /api/v1/history` | Browse saved enrichment snapshots |
 | `GET /api/v1/history/{enrichment_id}/replay` | Reproduce a saved decision from its stored evidence and scoring configuration |
 | `GET /api/v1/history/{baseline_id}/compare/{comparison_id}` | Compare evidence, scoring decisions, and time-bounded graph state |
+| `GET /api/v1/indicators/{ioc}/integrity` | Verify the indicator analyst-event hash chain |
+| `GET /api/v1/investigations/{id}/integrity` | Verify the investigation-event hash chain |
 | `POST /api/v1/relationships` | Record an analyst relationship or one tied to a supporting observation |
 | `GET /api/v1/indicators/{ioc}/graph?depth=2&as_of=...` | Traverse relationships with depth, edge, and time bounds |
 | `GET /api/v1/investigations/{id}/report` | Render a Markdown case report |

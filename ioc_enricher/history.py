@@ -15,6 +15,7 @@ from ioc_enricher.scoring import METHODOLOGY_VERSION, score
 
 DEFAULT_HISTORY_DB = Path.home() / ".local" / "share" / "iocforge-lab" / "history.db"
 log = logging.getLogger(__name__)
+EVENT_CHAIN_GENESIS = "0" * 64
 
 
 def _normalize_timestamp(value: str | None) -> str | None:
@@ -33,6 +34,32 @@ def _relationship_dict(row: sqlite3.Row) -> dict[str, Any]:
     relationship = dict(row)
     relationship["attributes"] = json.loads(relationship.pop("attributes_json"))
     return relationship
+
+
+def _event_hash(
+    table: str,
+    scope_id: str,
+    event_id: int,
+    event_type: str,
+    data_json: str,
+    created_at: str,
+    previous_hash: str,
+) -> str:
+    payload = json.dumps(
+        {
+            "table": table,
+            "scope_id": scope_id,
+            "id": event_id,
+            "event_type": event_type,
+            "data_json": data_json,
+            "created_at": created_at,
+            "previous_hash": previous_hash,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 class HistoryStore:
@@ -297,7 +324,180 @@ class HistoryStore:
                     """
                 )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (8)")
+            if 9 not in applied:
+                self.conn.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS indicator_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ioc TEXT NOT NULL,
+                        event_type TEXT NOT NULL,
+                        data_json TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY(ioc) REFERENCES indicators(ioc)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_indicator_events_ioc_time
+                    ON indicator_events(ioc, created_at DESC);
+                    CREATE TABLE IF NOT EXISTS investigation_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        investigation_id INTEGER NOT NULL,
+                        event_type TEXT NOT NULL,
+                        data_json TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY(investigation_id) REFERENCES investigations(id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_investigation_events_time
+                    ON investigation_events(investigation_id, created_at DESC);
+                    ALTER TABLE indicator_events ADD COLUMN previous_hash TEXT;
+                    ALTER TABLE indicator_events ADD COLUMN event_hash TEXT;
+                    ALTER TABLE investigation_events ADD COLUMN previous_hash TEXT;
+                    ALTER TABLE investigation_events ADD COLUMN event_hash TEXT;
+                    """
+                )
+                for table, scope_column in (
+                    ("indicator_events", "ioc"),
+                    ("investigation_events", "investigation_id"),
+                ):
+                    groups = self.conn.execute(
+                        f"SELECT DISTINCT {scope_column} FROM {table} "
+                        f"ORDER BY {scope_column}"
+                    ).fetchall()
+                    for group in groups:
+                        scope_id = str(group[0])
+                        prior_hash = EVENT_CHAIN_GENESIS
+                        rows = self.conn.execute(
+                            f"SELECT id, event_type, data_json, created_at FROM {table} "
+                            f"WHERE {scope_column} = ? ORDER BY id",
+                            (group[0],),
+                        ).fetchall()
+                        for row in rows:
+                            digest = _event_hash(
+                                table,
+                                scope_id,
+                                row["id"],
+                                row["event_type"],
+                                row["data_json"],
+                                row["created_at"],
+                                prior_hash,
+                            )
+                            self.conn.execute(
+                                f"UPDATE {table} SET previous_hash = ?, event_hash = ? "
+                                "WHERE id = ?",
+                                (prior_hash, digest, row["id"]),
+                            )
+                            prior_hash = digest
+                self.conn.executescript(
+                    """
+                    CREATE TRIGGER indicator_events_no_update
+                    BEFORE UPDATE ON indicator_events
+                    BEGIN SELECT RAISE(ABORT, 'indicator events are append-only'); END;
+                    CREATE TRIGGER indicator_events_no_delete
+                    BEFORE DELETE ON indicator_events
+                    BEGIN SELECT RAISE(ABORT, 'indicator events are append-only'); END;
+                    CREATE TRIGGER investigation_events_no_update
+                    BEFORE UPDATE ON investigation_events
+                    BEGIN SELECT RAISE(ABORT, 'investigation events are append-only'); END;
+                    CREATE TRIGGER investigation_events_no_delete
+                    BEFORE DELETE ON investigation_events
+                    BEGIN SELECT RAISE(ABORT, 'investigation events are append-only'); END;
+                    """
+                )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (9)")
             self.conn.commit()
+
+    def _append_audited_event(
+        self,
+        table: str,
+        scope_column: str,
+        scope_id: str | int,
+        event_type: str,
+        data: dict[str, Any],
+        timestamp: str,
+    ) -> None:
+        if (table, scope_column) not in {
+            ("indicator_events", "ioc"),
+            ("investigation_events", "investigation_id"),
+        }:
+            raise ValueError("unsupported event log")
+        previous = self.conn.execute(
+            f"SELECT event_hash FROM {table} WHERE {scope_column} = ? ORDER BY id DESC LIMIT 1",
+            (scope_id,),
+        ).fetchone()
+        previous_hash = previous["event_hash"] if previous else EVENT_CHAIN_GENESIS
+        data_json = json.dumps(
+            data, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        event_id = self.conn.execute(
+            f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table}"
+        ).fetchone()[0]
+        digest = _event_hash(
+            table,
+            str(scope_id),
+            event_id,
+            event_type,
+            data_json,
+            timestamp,
+            previous_hash,
+        )
+        self.conn.execute(
+            f"INSERT INTO {table}(id, {scope_column}, event_type, data_json, created_at, "
+            "previous_hash, event_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                event_id,
+                scope_id,
+                event_type,
+                data_json,
+                timestamp,
+                previous_hash,
+                digest,
+            ),
+        )
+
+    def _verify_event_chain(
+        self, table: str, scope_column: str, scope_id: str | int
+    ) -> dict[str, Any]:
+        rows = self.conn.execute(
+            f"SELECT id, event_type, data_json, created_at, previous_hash, event_hash "
+            f"FROM {table} WHERE {scope_column} = ? ORDER BY id",
+            (scope_id,),
+        ).fetchall()
+        previous_hash = EVENT_CHAIN_GENESIS
+        first_invalid: int | None = None
+        for row in rows:
+            expected_hash = _event_hash(
+                table,
+                str(scope_id),
+                row["id"],
+                row["event_type"],
+                row["data_json"],
+                row["created_at"],
+                previous_hash,
+            )
+            if (
+                row["previous_hash"] != previous_hash
+                or row["event_hash"] != expected_hash
+            ):
+                first_invalid = row["id"]
+                break
+            previous_hash = row["event_hash"]
+        return {
+            "scope_id": scope_id,
+            "valid": first_invalid is None,
+            "checked_events": len(rows),
+            "first_invalid_event_id": first_invalid,
+            "head_hash": previous_hash if first_invalid is None else None,
+        }
+
+    def verify_indicator_event_chain(self, ioc: str) -> dict[str, Any]:
+        with self._lock:
+            return self._verify_event_chain("indicator_events", "ioc", ioc)
+
+    def verify_investigation_event_chain(
+        self, investigation_id: int
+    ) -> dict[str, Any]:
+        with self._lock:
+            return self._verify_event_chain(
+                "investigation_events", "investigation_id", investigation_id
+            )
 
     def record(self, result: Any, looked_up_at: str | None = None) -> int:
         """Persist an immutable enrichment snapshot and update indicator times."""
@@ -867,15 +1067,13 @@ class HistoryStore:
                 f"UPDATE indicators SET {assignments} WHERE ioc = ?",
                 [*fields.values(), ioc],
             )
-            self.conn.execute(
-                "INSERT INTO indicator_events(ioc, event_type, data_json, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (
-                    ioc,
-                    "indicator_updated",
-                    json.dumps(fields, sort_keys=True),
-                    datetime.now(timezone.utc).isoformat(),
-                ),
+            self._append_audited_event(
+                "indicator_events",
+                "ioc",
+                ioc,
+                "indicator_updated",
+                fields,
+                datetime.now(timezone.utc).isoformat(),
             )
             self.conn.commit()
         return self.indicator(ioc)
@@ -884,7 +1082,8 @@ class HistoryStore:
         limit = max(1, min(limit, 500))
         with self._lock:
             rows = self.conn.execute(
-                "SELECT id, event_type, data_json, created_at FROM indicator_events "
+                "SELECT id, event_type, data_json, created_at, previous_hash, event_hash "
+                "FROM indicator_events "
                 "WHERE ioc = ? ORDER BY id DESC LIMIT ?",
                 (ioc, limit),
             ).fetchall()
@@ -894,6 +1093,8 @@ class HistoryStore:
                 "event_type": row["event_type"],
                 "data": json.loads(row["data_json"]),
                 "created_at": row["created_at"],
+                "previous_hash": row["previous_hash"],
+                "event_hash": row["event_hash"],
             }
             for row in rows
         ]
@@ -924,14 +1125,13 @@ class HistoryStore:
                 "WHERE ioc = ?",
                 (verdict, reason, timestamp, ioc),
             )
-            self.conn.execute(
-                "INSERT INTO indicator_events(ioc, event_type, data_json, created_at) VALUES (?, ?, ?, ?)",
-                (
-                    ioc,
-                    "verdict_override_set",
-                    json.dumps(data, sort_keys=True),
-                    timestamp,
-                ),
+            self._append_audited_event(
+                "indicator_events",
+                "ioc",
+                ioc,
+                "verdict_override_set",
+                data,
+                timestamp,
             )
             self.conn.commit()
         return self.indicator(ioc)
@@ -951,9 +1151,13 @@ class HistoryStore:
                     "override_at = NULL WHERE ioc = ?",
                     (ioc,),
                 )
-                self.conn.execute(
-                    "INSERT INTO indicator_events(ioc, event_type, data_json, created_at) VALUES (?, ?, ?, ?)",
-                    (ioc, "verdict_override_cleared", "{}", timestamp),
+                self._append_audited_event(
+                    "indicator_events",
+                    "ioc",
+                    ioc,
+                    "verdict_override_cleared",
+                    {},
+                    timestamp,
                 )
                 self.conn.commit()
         return self.indicator(ioc)
@@ -1090,7 +1294,8 @@ class HistoryStore:
         limit = max(1, min(limit, 500))
         with self._lock:
             rows = self.conn.execute(
-                "SELECT id, event_type, data_json, created_at FROM investigation_events "
+                "SELECT id, event_type, data_json, created_at, previous_hash, event_hash "
+                "FROM investigation_events "
                 "WHERE investigation_id = ? ORDER BY id DESC LIMIT ?",
                 (investigation_id, limit),
             ).fetchall()
@@ -1100,6 +1305,8 @@ class HistoryStore:
                 "event_type": row["event_type"],
                 "data": json.loads(row["data_json"]),
                 "created_at": row["created_at"],
+                "previous_hash": row["previous_hash"],
+                "event_hash": row["event_hash"],
             }
             for row in rows
         ]
@@ -1111,10 +1318,13 @@ class HistoryStore:
         data: dict[str, Any],
         timestamp: str,
     ) -> None:
-        self.conn.execute(
-            "INSERT INTO investigation_events(investigation_id, event_type, data_json, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (investigation_id, event_type, json.dumps(data, sort_keys=True), timestamp),
+        self._append_audited_event(
+            "investigation_events",
+            "investigation_id",
+            investigation_id,
+            event_type,
+            data,
+            timestamp,
         )
 
     def add_relationship(

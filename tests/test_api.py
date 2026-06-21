@@ -210,6 +210,23 @@ def test_history_compare_endpoint_returns_snapshot_diff(monkeypatch, tmp_path):
     assert response.json()["comparison"]["enrichment_id"] == comparison
 
 
+def test_investigation_integrity_endpoint_checks_event_chain(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    investigation = store.create_investigation("Triage case")
+    store.add_investigation_indicator(investigation["id"], "evil.example")
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+
+    response = TestClient(api_module.app).get(
+        f"/api/v1/investigations/{investigation['id']}/integrity"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["valid"] is True
+    assert response.json()["checked_events"] == 2
+
+
 def test_dashboard_endpoint_exposes_provider_and_persisted_metrics(
     monkeypatch, tmp_path
 ):

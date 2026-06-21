@@ -215,6 +215,8 @@ class IndicatorEventResponse(BaseModel):
     event_type: str
     data: dict[str, Any]
     created_at: str
+    previous_hash: str
+    event_hash: str
 
 
 class InvestigationCreateRequest(BaseModel):
@@ -505,6 +507,14 @@ def indicator_events(
     return _history_store().indicator_events(ioc, limit=limit)
 
 
+@api.get("/indicators/{ioc}/integrity", tags=["indicators"])
+def indicator_event_integrity(ioc: str) -> dict[str, Any]:
+    store = _history_store()
+    if store.indicator(ioc) is None:
+        raise HTTPException(status_code=404, detail="indicator not found")
+    return store.verify_indicator_event_chain(ioc)
+
+
 @api.post(
     "/relationships",
     response_model=RelationshipResponse,
@@ -664,6 +674,14 @@ def investigation_events(
     if _history_store().investigation(investigation_id) is None:
         raise HTTPException(status_code=404, detail="investigation not found")
     return _history_store().investigation_events(investigation_id, limit=limit)
+
+
+@api.get("/investigations/{investigation_id}/integrity", tags=["investigations"])
+def investigation_event_integrity(investigation_id: int) -> dict[str, Any]:
+    store = _history_store()
+    if store.investigation(investigation_id) is None:
+        raise HTTPException(status_code=404, detail="investigation not found")
+    return store.verify_investigation_event_chain(investigation_id)
 
 
 app.include_router(api)
