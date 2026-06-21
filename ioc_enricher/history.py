@@ -362,6 +362,7 @@ class HistoryStore:
                             ),
                             valid_to=related.get("valid_to"),
                             attributes=related.get("attributes", {}),
+                            recorded_at=timestamp,
                         )
                     except (ValueError, TypeError, AttributeError) as error:
                         log.warning(
@@ -550,6 +551,225 @@ class HistoryStore:
                 for key in decision_fields
             },
             "observations": observation_rows,
+        }
+
+    def compare_enrichments(
+        self,
+        baseline_id: int,
+        comparison_id: int,
+        max_depth: int = 5,
+        edge_limit: int = 500,
+    ) -> dict[str, Any] | None:
+        """Compare evidence, scoring, and graph state between two snapshots."""
+        if not 1 <= max_depth <= 5:
+            raise ValueError("max_depth must be between 1 and 5")
+        if not 1 <= edge_limit <= 500:
+            raise ValueError("edge_limit must be between 1 and 500")
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM enrichments WHERE id IN (?, ?)",
+                (baseline_id, comparison_id),
+            ).fetchall()
+        snapshots = {row["id"]: row for row in rows}
+        if baseline_id not in snapshots or comparison_id not in snapshots:
+            return None
+        baseline_row = snapshots[baseline_id]
+        comparison_row = snapshots[comparison_id]
+        baseline = json.loads(baseline_row["result_json"])
+        comparison = json.loads(comparison_row["result_json"])
+        if baseline_row["ioc"] != comparison_row["ioc"]:
+            raise ValueError("enrichment snapshots must refer to the same IOC")
+        baseline_time = _normalize_timestamp(baseline_row["looked_up_at"])
+        comparison_time = _normalize_timestamp(comparison_row["looked_up_at"])
+        if baseline_time is None or comparison_time is None:
+            raise ValueError("enrichment snapshots must have lookup timestamps")
+        if comparison_time < baseline_time:
+            raise ValueError("comparison snapshot must not precede the baseline")
+
+        baseline_observations = self.observations_for_enrichment(baseline_id)
+        comparison_observations = self.observations_for_enrichment(comparison_id)
+        baseline_by_id = {item["id"]: item for item in baseline_observations}
+        comparison_by_id = {item["id"]: item for item in comparison_observations}
+        baseline_ids = set(baseline_by_id)
+        comparison_ids = set(comparison_by_id)
+        added_ids = comparison_ids - baseline_ids
+        removed_ids = baseline_ids - comparison_ids
+        shared_ids = baseline_ids & comparison_ids
+
+        baseline_replay = self.replay_enrichment(baseline_id)
+        comparison_replay = self.replay_enrichment(comparison_id)
+        baseline_trace = {
+            item.get("observation_id"): item
+            for item in baseline.get("decision_trace", {}).get("observations", [])
+            if item.get("observation_id") is not None
+        }
+        comparison_trace = {
+            item.get("observation_id"): item
+            for item in comparison.get("decision_trace", {}).get("observations", [])
+            if item.get("observation_id") is not None
+        }
+
+        def evidence_delta(
+            observation_ids: set[int],
+            observations: dict[int, dict[str, Any]],
+            trace_by_id: dict[int, dict[str, Any]],
+        ) -> list[dict[str, Any]]:
+            return [
+                {
+                    **observations[observation_id],
+                    "decision_contribution": trace_by_id.get(observation_id),
+                }
+                for observation_id in sorted(
+                    observation_ids,
+                    key=lambda item: observations[item]["ordinal"],
+                )
+            ]
+
+        source_groups: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        for side, observations in (
+            ("baseline", baseline_observations),
+            ("comparison", comparison_observations),
+        ):
+            for item in observations:
+                source = item["observation"]["source"]
+                source_groups.setdefault(source, {"baseline": [], "comparison": []})[
+                    side
+                ].append(item)
+
+        provider_changes = []
+        for source, sides in sorted(source_groups.items()):
+            before_ids = {item["id"] for item in sides["baseline"]}
+            after_ids = {item["id"] for item in sides["comparison"]}
+            if before_ids == after_ids:
+                continue
+            provider_changes.append(
+                {
+                    "source": source,
+                    "baseline": [
+                        {
+                            "id": item["id"],
+                            "ordinal": item["ordinal"],
+                            "observation": item["observation"],
+                        }
+                        for item in sides["baseline"]
+                    ],
+                    "comparison": [
+                        {
+                            "id": item["id"],
+                            "ordinal": item["ordinal"],
+                            "observation": item["observation"],
+                        }
+                        for item in sides["comparison"]
+                    ],
+                    "added_observation_ids": sorted(after_ids - before_ids),
+                    "removed_from_snapshot_ids": sorted(before_ids - after_ids),
+                }
+            )
+
+        baseline_graph = self.relationship_graph(
+            baseline_row["ioc"],
+            limit=edge_limit,
+            max_depth=max_depth,
+            as_of=baseline_time,
+        )
+        comparison_graph = self.relationship_graph(
+            comparison_row["ioc"],
+            limit=edge_limit,
+            max_depth=max_depth,
+            as_of=comparison_time,
+        )
+
+        def edge_key(edge: dict[str, Any]) -> str:
+            identity = {
+                key: edge.get(key)
+                for key in (
+                    "source_ioc",
+                    "target_ioc",
+                    "relationship_type",
+                    "confidence",
+                    "evidence_source",
+                    "evidence_observation_id",
+                    "valid_from",
+                    "valid_to",
+                    "attributes",
+                )
+            }
+            return json.dumps(identity, sort_keys=True, separators=(",", ":"))
+
+        baseline_edges = {edge_key(edge): edge for edge in baseline_graph["edges"]}
+        comparison_edges = {
+            edge_key(edge): edge for edge in comparison_graph["edges"]
+        }
+        baseline_nodes = {node["id"] for node in baseline_graph["nodes"]}
+        comparison_nodes = {node["id"] for node in comparison_graph["nodes"]}
+        score_delta = round(float(comparison["score"]) - float(baseline["score"]), 3)
+
+        return {
+            "ioc": baseline_row["ioc"],
+            "baseline": {
+                "enrichment_id": baseline_id,
+                "looked_up_at": baseline_time,
+                "verdict": baseline["verdict"],
+                "score": baseline["score"],
+                "confidence": baseline["confidence"],
+                "scoring_version": baseline.get("scoring_version"),
+                "scoring_config": baseline.get("scoring_config"),
+            },
+            "comparison": {
+                "enrichment_id": comparison_id,
+                "looked_up_at": comparison_time,
+                "verdict": comparison["verdict"],
+                "score": comparison["score"],
+                "confidence": comparison["confidence"],
+                "scoring_version": comparison.get("scoring_version"),
+                "scoring_config": comparison.get("scoring_config"),
+            },
+            "verdict_changed": baseline["verdict"] != comparison["verdict"],
+            "score_delta": score_delta,
+            "scoring_configuration_changed": (
+                baseline.get("scoring_version") != comparison.get("scoring_version")
+                or baseline.get("scoring_config") != comparison.get("scoring_config")
+            ),
+            "replay": {
+                "baseline_replayable": bool(baseline_replay and baseline_replay["replayable"]),
+                "baseline_matches": (
+                    baseline_replay.get("matches_original")
+                    if baseline_replay and baseline_replay["replayable"]
+                    else None
+                ),
+                "comparison_replayable": bool(
+                    comparison_replay and comparison_replay["replayable"]
+                ),
+                "comparison_matches": (
+                    comparison_replay.get("matches_original")
+                    if comparison_replay and comparison_replay["replayable"]
+                    else None
+                ),
+            },
+            "evidence": {
+                "added": evidence_delta(
+                    added_ids, comparison_by_id, comparison_trace
+                ),
+                "removed_from_snapshot": evidence_delta(
+                    removed_ids, baseline_by_id, baseline_trace
+                ),
+                "unchanged_observation_ids": sorted(shared_ids),
+                "provider_changes": provider_changes,
+            },
+            "graph": {
+                "baseline": baseline_graph,
+                "comparison": comparison_graph,
+                "added_edges": [
+                    comparison_edges[key]
+                    for key in sorted(comparison_edges.keys() - baseline_edges.keys())
+                ],
+                "removed_edges": [
+                    baseline_edges[key]
+                    for key in sorted(baseline_edges.keys() - comparison_edges.keys())
+                ],
+                "added_nodes": sorted(comparison_nodes - baseline_nodes),
+                "removed_nodes": sorted(baseline_nodes - comparison_nodes),
+            },
         }
 
     def list_enrichments(
@@ -908,6 +1128,7 @@ class HistoryStore:
         valid_from: str | None = None,
         valid_to: str | None = None,
         attributes: dict[str, Any] | None = None,
+        recorded_at: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             edge = self._insert_relationship(
@@ -920,6 +1141,7 @@ class HistoryStore:
                 valid_from=valid_from,
                 valid_to=valid_to,
                 attributes=attributes,
+                recorded_at=recorded_at,
             )
             self.conn.commit()
             return edge
@@ -935,6 +1157,7 @@ class HistoryStore:
         valid_from: str | None = None,
         valid_to: str | None = None,
         attributes: dict[str, Any] | None = None,
+        recorded_at: str | None = None,
     ) -> dict[str, Any]:
         source_ioc = source_ioc.strip()
         target_ioc = target_ioc.strip()
@@ -947,7 +1170,9 @@ class HistoryStore:
         relationship_type = relationship_type.strip()
         if not relationship_type:
             raise ValueError("relationship type must not be empty")
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = _normalize_timestamp(recorded_at) or datetime.now(
+            timezone.utc
+        ).isoformat()
         requested_valid_from = _normalize_timestamp(valid_from)
         requested_valid_to = _normalize_timestamp(valid_to)
         evidence_source = evidence_source.strip() or "analyst"

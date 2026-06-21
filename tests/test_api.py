@@ -195,6 +195,21 @@ def test_history_replay_endpoint_returns_not_found_for_unknown_id(monkeypatch, t
     assert response.status_code == 404
 
 
+def test_history_compare_endpoint_returns_snapshot_diff(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    baseline = store.record(EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN), "2026-01-01T00:00:00+00:00")
+    comparison = store.record(EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN), "2026-01-02T00:00:00+00:00")
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+
+    response = TestClient(api_module.app).get(f"/api/v1/history/{baseline}/compare/{comparison}")
+
+    assert response.status_code == 200
+    assert response.json()["baseline"]["enrichment_id"] == baseline
+    assert response.json()["comparison"]["enrichment_id"] == comparison
+
+
 def test_dashboard_endpoint_exposes_provider_and_persisted_metrics(
     monkeypatch, tmp_path
 ):

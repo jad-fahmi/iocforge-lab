@@ -177,10 +177,13 @@ ioc-enrich --extract ticket.txt --max-iocs 100 --fail-soft
 ioc-enrich evil.example --explain
 ioc-enrich --history evil.example --history-limit 20
 ioc-enrich --replay 17
+ioc-enrich --compare 17 24
 ```
 
 `--replay` accepts the enrichment history ID shown by `--history` and outputs
 the original and recalculated scoring traces without querying providers.
+`--compare` accepts baseline and later snapshot IDs, then reports added and
+removed observations, decision changes, replay status, and graph differences.
 
 `--fail-on-malicious` returns a nonzero exit code when a malicious verdict is found. Use `-v` for operational logs and repeat it, or pass `--debug`, for connector-level debugging. Logs go to stderr so JSON, CSV, and report output remain machine-readable.
 
@@ -204,6 +207,7 @@ The versioned API includes:
 | `GET /api/v1/dashboard` | Read provider status, verdict counts, and recent records |
 | `GET /api/v1/history` | Browse saved enrichment snapshots |
 | `GET /api/v1/history/{enrichment_id}/replay` | Reproduce a saved decision from its stored evidence and scoring configuration |
+| `GET /api/v1/history/{baseline_id}/compare/{comparison_id}` | Compare evidence, scoring decisions, and time-bounded graph state |
 | `POST /api/v1/relationships` | Record an analyst relationship or one tied to a supporting observation |
 | `GET /api/v1/indicators/{ioc}/graph?depth=2&as_of=...` | Traverse relationships with depth, edge, and time bounds |
 | `GET /api/v1/investigations/{id}/report` | Render a Markdown case report |

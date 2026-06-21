@@ -101,6 +101,13 @@ def build_parser():
         metavar="ENRICHMENT_ID",
         help="replay a saved enrichment decision by its history ID",
     )
+    p.add_argument(
+        "--compare",
+        nargs=2,
+        type=int,
+        metavar=("BASELINE_ID", "COMPARISON_ID"),
+        help="compare evidence, verdict, and graph between two history IDs",
+    )
     return p
 
 
@@ -179,6 +186,20 @@ def main(argv=None):
             print(f"enrichment history {args.replay} was not found", file=sys.stderr)
             return 1
         print(json.dumps({"replay": replay}, indent=2))
+        return 0
+    if args.compare is not None:
+        baseline_id, comparison_id = args.compare
+        try:
+            comparison = HistoryStore().compare_enrichments(
+                baseline_id, comparison_id
+            )
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        if comparison is None:
+            print("one or both enrichment history IDs were not found", file=sys.stderr)
+            return 1
+        print(json.dumps({"comparison": comparison}, indent=2))
         return 0
 
     iocs = read_iocs(args)

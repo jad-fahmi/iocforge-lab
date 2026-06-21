@@ -300,6 +300,52 @@ def test_replay_reports_legacy_snapshots_as_not_replayable(tmp_path):
     assert replay["reason"] == "scoring_inputs_missing"
 
 
+def test_compare_enrichments_explains_new_evidence_and_temporal_graph(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    baseline = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    baseline.add(SourceResult(source="rdap", ioc="example.com", ioc_type=IocType.DOMAIN, collected_at="2026-01-01T00:00:00+00:00", raw={"registrar": "Example"}))
+    baseline_id = store.record(baseline, "2026-01-01T00:00:00+00:00")
+
+    updated = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    updated.add(baseline.sources[0])
+    updated.add(SourceResult(
+        source="passive_dns", ioc="example.com", ioc_type=IocType.DOMAIN,
+        found=True, malicious=True, score=0.9, raw={"answer": "192.0.2.7"},
+        collected_at="2026-01-02T00:00:00+00:00",
+        related_entities=[{"source_ioc": "example.com", "target_ioc": "192.0.2.7", "relationship_type": "resolves_to", "confidence": 0.9, "observed_at": "2026-01-02T00:00:00+00:00"}],
+    ))
+    score(updated, as_of="2026-01-02T00:00:00+00:00")
+    comparison_id = store.record(updated, "2026-01-02T00:00:00+00:00")
+
+    comparison = store.compare_enrichments(baseline_id, comparison_id)
+
+    assert comparison is not None
+    assert comparison["verdict_changed"] is True
+    assert comparison["evidence"]["added"][0]["observation"]["source"] == "passive_dns"
+    assert comparison["evidence"]["added"][0]["decision_contribution"] is not None
+    assert [edge["target_ioc"] for edge in comparison["graph"]["added_edges"]] == ["192.0.2.7"]
+    assert comparison["graph"]["added_edges"][0]["created_at"] == "2026-01-02T00:00:00+00:00"
+
+
+def test_compare_enrichments_rejects_different_indicators_and_time_order(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    first = store.record(EnrichmentResult(ioc="one.example", ioc_type=IocType.DOMAIN), "2026-01-02T00:00:00+00:00")
+    different_ioc = store.record(EnrichmentResult(ioc="two.example", ioc_type=IocType.DOMAIN), "2026-01-03T00:00:00+00:00")
+    earlier = store.record(EnrichmentResult(ioc="one.example", ioc_type=IocType.DOMAIN), "2026-01-01T00:00:00+00:00")
+    try:
+        store.compare_enrichments(first, different_ioc)
+    except ValueError as error:
+        assert "same IOC" in str(error)
+    else:
+        raise AssertionError("cross-IOC comparison must fail")
+    try:
+        store.compare_enrichments(first, earlier)
+    except ValueError as error:
+        assert "precede" in str(error)
+    else:
+        raise AssertionError("reverse-time comparison must fail")
+
+
 def test_history_updates_analyst_fields_and_records_an_event(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     store.record(EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN))

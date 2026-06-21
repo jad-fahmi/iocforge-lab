@@ -409,6 +409,28 @@ def replay_history(enrichment_id: int = Path(ge=1)) -> dict[str, Any]:
     return replay
 
 
+@api.get("/history/{baseline_id}/compare/{comparison_id}", tags=["history"])
+def compare_history(
+    baseline_id: int = Path(ge=1),
+    comparison_id: int = Path(ge=1),
+    depth: int = Query(default=5, ge=1, le=5),
+    edge_limit: int = Query(default=500, ge=1, le=500),
+) -> dict[str, Any]:
+    """Compare stored evidence, scoring, and temporal graph snapshots."""
+    store = get_engine().history
+    if store is None:
+        raise HTTPException(status_code=503, detail="history storage is unavailable")
+    try:
+        comparison = store.compare_enrichments(
+            baseline_id, comparison_id, max_depth=depth, edge_limit=edge_limit
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if comparison is None:
+        raise HTTPException(status_code=404, detail="enrichment history was not found")
+    return comparison
+
+
 @api.get("/dashboard", response_model=DashboardResponse, tags=["dashboard"])
 def dashboard() -> dict[str, Any]:
     engine = get_engine()
