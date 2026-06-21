@@ -46,6 +46,10 @@ class SourceResult:
             self.raw_response_sha256 = hashlib.sha256(canonical).hexdigest()
 
     def to_dict(self):
+        canonical = json.dumps(
+            self.raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        self.raw_response_sha256 = hashlib.sha256(canonical).hexdigest()
         d = asdict(self)
         d["ioc_type"] = self.ioc_type.value
         return d
@@ -61,12 +65,15 @@ class EnrichmentResult:
     verdict: str = "unknown"
     score: float = 0.0
     confidence: str = "low"
-    scoring_version: str = "1"
+    scoring_version: str = "2"
+    scoring_config: Optional[dict] = None
+    scored_at: Optional[str] = None
     evidence: list = field(default_factory=list)
     counter_evidence: list = field(default_factory=list)
     no_data: list = field(default_factory=list)
     errors: list = field(default_factory=list)
     reason_codes: list = field(default_factory=list)
+    decision_trace: dict = field(default_factory=dict)
     recommended_action: str = "Review manually; insufficient evidence."
     source_context: Optional[dict] = None
     internal_context: dict = field(default_factory=dict)
@@ -78,6 +85,13 @@ class EnrichmentResult:
         return [s for s in self.sources if s.found]
 
     def to_dict(self) -> dict[str, Any]:
+        serialized_sources = [source.to_dict() for source in self.sources]
+        trace_observations = self.decision_trace.get("observations", [])
+        for ordinal, source in enumerate(serialized_sources):
+            if ordinal < len(trace_observations):
+                trace_observations[ordinal]["raw_response_sha256"] = source[
+                    "raw_response_sha256"
+                ]
         return {
             "ioc": self.ioc,
             "ioc_type": self.ioc_type.value,
@@ -85,13 +99,16 @@ class EnrichmentResult:
             "score": self.score,
             "confidence": self.confidence,
             "scoring_version": self.scoring_version,
+            "scoring_config": self.scoring_config,
+            "scored_at": self.scored_at,
             "evidence": self.evidence,
             "counter_evidence": self.counter_evidence,
             "no_data": self.no_data,
             "errors": self.errors,
             "reason_codes": self.reason_codes,
+            "decision_trace": self.decision_trace,
             "recommended_action": self.recommended_action,
             "source_context": self.source_context,
             "internal_context": self.internal_context,
-            "sources": [s.to_dict() for s in self.sources],
+            "sources": serialized_sources,
         }

@@ -95,6 +95,12 @@ def build_parser():
         default=50,
         help="maximum history rows to return (default: 50)",
     )
+    p.add_argument(
+        "--replay",
+        type=int,
+        metavar="ENRICHMENT_ID",
+        help="replay a saved enrichment decision by its history ID",
+    )
     return p
 
 
@@ -166,6 +172,13 @@ def main(argv=None):
             ioc=args.history or None, limit=args.history_limit
         )
         print(json.dumps({"history": entries}, indent=2))
+        return 0
+    if args.replay is not None:
+        replay = HistoryStore().replay_enrichment(args.replay)
+        if replay is None:
+            print(f"enrichment history {args.replay} was not found", file=sys.stderr)
+            return 1
+        print(json.dumps({"replay": replay}, indent=2))
         return 0
 
     iocs = read_iocs(args)
@@ -279,6 +292,9 @@ def _render_explanations(results):
         "ioc",
         "ioc_type",
         "scoring_version",
+        "scoring_config",
+        "scored_at",
+        "decision_trace",
         "score",
         "verdict",
         "confidence",

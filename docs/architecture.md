@@ -7,9 +7,8 @@ engine, a SQLite cache, append-only enrichment snapshots, analyst and
 investigation event logs, basic indicator relationships, and versioned scoring
 explanations. These pieces are the base for the investigation engine; the
 history database is not yet a complete temporal evidence store. In particular,
-relationships are not linked to provider observations, historical replay does
-not re-run a pinned scoring configuration, and analyst event logs are not yet
-tamper-evident.
+relationships are not linked to provider observations, historical-vs-current
+comparison is not available, and analyst event logs are not yet tamper-evident.
 
 The transformation proceeds in dependency order:
 
@@ -19,7 +18,9 @@ The transformation proceeds in dependency order:
    independently of current lookup views.
 2. **Decision trace and replay:** persist complete scoring inputs and methodology
    configuration, then reconstruct and compare decisions from evidence available
-   at a chosen time.
+   at a chosen time. The first replay path now reproduces a saved score and
+   exposes its trace through the CLI and API; historical-vs-current comparison
+   remains future work.
 3. **Temporal graph and pivots:** attach sourced, time-bounded relationships to
    observations and add budgeted traversal over the graph.
 4. **Investigation integrity and bundles:** hash-chain analyst events and define
@@ -37,7 +38,12 @@ stable observation IDs. The SHA-256 value fingerprints the structured `raw`
 payload retained by the connector; because connectors currently normalize or
 filter upstream responses, it is not a hash of an unretained wire-level HTTP
 body. Schema migration backfills observation rows from existing enrichment
-snapshots. Temporal relationship edges and deterministic replay remain later
+snapshots. Scoring now pins the effective thresholds and weights, evaluation
+time, per-observation contribution, exclusions, and local-context adjustments.
+The CLI and API can replay decisions when those inputs are present and the
+methodology version is supported. Replay reports legacy records with missing
+inputs as unavailable instead of silently applying current defaults.
+Temporal relationship edges and historical-vs-current comparison remain later
 steps.
 
 IOCForge has four layers:

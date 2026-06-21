@@ -8,6 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ioc_enricher.ioc.types import IocType
+from ioc_enricher.models import EnrichmentResult, SourceResult
+from ioc_enricher.scoring import METHODOLOGY_VERSION, score
+
 DEFAULT_HISTORY_DB = Path.home() / ".local" / "share" / "iocforge-lab" / "history.db"
 
 
@@ -163,7 +167,6 @@ class HistoryStore:
                         observation_id INTEGER NOT NULL,
                         ordinal INTEGER NOT NULL,
                         PRIMARY KEY(enrichment_id, ordinal),
-                        UNIQUE(enrichment_id, observation_id),
                         FOREIGN KEY(enrichment_id) REFERENCES enrichments(id),
                         FOREIGN KEY(observation_id) REFERENCES evidence_observations(id)
                     );
@@ -186,6 +189,44 @@ class HistoryStore:
                             migrated_source, row["id"], ordinal
                         )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (6)")
+            if 7 not in applied:
+                self.conn.executescript(
+                    """
+                    CREATE TABLE enrichment_observations_v7 (
+                        enrichment_id INTEGER NOT NULL,
+                        observation_id INTEGER NOT NULL,
+                        ordinal INTEGER NOT NULL,
+                        PRIMARY KEY(enrichment_id, ordinal),
+                        FOREIGN KEY(enrichment_id) REFERENCES enrichments(id),
+                        FOREIGN KEY(observation_id) REFERENCES evidence_observations(id)
+                    );
+                    INSERT INTO enrichment_observations_v7(
+                        enrichment_id, observation_id, ordinal
+                    ) SELECT enrichment_id, observation_id, ordinal
+                      FROM enrichment_observations;
+                    DROP TABLE enrichment_observations;
+                    ALTER TABLE enrichment_observations_v7
+                      RENAME TO enrichment_observations;
+                    CREATE INDEX idx_enrichment_observations_observation
+                    ON enrichment_observations(observation_id, enrichment_id);
+                    """
+                )
+                # Rebuild links from snapshots so repeated observations within a
+                # single enrichment retain their original positions as well.
+                self.conn.execute("DELETE FROM enrichment_observations")
+                prior = self.conn.execute(
+                    "SELECT id, looked_up_at, result_json FROM enrichments ORDER BY id"
+                ).fetchall()
+                for row in prior:
+                    for ordinal, source in enumerate(
+                        json.loads(row["result_json"]).get("sources", [])
+                    ):
+                        migrated_source = dict(source)
+                        migrated_source.setdefault("collected_at", row["looked_up_at"])
+                        self._store_observation(
+                            migrated_source, row["id"], ordinal
+                        )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (7)")
             self.conn.commit()
 
     def record(self, result: Any, looked_up_at: str | None = None) -> int:
@@ -222,8 +263,19 @@ class HistoryStore:
             enrichment_id = cursor.lastrowid
             if enrichment_id is None:
                 raise RuntimeError("failed to persist enrichment history")
+            trace_observations = payload.get("decision_trace", {}).get(
+                "observations", []
+            )
             for ordinal, source in enumerate(payload.get("sources", [])):
-                self._store_observation(source, enrichment_id, ordinal)
+                observation_id = self._store_observation(
+                    source, enrichment_id, ordinal
+                )
+                if ordinal < len(trace_observations):
+                    trace_observations[ordinal]["observation_id"] = observation_id
+            self.conn.execute(
+                "UPDATE enrichments SET result_json = ? WHERE id = ?",
+                (json.dumps(payload, sort_keys=True), enrichment_id),
+            )
             self.conn.commit()
             return int(enrichment_id)
 
@@ -320,6 +372,86 @@ class HistoryStore:
             }
             for row in rows
         ]
+
+    def replay_enrichment(self, enrichment_id: int) -> dict[str, Any] | None:
+        """Re-score a saved enrichment using its observations and pinned config."""
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM enrichments WHERE id = ?", (enrichment_id,)
+            ).fetchone()
+        if row is None:
+            return None
+
+        original = json.loads(row["result_json"])
+        config = original.get("scoring_config")
+        scored_at = original.get("scored_at")
+        version = original.get("scoring_version")
+        if version != METHODOLOGY_VERSION:
+            reason = "scoring_methodology_unavailable"
+        elif not config or not scored_at:
+            reason = "scoring_inputs_missing"
+        else:
+            reason = None
+        observation_rows = self.observations_for_enrichment(enrichment_id)
+        if not reason and len(observation_rows) != len(original.get("sources", [])):
+            reason = "evidence_observations_missing"
+        if reason:
+            return {
+                "enrichment_id": enrichment_id,
+                "replayable": False,
+                "reason": reason,
+                "original": original,
+                "observations": observation_rows,
+            }
+
+        sources = []
+        for observation_row in observation_rows:
+            saved = observation_row["observation"]
+            source = dict(saved)
+            source["ioc_type"] = IocType(source["ioc_type"])
+            sources.append(SourceResult(**source))
+        replayed = EnrichmentResult(
+            ioc=original["ioc"],
+            ioc_type=IocType(original["ioc_type"]),
+            sources=sources,
+            internal_context=original.get("internal_context", {}),
+        )
+        score(replayed, settings=config, as_of=scored_at)
+        recalculated = replayed.to_dict()
+        for ordinal, observation in enumerate(observation_rows):
+            trace = recalculated["decision_trace"].get("observations", [])
+            if ordinal < len(trace):
+                trace[ordinal]["observation_id"] = observation["id"]
+        decision_fields = (
+            "score",
+            "verdict",
+            "confidence",
+            "evidence",
+            "counter_evidence",
+            "no_data",
+            "errors",
+            "reason_codes",
+            "recommended_action",
+            "decision_trace",
+        )
+        matches = all(original.get(key) == recalculated.get(key) for key in decision_fields)
+        return {
+            "enrichment_id": enrichment_id,
+            "replayable": True,
+            "matches_original": matches,
+            "scoring_version": version,
+            "scoring_config": config,
+            "scored_at": scored_at,
+            "original": {
+                key: original.get(key)
+                for key in decision_fields
+            },
+            "replayed": {
+                key: recalculated.get(key)
+                for key in decision_fields
+            },
+            "observations": observation_rows,
+        }
 
     def list_enrichments(
         self, ioc: str | None = None, limit: int = 50, offset: int = 0

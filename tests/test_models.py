@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import SourceResult
 
@@ -37,3 +40,22 @@ def test_source_observation_fingerprint_changes_with_payload():
     )
 
     assert first.raw_response_sha256 != changed.raw_response_sha256
+
+
+def test_serialization_refreshes_fingerprint_after_raw_payload_mutation():
+    source = SourceResult(
+        source="provider",
+        ioc="example.com",
+        ioc_type=IocType.DOMAIN,
+        raw={"answer": "203.0.113.7"},
+    )
+    original_hash = source.raw_response_sha256
+    source.raw["answer"] = "198.51.100.4"
+
+    serialized = source.to_dict()
+    canonical = json.dumps(
+        source.raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+
+    assert serialized["raw_response_sha256"] != original_hash
+    assert serialized["raw_response_sha256"] == hashlib.sha256(canonical).hexdigest()

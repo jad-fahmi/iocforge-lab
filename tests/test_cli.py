@@ -19,6 +19,9 @@ class FakeHistory:
     def list_enrichments(self, ioc=None, limit=50):
         return [{"ioc": ioc, "limit": limit}]
 
+    def replay_enrichment(self, enrichment_id):
+        return {"enrichment_id": enrichment_id, "replayable": True}
+
 
 def test_cli_version(capsys):
     with pytest.raises(SystemExit) as error:
@@ -73,6 +76,14 @@ def test_cli_history_query_does_not_enrich(monkeypatch, capsys):
     assert cli.main(["--history", "example.com", "--history-limit", "3"]) == 0
 
     assert '"ioc": "example.com"' in capsys.readouterr().out
+
+
+def test_cli_replays_enrichment_by_history_id(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "HistoryStore", FakeHistory)
+
+    assert cli.main(["--replay", "17"]) == 0
+
+    assert '"enrichment_id": 17' in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(

@@ -4,7 +4,7 @@ import os
 from functools import lru_cache
 from typing import Any, Literal
 
-from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
@@ -71,6 +71,9 @@ class EnrichmentResponse(BaseModel):
     score: float
     confidence: str
     scoring_version: str
+    scoring_config: dict[str, Any] | None = None
+    scored_at: str | None = None
+    decision_trace: dict[str, Any] = Field(default_factory=dict)
     evidence: list[dict[str, Any]]
     counter_evidence: list[dict[str, Any]]
     no_data: list[str]
@@ -86,6 +89,9 @@ class ScoreExplanationResponse(BaseModel):
     ioc: str
     ioc_type: str
     scoring_version: str
+    scoring_config: dict[str, Any] | None = None
+    scored_at: str | None = None
+    decision_trace: dict[str, Any] = Field(default_factory=dict)
     score: float
     verdict: str
     confidence: str
@@ -378,6 +384,18 @@ def history(
         "limit": limit,
         "offset": offset,
     }
+
+
+@api.get("/history/{enrichment_id}/replay", tags=["history"])
+def replay_history(enrichment_id: int = Path(ge=1)) -> dict[str, Any]:
+    """Replay a saved scoring decision from its stored observations and config."""
+    store = get_engine().history
+    if store is None:
+        raise HTTPException(status_code=503, detail="history storage is unavailable")
+    replay = store.replay_enrichment(enrichment_id)
+    if replay is None:
+        raise HTTPException(status_code=404, detail="enrichment history was not found")
+    return replay
 
 
 @api.get("/dashboard", response_model=DashboardResponse, tags=["dashboard"])

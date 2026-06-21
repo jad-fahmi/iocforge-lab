@@ -60,6 +60,8 @@ def test_score_explanation_endpoint_returns_only_scoring_decision(monkeypatch):
     assert response.json()["verdict"] == "clean"
     assert "sources" not in response.json()
     assert "recommended_action" in response.json()
+    assert response.json()["scoring_config"]["thresholds"]["malicious"] == 0.6
+    assert response.json()["decision_trace"]["methodology_version"] == "2"
 
 
 def test_batch_endpoint_deduplicates_iocs(monkeypatch):
@@ -163,6 +165,34 @@ def test_history_endpoint_filters_and_paginates(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert response.json()["items"][0]["ioc"] == "example.com"
     assert response.json()["limit"] == 1
+
+
+def test_history_replay_endpoint_reconstructs_saved_decision(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    engine.enrich("example.com")
+    enrichment_id = store.list_enrichments("example.com")[0]["id"]
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+
+    response = TestClient(api_module.app).get(
+        f"/api/v1/history/{enrichment_id}/replay"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["replayable"] is True
+    assert response.json()["matches_original"] is True
+
+
+def test_history_replay_endpoint_returns_not_found_for_unknown_id(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+
+    response = TestClient(api_module.app).get("/api/v1/history/999999/replay")
+
+    assert response.status_code == 404
 
 
 def test_dashboard_endpoint_exposes_provider_and_persisted_metrics(

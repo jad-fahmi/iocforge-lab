@@ -7,6 +7,7 @@ from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult, SourceResult
+from ioc_enricher.scoring import score
 
 
 def test_history_migrates_and_preserves_snapshots(tmp_path):
@@ -155,6 +156,27 @@ def test_changed_provider_observation_gets_a_new_evidence_id(tmp_path):
     assert first["observation"]["raw"] != second["observation"]["raw"]
 
 
+def test_repeated_observation_keeps_each_snapshot_position(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    source = SourceResult(
+        source="passive-dns",
+        ioc="example.com",
+        ioc_type=IocType.DOMAIN,
+        found=True,
+        raw={"answer": "203.0.113.7"},
+        collected_at="2026-01-01T00:00:00+00:00",
+    )
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.add(source)
+    result.add(source)
+
+    enrichment_id = store.record(result)
+    observations = store.observations_for_enrichment(enrichment_id)
+
+    assert [row["ordinal"] for row in observations] == [0, 1]
+    assert observations[0]["id"] == observations[1]["id"]
+
+
 def test_migration_backfills_observations_from_existing_snapshots(tmp_path):
     path = tmp_path / "legacy-history.db"
     conn = sqlite3.connect(path)
@@ -207,6 +229,58 @@ def test_migration_backfills_observations_from_existing_snapshots(tmp_path):
 
     assert evidence["collected_at"] == "2026-01-01T00:00:00+00:00"
     assert evidence["raw_response_sha256"] == hashlib.sha256(canonical_raw).hexdigest()
+
+
+def test_replay_reproduces_historical_score_from_pinned_time_and_config(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.add(
+        SourceResult(
+            source="virustotal",
+            ioc="example.com",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            malicious=True,
+            score=0.8,
+            raw={"last_seen": "2020-01-01T00:00:00+00:00"},
+            observed_at="2020-01-01T00:00:00+00:00",
+        )
+    )
+    score(
+        result,
+        settings={
+            "weights": {"virustotal": 0.7},
+            "thresholds": {"suspicious": 0.3, "malicious": 0.7},
+        },
+        as_of="2020-01-15T00:00:00+00:00",
+    )
+    enrichment_id = store.record(result, looked_up_at="2026-01-01T00:00:00+00:00")
+
+    replay = store.replay_enrichment(enrichment_id)
+
+    assert replay is not None
+    assert replay["replayable"] is True
+    assert replay["matches_original"] is True
+    assert replay["replayed"]["decision_trace"]["evaluated_at"] == (
+        "2020-01-15T00:00:00+00:00"
+    )
+    assert replay["replayed"]["decision_trace"]["observations"][0][
+        "observation_id"
+    ] == replay["observations"][0]["id"]
+
+
+def test_replay_reports_legacy_snapshots_as_not_replayable(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(
+        ioc="legacy.example", ioc_type=IocType.DOMAIN, verdict="clean"
+    )
+    enrichment_id = store.record(result)
+
+    replay = store.replay_enrichment(enrichment_id)
+
+    assert replay is not None
+    assert replay["replayable"] is False
+    assert replay["reason"] == "scoring_inputs_missing"
 
 
 def test_history_updates_analyst_fields_and_records_an_event(tmp_path):

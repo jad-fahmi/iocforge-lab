@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-METHODOLOGY_VERSION = "1"
+METHODOLOGY_VERSION = "2"
 
 DEFAULT_WEIGHTS = {
     "virustotal": 1.0,
@@ -20,8 +20,10 @@ DEFAULT_WEIGHTS = {
 DEFAULT_THRESHOLDS = {"suspicious": 0.25, "malicious": 0.6}
 
 
-def score(result, settings=None):
-    explanation = explain(result, settings=settings)
+def score(result, settings=None, as_of=None):
+    scored_at = _as_utc(as_of) if as_of is not None else datetime.now(timezone.utc)
+    snapshot = settings_snapshot(settings)
+    explanation = explain(result, settings=snapshot, as_of=scored_at)
     result.score = explanation["score"]
     result.verdict = explanation["verdict"]
     result.confidence = explanation["confidence"]
@@ -30,12 +32,18 @@ def score(result, settings=None):
     result.no_data = explanation["no_data"]
     result.errors = explanation["errors"]
     result.reason_codes = explanation["reason_codes"]
+    result.decision_trace = explanation["decision_trace"]
     result.recommended_action = explanation["recommended_action"]
     result.scoring_version = METHODOLOGY_VERSION
+    result.scoring_config = snapshot
+    result.scored_at = scored_at.isoformat()
     return result.score, result.verdict
 
 
-def explain(result, settings=None):
+def explain(result, settings=None, as_of=None):
+    evaluation_time = (
+        _as_utc(as_of) if as_of is not None else datetime.now(timezone.utc)
+    )
     weights, thresholds = _settings(settings)
     evidence = []
     counter_evidence = []
@@ -44,52 +52,105 @@ def explain(result, settings=None):
     reason_codes = []
     weighted_signal = 0.0
     total_weight = 0.0
+    observation_trace = []
 
     for source in result.sources:
+        weight = weights.get(source.source, 0.5)
+        age_factor = _freshness_factor(source, evaluation_time)
+        observed_at = _observed_at(source)
+        adjusted_weight = weight * age_factor
+        status = "unclassified"
+        included = False
+        numerator = 0.0
         if source.error:
             errors.append({"source": source.source, "error": source.error})
-            continue
-        if not source.found:
+            status = "error"
+        elif not source.found:
             no_data.append(source.source)
-            continue
+            status = "no_data"
+        else:
+            codes = reason_codes_for(source, as_of=evaluation_time)
+            reason_codes.extend(codes)
 
-        weight = weights.get(source.source, 0.5)
-        age_factor = _freshness_factor(source)
-        adjusted_weight = weight * age_factor
-        codes = reason_codes_for(source)
-        reason_codes.extend(codes)
+            item = {
+                "source": source.source,
+                "score": source.score,
+                "reason_codes": codes,
+                "age_factor": age_factor,
+                "summary": _summary(source),
+            }
 
-        item = {
-            "source": source.source,
-            "score": source.score,
-            "reason_codes": codes,
-            "age_factor": age_factor,
-            "summary": _summary(source),
-        }
+            if source.malicious:
+                evidence.append(item)
+                status = "malicious"
+                if adjusted_weight:
+                    numerator = adjusted_weight * (
+                        source.score if source.score is not None else 1.0
+                    )
+                    weighted_signal += numerator
+                    total_weight += adjusted_weight
+                    included = True
+            elif source.malicious is False:
+                counter_evidence.append(item)
+                status = "benign"
+                if adjusted_weight:
+                    total_weight += adjusted_weight
+                    included = True
 
-        if source.malicious:
-            evidence.append(item)
-            if adjusted_weight:
-                weighted_signal += adjusted_weight * (
-                    source.score if source.score is not None else 1.0
-                )
-                total_weight += adjusted_weight
-        elif source.malicious is False:
-            counter_evidence.append(item)
-            if adjusted_weight:
-                total_weight += adjusted_weight
+        observation_trace.append(
+            {
+                "source": source.source,
+                "collected_at": source.collected_at,
+                "observed_at": observed_at.isoformat() if observed_at else None,
+                "raw_response_sha256": source.raw_response_sha256,
+                "status": status,
+                "score": source.score,
+                "confidence": source.confidence,
+                "configured_weight": weight,
+                "freshness_factor": age_factor,
+                "applied_weight": adjusted_weight,
+                "included_in_aggregate": included,
+                "weighted_signal_contribution": round(numerator, 6),
+                "ignored_reason": (
+                    "provider_error"
+                    if status == "error"
+                    else "provider_returned_no_data"
+                    if status == "no_data"
+                    else "provider_has_no_verdict"
+                    if status == "unclassified"
+                    else "zero_effective_weight"
+                    if not included
+                    else None
+                ),
+            }
+        )
 
     internal = getattr(result, "internal_context", {}) or {}
     internal_reasons = internal.get("reasons", [])
     reason_codes.extend(internal_reasons)
 
-    final = round(weighted_signal / total_weight, 3) if total_weight else 0.0
+    base_score = round(weighted_signal / total_weight, 3) if total_weight else 0.0
+    final = base_score
+    context_adjustments = []
     if "local_blocklist" in internal_reasons:
         final = max(final, 0.85)
+        context_adjustments.append(
+            {"reason": "local_blocklist", "operation": "floor", "value": 0.85}
+        )
     if "allowlisted_asset" in internal_reasons or "private_ip" in internal_reasons:
         final = round(final * 0.25, 3)
+        context_adjustments.append(
+            {
+                "reason": "allowlisted_asset_or_private_ip",
+                "operation": "multiply",
+                "value": 0.25,
+            }
+        )
     if "known_scanner" in internal_reasons:
         final = min(final, 0.2)
+        context_adjustments.append(
+            {"reason": "known_scanner", "operation": "cap", "value": 0.2}
+        )
 
     verdict = verdict_for(final, thresholds=thresholds)
     confidence = confidence_for(evidence, counter_evidence, errors, no_data)
@@ -103,7 +164,24 @@ def explain(result, settings=None):
         "errors": errors,
         "reason_codes": sorted(set(reason_codes)),
         "recommended_action": recommended_action(verdict, confidence, internal),
+        "decision_trace": {
+            "methodology_version": METHODOLOGY_VERSION,
+            "evaluated_at": evaluation_time.isoformat(),
+            "observations": observation_trace,
+            "weighted_signal": round(weighted_signal, 6),
+            "total_weight": round(total_weight, 6),
+            "base_score": base_score,
+            "context_adjustments": context_adjustments,
+            "final_score": final,
+            "thresholds": thresholds,
+        },
     }
+
+
+def settings_snapshot(settings=None):
+    """Return the full effective scoring configuration used for a decision."""
+    weights, thresholds = _settings(settings)
+    return {"weights": weights, "thresholds": thresholds}
 
 
 def verdict_for(value, thresholds=None):
@@ -161,7 +239,7 @@ def recommended_action(verdict, confidence, internal):
     return "No immediate action; document blind spots and recheck if new telemetry appears."
 
 
-def reason_codes_for(source):
+def reason_codes_for(source, as_of=None):
     raw = source.raw or {}
     codes = []
     if source.source == "virustotal":
@@ -178,7 +256,7 @@ def reason_codes_for(source):
     if _observed_at(source):
         codes.append(
             "recent_observation"
-            if _freshness_factor(source) >= 0.75
+            if _freshness_factor(source, as_of) >= 0.75
             else "stale_observation"
         )
     return codes
@@ -208,11 +286,14 @@ def _summary(source):
     return "source reported data"
 
 
-def _freshness_factor(source):
+def _freshness_factor(source, as_of=None):
     observed = _observed_at(source)
     if observed is None:
         return 1.0
-    age_days = max(0, (datetime.now(timezone.utc) - observed).days)
+    evaluation_time = (
+        _as_utc(as_of) if as_of is not None else datetime.now(timezone.utc)
+    )
+    age_days = max(0, (evaluation_time - observed).days)
     if age_days <= 30:
         return 1.0
     if age_days <= 90:
@@ -233,7 +314,15 @@ def _observed_at(source):
         return datetime.fromtimestamp(value, timezone.utc)
     if isinstance(value, str):
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return _as_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
         except ValueError:
             return None
     return None
+
+
+def _as_utc(value):
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)

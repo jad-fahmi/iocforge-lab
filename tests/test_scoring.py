@@ -172,7 +172,33 @@ def test_configured_thresholds_change_verdict_and_record_version():
     )
 
     assert r.verdict == "malicious"
-    assert r.scoring_version == "1"
+    assert r.scoring_version == "2"
+
+
+def test_decision_trace_records_weights_and_why_observations_were_ignored():
+    result = _res(
+        [
+            SourceResult(
+                "virustotal",
+                "x",
+                IocType.IPV4,
+                found=True,
+                malicious=True,
+                score=0.8,
+            ),
+            SourceResult("shodan", "x", IocType.IPV4, found=True),
+            SourceResult("otx", "x", IocType.IPV4, error="timeout"),
+        ]
+    )
+
+    score(result, as_of="2026-09-20T00:00:00+00:00")
+
+    assert result.scoring_config["weights"]["virustotal"] == 1.0
+    assert result.scored_at == "2026-09-20T00:00:00+00:00"
+    trace = result.decision_trace["observations"]
+    assert trace[0]["included_in_aggregate"] is True
+    assert trace[1]["ignored_reason"] == "provider_has_no_verdict"
+    assert trace[2]["ignored_reason"] == "provider_error"
 
 
 def test_invalid_thresholds_are_rejected():
