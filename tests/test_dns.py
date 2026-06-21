@@ -31,12 +31,16 @@ def test_dns_returns_available_record_sets(monkeypatch):
             "source_ioc": "example.com",
             "target_ioc": "203.0.113.7",
             "relationship_type": "resolves_to",
+            "source_entity_type": "domain",
+            "target_entity_type": "ip",
             "attributes": {"record_type": "A"},
         },
         {
             "source_ioc": "example.com",
             "target_ioc": "mail.example.com",
             "relationship_type": "mail_exchange",
+            "source_entity_type": "domain",
+            "target_entity_type": "hostname",
             "attributes": {"record_type": "MX"},
         },
     ]

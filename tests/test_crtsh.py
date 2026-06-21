@@ -11,11 +11,13 @@ def test_crtsh_collects_unique_certificate_names_and_issuers():
             200,
             json=[
                 {
+                    "id": 101,
                     "name_value": "www.example.com\n*.api.example.com",
                     "issuer_name": "C=US, O=Example CA",
                     "not_after": "2027-01-01T00:00:00+00:00",
                 },
                 {
+                    "id": 102,
                     "name_value": "WWW.EXAMPLE.COM",
                     "issuer_name": "C=US, O=Example CA",
                     "not_after": "2026-01-01T00:00:00+00:00",
@@ -34,6 +36,11 @@ def test_crtsh_collects_unique_certificate_names_and_issuers():
     assert any(
         edge["target_ioc"] == "api.example.com"
         and edge["relationship_type"] == "certificate_name"
+        for edge in result.related_entities
+    )
+    assert any(
+        edge["target_ioc"] == "certificate:crtsh:101"
+        and edge["target_entity_type"] == "certificate"
         for edge in result.related_entities
     )
 

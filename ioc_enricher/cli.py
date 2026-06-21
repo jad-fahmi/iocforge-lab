@@ -126,6 +126,22 @@ def build_parser():
         metavar="PATH",
         help="validate and replay a .iocforge bundle offline",
     )
+    p.add_argument(
+        "--pivots",
+        metavar="IOC",
+        help="rank evidence-backed infrastructure pivots from saved graph edges",
+    )
+    p.add_argument(
+        "--pivot-limit",
+        type=int,
+        default=25,
+        help="maximum pivot candidates to return (default: 25)",
+    )
+    p.add_argument(
+        "--pivot-entity-type",
+        metavar="TYPE",
+        help="disambiguate a pivot root as domain, hostname, IP, or another graph type",
+    )
     return p
 
 
@@ -218,6 +234,21 @@ def main(argv=None):
             print("one or both enrichment history IDs were not found", file=sys.stderr)
             return 1
         print(json.dumps({"comparison": comparison}, indent=2))
+        return 0
+    if args.pivots is not None:
+        store = HistoryStore()
+        try:
+            pivots = store.suggest_pivots(
+                args.pivots,
+                limit=args.pivot_limit,
+                entity_type=args.pivot_entity_type,
+            )
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        finally:
+            store.close()
+        print(json.dumps({"pivots": pivots}, indent=2))
         return 0
     if args.bundle_export is not None:
         if not args.bundle_output:

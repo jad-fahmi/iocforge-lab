@@ -405,6 +405,12 @@ def test_relationship_endpoints_return_graph_data(monkeypatch, tmp_path):
     assert created.status_code == 201
     assert graph.json()["edges"][0]["target_ioc"] == "203.0.113.7"
     assert graph.json()["max_depth"] == 1
+    pivots = client.get(
+        "/api/v1/indicators/evil.example/pivots",
+        params={"as_of": "2099-01-01T00:00:00+00:00"},
+    )
+    assert pivots.status_code == 200
+    assert pivots.json()["candidates"][0]["entity_type"] == "ip"
     invalid_time = client.get(
         "/api/v1/indicators/evil.example/graph", params={"as_of": "not-a-date"}
     )

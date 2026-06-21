@@ -25,6 +25,17 @@ class FakeHistory:
     def compare_enrichments(self, baseline_id, comparison_id):
         return {"baseline": baseline_id, "comparison": comparison_id}
 
+    def suggest_pivots(self, ioc, limit=25, as_of=None, entity_type=None):
+        return {
+            "ioc": ioc,
+            "limit": limit,
+            "as_of": as_of,
+            "entity_type": entity_type,
+        }
+
+    def close(self):
+        pass
+
 
 def test_cli_version(capsys):
     with pytest.raises(SystemExit) as error:
@@ -97,6 +108,16 @@ def test_cli_compares_two_enrichment_history_ids(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert '"baseline": 17' in output
     assert '"comparison": 21' in output
+
+
+def test_cli_ranks_saved_graph_pivots(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "HistoryStore", FakeHistory)
+
+    assert cli.main(["--pivots", "evil.example", "--pivot-limit", "3"]) == 0
+
+    output = capsys.readouterr().out
+    assert '"ioc": "evil.example"' in output
+    assert '"limit": 3' in output
 
 
 def test_cli_inspects_investigation_bundle_offline(monkeypatch, tmp_path, capsys):

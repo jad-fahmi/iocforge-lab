@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ioc_enricher.ioc.detect import detect, normalize
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult, SourceResult
 from ioc_enricher.scoring import METHODOLOGY_VERSION, score
@@ -16,6 +17,73 @@ from ioc_enricher.scoring import METHODOLOGY_VERSION, score
 DEFAULT_HISTORY_DB = Path.home() / ".local" / "share" / "iocforge-lab" / "history.db"
 log = logging.getLogger(__name__)
 EVENT_CHAIN_GENESIS = "0" * 64
+GRAPH_ENTITY_TYPES = {
+    "domain",
+    "ip",
+    "url",
+    "file_hash",
+    "asn",
+    "certificate",
+    "hostname",
+    "provider_observation",
+    "investigation",
+    "email",
+    "cve",
+    "unknown",
+}
+HOSTNAME_RELATIONSHIPS = {"cname_to", "mail_exchange", "nameserver", "certificate_name"}
+
+
+def _entity_type_for(
+    value: str,
+    explicit: str | None = None,
+    relationship_type: str | None = None,
+    endpoint: str = "",
+) -> str:
+    if explicit:
+        selected = explicit.strip().lower()
+        if selected not in GRAPH_ENTITY_TYPES:
+            raise ValueError("unsupported graph entity type")
+        return selected
+    if value.startswith("observation:"):
+        return "provider_observation"
+    if value.startswith("investigation:"):
+        return "investigation"
+    detected = detect(value)
+    if detected in {IocType.IPV4, IocType.IPV6}:
+        return "ip"
+    if detected.is_hash():
+        return "file_hash"
+    if detected == IocType.ASN:
+        return "asn"
+    if detected == IocType.URL:
+        return "url"
+    if detected == IocType.DOMAIN:
+        if endpoint == "target" and relationship_type in HOSTNAME_RELATIONSHIPS:
+            return "hostname"
+        return "domain"
+    if detected == IocType.EMAIL:
+        return "email"
+    if detected == IocType.CVE:
+        return "cve"
+    return "unknown"
+
+
+def _canonical_entity_value(value: str, entity_type: str) -> str:
+    detected = detect(value)
+    if entity_type in {"domain", "hostname"} and detected == IocType.DOMAIN:
+        return normalize(value, detected)
+    if entity_type == "ip" and detected in {IocType.IPV4, IocType.IPV6}:
+        return normalize(value, detected)
+    if entity_type == "url" and detected == IocType.URL:
+        return normalize(value, detected)
+    if entity_type == "asn" and detected == IocType.ASN:
+        return normalize(value, detected)
+    if entity_type == "file_hash" and detected.is_hash():
+        return normalize(value, detected)
+    if entity_type in {"email", "cve"} and detected != IocType.UNKNOWN:
+        return normalize(value, detected)
+    return value.strip()
 
 
 def _normalize_timestamp(value: str | None) -> str | None:
@@ -402,7 +470,155 @@ class HistoryStore:
                     """
                 )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (9)")
+            if 10 not in applied:
+                self.conn.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS investigations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL DEFAULT 'open',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS investigation_indicators (
+                        investigation_id INTEGER NOT NULL,
+                        ioc TEXT NOT NULL,
+                        added_at TEXT NOT NULL,
+                        PRIMARY KEY(investigation_id, ioc),
+                        FOREIGN KEY(investigation_id) REFERENCES investigations(id)
+                    );
+                    CREATE TABLE IF NOT EXISTS graph_entities (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        entity_type TEXT NOT NULL,
+                        canonical_value TEXT NOT NULL,
+                        display_value TEXT NOT NULL,
+                        metadata_json TEXT NOT NULL DEFAULT '{}',
+                        created_at TEXT NOT NULL,
+                        UNIQUE(entity_type, canonical_value),
+                        CHECK(entity_type IN (
+                            'domain', 'ip', 'url', 'file_hash', 'asn',
+                            'certificate', 'hostname', 'provider_observation',
+                            'investigation', 'email', 'cve', 'unknown'
+                        ))
+                    );
+                    ALTER TABLE indicator_relationships
+                      ADD COLUMN source_entity_id INTEGER REFERENCES graph_entities(id);
+                    ALTER TABLE indicator_relationships
+                      ADD COLUMN target_entity_id INTEGER REFERENCES graph_entities(id);
+                    CREATE INDEX idx_relationships_source_entity
+                    ON indicator_relationships(source_entity_id);
+                    CREATE INDEX idx_relationships_target_entity
+                    ON indicator_relationships(target_entity_id);
+                    """
+                )
+                old_edges = self.conn.execute(
+                    "SELECT id, source_ioc, target_ioc, relationship_type FROM "
+                    "indicator_relationships ORDER BY id"
+                ).fetchall()
+                for edge in old_edges:
+                    source_entity = self._ensure_graph_entity(
+                        edge["source_ioc"],
+                        _entity_type_for(
+                            edge["source_ioc"],
+                            relationship_type=edge["relationship_type"],
+                            endpoint="source",
+                        ),
+                    )
+                    target_entity = self._ensure_graph_entity(
+                        edge["target_ioc"],
+                        _entity_type_for(
+                            edge["target_ioc"],
+                            relationship_type=edge["relationship_type"],
+                            endpoint="target",
+                        ),
+                    )
+                    self.conn.execute(
+                        "UPDATE indicator_relationships SET source_entity_id = ?, "
+                        "target_entity_id = ? WHERE id = ?",
+                        (source_entity, target_entity, edge["id"]),
+                    )
+                observation_rows = self.conn.execute(
+                    "SELECT id, observation_key, source, collected_at, "
+                    "raw_response_sha256 FROM evidence_observations ORDER BY id"
+                ).fetchall()
+                for observation in observation_rows:
+                    self._ensure_graph_entity(
+                        f"observation:{observation['observation_key']}",
+                        "provider_observation",
+                        {
+                            "observation_id": observation["id"],
+                            "source": observation["source"],
+                            "collected_at": observation["collected_at"],
+                            "raw_response_sha256": observation["raw_response_sha256"],
+                        },
+                    )
+                investigation_rows = self.conn.execute(
+                    "SELECT id, title, created_at FROM investigations ORDER BY id"
+                ).fetchall()
+                for investigation_row in investigation_rows:
+                    case_node = f"investigation:{investigation_row['id']}"
+                    self._ensure_graph_entity(
+                        case_node,
+                        "investigation",
+                        {"title": investigation_row["title"]},
+                    )
+                    members = self.conn.execute(
+                        "SELECT ioc, added_at FROM investigation_indicators "
+                        "WHERE investigation_id = ? ORDER BY added_at",
+                        (investigation_row["id"],),
+                    ).fetchall()
+                    for member in members:
+                        self._insert_relationship(
+                            source_ioc=member["ioc"],
+                            target_ioc=case_node,
+                            relationship_type="part_of_investigation",
+                            confidence=1.0,
+                            evidence_source="analyst",
+                            valid_from=member["added_at"],
+                            recorded_at=member["added_at"],
+                            target_entity_type="investigation",
+                        )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (10)")
             self.conn.commit()
+
+    def _ensure_graph_entity(
+        self,
+        value: str,
+        entity_type: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        canonical = _canonical_entity_value(value, entity_type)
+        metadata_json = json.dumps(
+            metadata or {}, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        timestamp = datetime.now(timezone.utc).isoformat()
+        self.conn.execute(
+            "INSERT INTO graph_entities(entity_type, canonical_value, display_value, "
+            "metadata_json, created_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(entity_type, canonical_value) DO UPDATE SET "
+            "metadata_json = excluded.metadata_json "
+            "WHERE graph_entities.metadata_json = '{}'",
+            (entity_type, canonical, value.strip(), metadata_json, timestamp),
+        )
+        row = self.conn.execute(
+            "SELECT id FROM graph_entities WHERE entity_type = ? AND canonical_value = ?",
+            (entity_type, canonical),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("failed to persist graph entity")
+        return int(row["id"])
+
+    def graph_entity(self, entity_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM graph_entities WHERE id = ?", (entity_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        entity = dict(row)
+        entity["metadata"] = json.loads(entity.pop("metadata_json"))
+        return entity
 
     def _append_audited_event(
         self,
@@ -540,6 +756,25 @@ class HistoryStore:
                 observation_id = self._store_observation(
                     source, enrichment_id, ordinal
                 )
+                observation_row = self.conn.execute(
+                    "SELECT observation_key, source, collected_at, raw_response_sha256 "
+                    "FROM evidence_observations WHERE id = ?",
+                    (observation_id,),
+                ).fetchone()
+                if observation_row is None:
+                    raise RuntimeError("stored observation was not found")
+                self._ensure_graph_entity(
+                    f"observation:{observation_row['observation_key']}",
+                    "provider_observation",
+                    {
+                        "observation_id": observation_id,
+                        "source": observation_row["source"],
+                        "collected_at": observation_row["collected_at"],
+                        "raw_response_sha256": observation_row[
+                            "raw_response_sha256"
+                        ],
+                    },
+                )
                 for related in source.get("related_entities", []):
                     if not all(
                         related.get(key)
@@ -563,6 +798,8 @@ class HistoryStore:
                             valid_to=related.get("valid_to"),
                             attributes=related.get("attributes", {}),
                             recorded_at=timestamp,
+                            source_entity_type=related.get("source_entity_type"),
+                            target_entity_type=related.get("target_entity_type"),
                         )
                     except (ValueError, TypeError, AttributeError) as error:
                         log.warning(
@@ -1173,6 +1410,11 @@ class HistoryStore:
             if cursor.lastrowid is None:
                 raise RuntimeError("failed to create investigation")
             investigation_id = int(cursor.lastrowid)
+            self._ensure_graph_entity(
+                f"investigation:{investigation_id}",
+                "investigation",
+                {"title": title.strip()},
+            )
             self._record_investigation_event(
                 investigation_id,
                 "investigation_created",
@@ -1399,6 +1641,16 @@ class HistoryStore:
                 self._record_investigation_event(
                     investigation_id, "indicator_added", {"ioc": ioc}, timestamp
                 )
+                self._insert_relationship(
+                    source_ioc=ioc,
+                    target_ioc=f"investigation:{investigation_id}",
+                    relationship_type="part_of_investigation",
+                    confidence=1.0,
+                    evidence_source="analyst",
+                    valid_from=timestamp,
+                    recorded_at=timestamp,
+                    target_entity_type="investigation",
+                )
             self.conn.execute(
                 "UPDATE investigations SET updated_at = ? WHERE id = ?",
                 (timestamp, investigation_id),
@@ -1457,6 +1709,8 @@ class HistoryStore:
         valid_to: str | None = None,
         attributes: dict[str, Any] | None = None,
         recorded_at: str | None = None,
+        source_entity_type: str | None = None,
+        target_entity_type: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             edge = self._insert_relationship(
@@ -1470,6 +1724,8 @@ class HistoryStore:
                 valid_to=valid_to,
                 attributes=attributes,
                 recorded_at=recorded_at,
+                source_entity_type=source_entity_type,
+                target_entity_type=target_entity_type,
             )
             self.conn.commit()
             return edge
@@ -1486,6 +1742,8 @@ class HistoryStore:
         valid_to: str | None = None,
         attributes: dict[str, Any] | None = None,
         recorded_at: str | None = None,
+        source_entity_type: str | None = None,
+        target_entity_type: str | None = None,
     ) -> dict[str, Any]:
         source_ioc = source_ioc.strip()
         target_ioc = target_ioc.strip()
@@ -1550,6 +1808,32 @@ class HistoryStore:
             )
             if support is None:
                 raise ValueError("the observation does not support this relationship")
+            for selected_type, supported_type, value, endpoint in (
+                (
+                    source_entity_type,
+                    support.get("source_entity_type"),
+                    source_ioc,
+                    "source",
+                ),
+                (
+                    target_entity_type,
+                    support.get("target_entity_type"),
+                    target_ioc,
+                    "target",
+                ),
+                ):
+                if selected_type and _entity_type_for(
+                    value,
+                    explicit=selected_type,
+                    relationship_type=relationship_type,
+                    endpoint=endpoint,
+                ) != _entity_type_for(
+                    value,
+                    explicit=supported_type,
+                    relationship_type=relationship_type,
+                    endpoint=endpoint,
+                ):
+                    raise ValueError("entity type conflicts with supporting observation")
             valid_from = (
                 _normalize_timestamp(
                     support.get("valid_from")
@@ -1567,13 +1851,36 @@ class HistoryStore:
             valid_to = requested_valid_to
         if valid_to and valid_to < valid_from:
             raise ValueError("relationship valid_to must not precede valid_from")
+        source_entity_type = _entity_type_for(
+            source_ioc,
+            explicit=source_entity_type,
+            relationship_type=relationship_type,
+            endpoint="source",
+        )
+        target_entity_type = _entity_type_for(
+            target_ioc,
+            explicit=target_entity_type,
+            relationship_type=relationship_type,
+            endpoint="target",
+        )
+        source_entity_id = self._ensure_graph_entity(
+            source_ioc,
+            source_entity_type,
+            attributes if source_entity_type == "certificate" else None,
+        )
+        target_entity_id = self._ensure_graph_entity(
+            target_ioc,
+            target_entity_type,
+            attributes if target_entity_type == "certificate" else None,
+        )
         self.conn.execute(
             """
             INSERT OR IGNORE INTO indicator_relationships(
                 source_ioc, target_ioc, relationship_type, confidence,
                 evidence_source, created_at, valid_from, valid_to,
-                evidence_observation_id, attributes_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                evidence_observation_id, attributes_json,
+                source_entity_id, target_entity_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 source_ioc,
@@ -1586,14 +1893,23 @@ class HistoryStore:
                 valid_to,
                 evidence_observation_id,
                 json.dumps(attributes, sort_keys=True),
+                source_entity_id,
+                target_entity_id,
             ),
         )
         row = self.conn.execute(
             """
-            SELECT * FROM indicator_relationships
-            WHERE source_ioc = ? AND target_ioc = ? AND relationship_type = ?
-              AND evidence_source = ? AND evidence_observation_id IS ?
-            ORDER BY id DESC LIMIT 1
+            SELECT edge.*, source_entity.entity_type AS source_entity_type,
+                   target_entity.entity_type AS target_entity_type
+            FROM indicator_relationships AS edge
+            LEFT JOIN graph_entities AS source_entity
+              ON source_entity.id = edge.source_entity_id
+            LEFT JOIN graph_entities AS target_entity
+              ON target_entity.id = edge.target_entity_id
+            WHERE edge.source_ioc = ? AND edge.target_ioc = ?
+              AND edge.relationship_type = ? AND edge.evidence_source = ?
+              AND edge.evidence_observation_id IS ?
+            ORDER BY edge.id DESC LIMIT 1
             """,
             (
                 source_ioc,
@@ -1613,8 +1929,8 @@ class HistoryStore:
         limit = max(1, min(limit, 500))
         at = _normalize_timestamp(as_of)
         time_filter = (
-            " AND created_at <= ? AND valid_from <= ? "
-            "AND (valid_to IS NULL OR valid_to >= ?)"
+            " AND edge.created_at <= ? AND edge.valid_from <= ? "
+            "AND (edge.valid_to IS NULL OR edge.valid_to >= ?)"
             if at
             else ""
         )
@@ -1625,9 +1941,46 @@ class HistoryStore:
         with self._lock:
             rows = self.conn.execute(
                 f"""
-                SELECT * FROM indicator_relationships
-                WHERE (source_ioc = ? OR target_ioc = ?){time_filter}
-                ORDER BY id DESC LIMIT ?
+                SELECT edge.*, source_entity.entity_type AS source_entity_type,
+                       target_entity.entity_type AS target_entity_type
+                FROM indicator_relationships AS edge
+                LEFT JOIN graph_entities AS source_entity
+                  ON source_entity.id = edge.source_entity_id
+                LEFT JOIN graph_entities AS target_entity
+                  ON target_entity.id = edge.target_entity_id
+                WHERE (edge.source_ioc = ? OR edge.target_ioc = ?){time_filter}
+                ORDER BY edge.id DESC LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [_relationship_dict(row) for row in rows]
+
+    def _relationships_for_entity(
+        self, entity_id: int, limit: int, as_of: str | None
+    ) -> list[dict[str, Any]]:
+        at = _normalize_timestamp(as_of)
+        time_filter = (
+            " AND edge.created_at <= ? AND edge.valid_from <= ? "
+            "AND (edge.valid_to IS NULL OR edge.valid_to >= ?)"
+            if at
+            else ""
+        )
+        params: list[Any] = [entity_id, entity_id]
+        if at:
+            params.extend([at, at, at])
+        params.append(limit)
+        with self._lock:
+            rows = self.conn.execute(
+                f"""
+                SELECT edge.*, source_entity.entity_type AS source_entity_type,
+                       target_entity.entity_type AS target_entity_type
+                FROM indicator_relationships AS edge
+                LEFT JOIN graph_entities AS source_entity
+                  ON source_entity.id = edge.source_entity_id
+                LEFT JOIN graph_entities AS target_entity
+                  ON target_entity.id = edge.target_entity_id
+                WHERE (edge.source_entity_id = ? OR edge.target_entity_id = ?){time_filter}
+                ORDER BY edge.id DESC LIMIT ?
                 """,
                 params,
             ).fetchall()
@@ -1639,21 +1992,48 @@ class HistoryStore:
         limit: int = 100,
         max_depth: int = 1,
         as_of: str | None = None,
+        entity_type: str | None = None,
     ) -> dict[str, Any]:
         limit = max(1, min(limit, 500))
         max_depth = max(1, min(max_depth, 5))
         at = _normalize_timestamp(as_of)
+        root_type = _entity_type_for(ioc, explicit=entity_type)
+        root_value = _canonical_entity_value(ioc, root_type)
+        with self._lock:
+            root_row = self.conn.execute(
+                "SELECT id FROM graph_entities WHERE entity_type = ? "
+                "AND canonical_value = ?",
+                (root_type, root_value),
+            ).fetchone()
+        if root_row is None:
+            return {
+                "nodes": [
+                    {
+                        "entity_id": None,
+                        "id": ioc,
+                        "entity_type": root_type,
+                        "canonical_value": root_value,
+                        "display_value": ioc,
+                        "metadata": {},
+                    }
+                ],
+                "edges": [],
+                "max_depth": max_depth,
+                "as_of": at,
+                "truncated": False,
+            }
+        root_entity_id = int(root_row["id"])
         edges_by_id: dict[int, dict[str, Any]] = {}
-        visited = {ioc}
-        frontier = [ioc]
+        visited = {root_entity_id}
+        frontier = [root_entity_id]
         depth = 0
         while frontier and depth < max_depth and len(edges_by_id) < limit:
-            next_frontier: dict[str, float] = {}
+            next_frontier: dict[int, float] = {}
             for current in frontier:
-                incident = self.relationships(
+                incident = self._relationships_for_entity(
                     current,
-                    limit=limit - len(edges_by_id),
-                    as_of=at,
+                    limit - len(edges_by_id),
+                    at,
                 )
                 incident.sort(
                     key=lambda edge: (-float(edge["confidence"]), -int(edge["id"]))
@@ -1661,10 +2041,12 @@ class HistoryStore:
                 for edge in incident:
                     edges_by_id.setdefault(edge["id"], edge)
                     other = (
-                        edge["target_ioc"]
-                        if edge["source_ioc"] == current
-                        else edge["source_ioc"]
+                        edge["target_entity_id"]
+                        if edge["source_entity_id"] == current
+                        else edge["source_entity_id"]
                     )
+                    if other is None:
+                        continue
                     if other not in visited:
                         visited.add(other)
                         next_frontier[other] = max(
@@ -1681,19 +2063,199 @@ class HistoryStore:
             )
             depth += 1
         edges = sorted(edges_by_id.values(), key=lambda edge: edge["id"])
+        endpoint_ids = {
+            entity_id
+            for edge in edges
+            for entity_id in (edge["source_entity_id"], edge["target_entity_id"])
+            if entity_id is not None
+        }
+        evidence_ids = {
+            edge["evidence_observation_id"]
+            for edge in edges
+            if edge["evidence_observation_id"] is not None
+        }
+        with self._lock:
+            entity_rows = []
+            if endpoint_ids:
+                placeholders = ",".join("?" for _ in endpoint_ids)
+                entity_rows = self.conn.execute(
+                    "SELECT * FROM graph_entities WHERE id IN ("
+                    + placeholders
+                    + ")",
+                    sorted(endpoint_ids),
+                ).fetchall()
+            evidence_rows = []
+            if evidence_ids:
+                placeholders = ",".join("?" for _ in evidence_ids)
+                evidence_rows = self.conn.execute(
+                    "SELECT id, observation_key, source, collected_at, "
+                    "raw_response_sha256 FROM evidence_observations WHERE id IN ("
+                    + placeholders
+                    + ")",
+                    sorted(evidence_ids),
+                ).fetchall()
+                observation_values = [
+                    f"observation:{row['observation_key']}" for row in evidence_rows
+                ]
+                if observation_values:
+                    value_placeholders = ",".join("?" for _ in observation_values)
+                    observation_entities = self.conn.execute(
+                        "SELECT * FROM graph_entities WHERE entity_type = "
+                        "'provider_observation' AND canonical_value IN ("
+                        + value_placeholders
+                        + ")",
+                        observation_values,
+                    ).fetchall()
+                    entity_rows.extend(observation_entities)
+        node_by_id: dict[int, dict[str, Any]] = {}
+        for row in entity_rows:
+            node = dict(row)
+            node["metadata"] = json.loads(node.pop("metadata_json"))
+            node["entity_id"] = node.pop("id")
+            node["id"] = node["display_value"]
+            node_by_id[node["entity_id"]] = node
+        for row in evidence_rows:
+            entity_id = next(
+                (
+                    item["entity_id"]
+                    for item in node_by_id.values()
+                    if item["entity_type"] == "provider_observation"
+                    and item["canonical_value"] == f"observation:{row['observation_key']}"
+                ),
+                None,
+            )
+            if entity_id is not None:
+                node_by_id[entity_id]["linked_edge_evidence"] = {
+                    "observation_id": row["id"],
+                    "source": row["source"],
+                    "collected_at": row["collected_at"],
+                    "raw_response_sha256": row["raw_response_sha256"],
+                }
+        if root_entity_id not in node_by_id:
+            with self._lock:
+                root_node = self.conn.execute(
+                    "SELECT * FROM graph_entities WHERE id = ?", (root_entity_id,)
+                ).fetchone()
+            if root_node is not None:
+                node = dict(root_node)
+                node["metadata"] = json.loads(node.pop("metadata_json"))
+                node["entity_id"] = node.pop("id")
+                node["id"] = node["display_value"]
+                node_by_id[root_entity_id] = node
         nodes = sorted(
-            {
-                ioc,
-                *(edge["source_ioc"] for edge in edges),
-                *(edge["target_ioc"] for edge in edges),
-            }
+            node_by_id.values(),
+            key=lambda node: (node["id"], node["entity_type"], node["entity_id"] or 0),
         )
         return {
-            "nodes": [{"id": node} for node in nodes],
+            "nodes": nodes,
             "edges": edges,
             "max_depth": max_depth,
             "as_of": at,
             "truncated": len(edges) >= limit,
+        }
+
+    def suggest_pivots(
+        self,
+        ioc: str,
+        limit: int = 25,
+        as_of: str | None = None,
+        entity_type: str | None = None,
+    ) -> dict[str, Any]:
+        """Rank direct, evidence-backed pivots with an explicit heuristic."""
+        if not 1 <= limit <= 100:
+            raise ValueError("pivot limit must be between 1 and 100")
+        at = _normalize_timestamp(as_of) or datetime.now(timezone.utc).isoformat()
+        graph = self.relationship_graph(
+            ioc, limit=500, max_depth=1, as_of=at, entity_type=entity_type
+        )
+        nodes_by_id = {node["entity_id"]: node for node in graph["nodes"]}
+        type_priority = {
+            "certificate": 1.0,
+            "ip": 0.95,
+            "hostname": 0.9,
+            "domain": 0.85,
+            "file_hash": 0.8,
+            "url": 0.75,
+            "asn": 0.7,
+            "email": 0.5,
+            "cve": 0.5,
+        }
+        candidates: dict[int, dict[str, Any]] = {}
+        for edge in graph["edges"]:
+            if edge["source_ioc"] == ioc:
+                entity_id = edge["target_entity_id"]
+                pivot_value = edge["target_ioc"]
+            elif edge["target_ioc"] == ioc:
+                entity_id = edge["source_entity_id"]
+                pivot_value = edge["source_ioc"]
+            else:
+                continue
+            node = nodes_by_id.get(entity_id)
+            if node is None:
+                continue
+            entity_type = node["entity_type"]
+            weight = type_priority.get(entity_type)
+            if weight is None:
+                continue
+            confidence = float(edge["confidence"])
+            priority_score = round(confidence * weight, 4)
+            candidate = candidates.setdefault(
+                entity_id,
+                {
+                    "entity_id": entity_id,
+                    "ioc": pivot_value,
+                    "entity_type": entity_type,
+                    "canonical_value": node["canonical_value"],
+                    "priority_score": priority_score,
+                    "priority_basis": {
+                        "confidence": confidence,
+                        "entity_type_weight": weight,
+                        "formula": "confidence * entity_type_weight",
+                    },
+                    "supporting_edges": [],
+                },
+            )
+            if priority_score > candidate["priority_score"]:
+                candidate["priority_score"] = priority_score
+                candidate["priority_basis"] = {
+                    "confidence": confidence,
+                    "entity_type_weight": weight,
+                    "formula": "confidence * entity_type_weight",
+                }
+            candidate["supporting_edges"].append(
+                {
+                    "id": edge["id"],
+                    "relationship_type": edge["relationship_type"],
+                    "evidence_source": edge["evidence_source"],
+                    "evidence_observation_id": edge["evidence_observation_id"],
+                    "created_at": edge["created_at"],
+                    "valid_from": edge["valid_from"],
+                    "valid_to": edge["valid_to"],
+                    "confidence": confidence,
+                    "attributes": edge["attributes"],
+                }
+            )
+        ranked = sorted(
+            candidates.values(),
+            key=lambda candidate: (
+                -candidate["priority_score"],
+                candidate["entity_type"],
+                candidate["canonical_value"],
+            ),
+        )[:limit]
+        for candidate in ranked:
+            candidate["supporting_edges"].sort(key=lambda edge: edge["id"])
+        return {
+            "ioc": ioc,
+            "as_of": at,
+            "methodology": "confidence_x_entity_type_v1",
+            "candidates": ranked,
+            "budget": {
+                "max_depth": 1,
+                "edge_limit": 500,
+                "edges_considered": len(graph["edges"]),
+                "truncated": graph["truncated"],
+            },
         }
 
     def close(self) -> None:

@@ -65,6 +65,10 @@ class DNS(Connector):
                             "source_ioc": ioc,
                             "target_ioc": target,
                             "relationship_type": relationship_type,
+                            "source_entity_type": "domain",
+                            "target_entity_type": (
+                                "ip" if record_type in {"A", "AAAA"} else "hostname"
+                            ),
                             "attributes": {"record_type": record_type},
                         }
                     )

@@ -269,6 +269,8 @@ class RelationshipCreateRequest(BaseModel):
     valid_from: str | None = Field(default=None, max_length=40)
     valid_to: str | None = Field(default=None, max_length=40)
     attributes: dict[str, Any] = Field(default_factory=dict)
+    source_entity_type: str | None = Field(default=None, max_length=40)
+    target_entity_type: str | None = Field(default=None, max_length=40)
 
 
 class RelationshipResponse(BaseModel):
@@ -283,10 +285,14 @@ class RelationshipResponse(BaseModel):
     valid_to: str | None
     evidence_observation_id: int | None
     attributes: dict[str, Any]
+    source_entity_id: int
+    target_entity_id: int
+    source_entity_type: str
+    target_entity_type: str
 
 
 class RelationshipGraphResponse(BaseModel):
-    nodes: list[dict[str, str]]
+    nodes: list[dict[str, Any]]
     edges: list[RelationshipResponse]
     max_depth: int
     as_of: str | None
@@ -542,6 +548,8 @@ def create_relationship(request: RelationshipCreateRequest) -> dict[str, Any]:
             request.valid_from,
             request.valid_to,
             request.attributes,
+            source_entity_type=request.source_entity_type,
+            target_entity_type=request.target_entity_type,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
@@ -573,10 +581,26 @@ def indicator_graph(
     limit: int = Query(default=100, ge=1, le=500),
     depth: int = Query(default=1, ge=1, le=5),
     as_of: str | None = None,
+    entity_type: str | None = None,
 ) -> dict[str, Any]:
     try:
         return _history_store().relationship_graph(
-            ioc, limit=limit, max_depth=depth, as_of=as_of
+            ioc, limit=limit, max_depth=depth, as_of=as_of, entity_type=entity_type
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@api.get("/indicators/{ioc}/pivots", tags=["relationships"])
+def indicator_pivots(
+    ioc: str,
+    limit: int = Query(default=25, ge=1, le=100),
+    as_of: str | None = None,
+    entity_type: str | None = None,
+) -> dict[str, Any]:
+    try:
+        return _history_store().suggest_pivots(
+            ioc, limit=limit, as_of=as_of, entity_type=entity_type
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

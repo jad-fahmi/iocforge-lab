@@ -7,8 +7,9 @@ engine, a SQLite cache, append-only enrichment snapshots, analyst and
 investigation event logs, basic indicator relationships, and versioned scoring
 explanations. These pieces are the base for the investigation engine; the
 history database is not yet a complete temporal evidence store. Relationships
-now carry validity intervals and can link to provider observations, but the
-graph still uses string IOC endpoints rather than typed entity nodes.
+carry validity intervals and link to provider observations. A typed entity table
+now classifies graph endpoints while retaining the existing string endpoint
+columns for API and storage compatibility.
 Snapshot comparison is available. Indicator and investigation events now use
 per-scope SHA-256 chains, migration backfill, SQLite append-only guards, and
 explicit integrity verification. These local chains detect edits but are not
@@ -26,9 +27,10 @@ The transformation proceeds in dependency order:
    at a chosen time. The first replay path now reproduces a saved score and
    exposes its trace through the CLI and API. Snapshot comparison explains
    evidence changes, decision differences, and temporal graph changes.
-3. **Temporal graph and pivots:** extend the initial time-bounded, evidence-linked
-   IOC graph to typed entities and add prioritized pivot discovery. Current API
-   traversal has a depth limit of five and a 500-edge budget.
+3. **Temporal graph and pivots:** typed entity nodes and a bounded, explainable
+   one-hop pivot ranking are available. Continue expanding relationship sources
+   and pivot evaluation; graph traversal has a depth limit of five and a
+   500-edge budget.
 4. **Investigation integrity and bundles:** per-indicator and per-investigation
    event chains can now be verified. A versioned `.iocforge` archive packages
    case metadata, linked snapshots and evidence, bounded graph state, and event
@@ -56,10 +58,13 @@ unavailable instead of silently applying current defaults. DNS,
 passive-DNS, and certificate-transparency observations emit relationship
 candidates; the history store creates edges linked to their source observation
 and stores both provider validity and IOCForge recording times. API graph reads
-support bounded-depth traversal and an `as_of` filter. Event history responses
-include chain hashes, and integrity endpoints verify each scope. Typed
-certificate, ASN, investigation, and provider-observation graph nodes remain
-later steps. Bundle checksums detect archive corruption, and raw-response hashes
+support bounded-depth traversal, an `as_of` filter, and explicit root type
+selection for hostnames or other ambiguous values. Graph nodes classify
+domains, IP addresses, URLs, file hashes, ASNs, certificates, hostnames,
+provider observations, and investigations. Pivot ranking is a transparent
+confidence-times-entity-type heuristic, not a learned provider reliability
+score. Event history responses include chain hashes, and integrity endpoints
+verify each scope. Bundle checksums detect archive corruption, and raw-response hashes
 are checked again on load. The archive checksum is not a digital signature;
 authenticity still depends on a trusted transfer channel.
 

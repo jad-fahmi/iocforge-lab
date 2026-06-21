@@ -180,6 +180,7 @@ ioc-enrich --replay 17
 ioc-enrich --compare 17 24
 ioc-enrich --bundle-export 3 --bundle-output case.iocforge
 ioc-enrich --bundle-inspect case.iocforge
+ioc-enrich --pivots evil.example --pivot-limit 20
 ```
 
 `--replay` accepts the enrichment history ID shown by `--history` and outputs
@@ -189,6 +190,8 @@ removed observations, decision changes, replay status, and graph differences.
 Bundles contain the case timeline, linked snapshots and evidence, graph edges,
 scoring inputs, and event chains. `--bundle-inspect` validates checksums and
 event integrity, then replays supported snapshots from embedded evidence only.
+`--pivots` ranks direct, currently valid graph neighbors by edge confidence and
+entity type, and includes the supporting relationship provenance.
 
 `--fail-on-malicious` returns a nonzero exit code when a malicious verdict is found. Use `-v` for operational logs and repeat it, or pass `--debug`, for connector-level debugging. Logs go to stderr so JSON, CSV, and report output remain machine-readable.
 
@@ -218,7 +221,8 @@ The versioned API includes:
 | `GET /api/v1/investigations/{id}/bundle` | Download a self-contained `.iocforge` archive |
 | `POST /api/v1/investigations/bundles/inspect` | Load, validate, and replay an archive offline (`application/zip` body) |
 | `POST /api/v1/relationships` | Record an analyst relationship or one tied to a supporting observation |
-| `GET /api/v1/indicators/{ioc}/graph?depth=2&as_of=...` | Traverse relationships with depth, edge, and time bounds |
+| `GET /api/v1/indicators/{ioc}/graph?depth=2&as_of=...&entity_type=...` | Traverse typed relationships with depth and time bounds |
+| `GET /api/v1/indicators/{ioc}/pivots?limit=25&as_of=...` | Rank direct infrastructure pivots with edge provenance |
 | `GET /api/v1/investigations/{id}/report` | Render a Markdown case report |
 
 Investigation routes support creating and updating cases, changing lifecycle state, reviewing their timeline, and applying indicator verdict overrides. The API also provides STIX and MISP import/export routes under `/api/v1/interoperability/`.

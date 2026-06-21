@@ -246,6 +246,8 @@ def test_migration_backfills_observations_from_existing_snapshots(tmp_path):
     migrated_edge = store.relationships("old.example")[0]
     assert migrated_edge["valid_from"] == "2025-01-01T00:00:00+00:00"
     assert migrated_edge["evidence_observation_id"] is None
+    assert migrated_edge["source_entity_type"] == "domain"
+    assert migrated_edge["target_entity_type"] == "ip"
 
 
 def test_replay_reproduces_historical_score_from_pinned_time_and_config(tmp_path):
@@ -498,10 +500,143 @@ def test_relationship_graph_returns_nodes_and_evidence(tmp_path):
     graph = store.relationship_graph("evil.example")
 
     assert relationship["relationship_type"] == "resolves_to"
-    assert graph["nodes"] == [{"id": "203.0.113.7"}, {"id": "evil.example"}]
+    nodes = {node["id"]: node for node in graph["nodes"]}
+    assert nodes["203.0.113.7"]["entity_type"] == "ip"
+    assert nodes["evil.example"]["entity_type"] == "domain"
+    assert relationship["source_entity_type"] == "domain"
+    assert relationship["target_entity_type"] == "ip"
     assert graph["edges"][0]["evidence_source"] == "dns"
     assert graph["edges"][0]["valid_from"] == relationship["valid_from"]
     assert graph["edges"][0]["attributes"] == {}
+
+
+def test_typed_graph_nodes_support_certificate_and_investigation_pivots(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    certificate = store.add_relationship(
+        "evil.example",
+        "certificate:crtsh:123",
+        "has_certificate",
+        target_entity_type="certificate",
+    )
+    store.add_relationship(
+        "certificate:crtsh:123",
+        "cdn.example.net",
+        "certificate_name",
+        source_entity_type="certificate",
+        target_entity_type="hostname",
+    )
+    investigation = store.create_investigation("Infrastructure review")
+    store.add_investigation_indicator(investigation["id"], "evil.example")
+
+    graph = store.relationship_graph("evil.example", max_depth=3)
+    nodes = {node["id"]: node for node in graph["nodes"]}
+
+    assert certificate["target_entity_type"] == "certificate"
+    assert nodes["certificate:crtsh:123"]["entity_type"] == "certificate"
+    assert nodes["cdn.example.net"]["entity_type"] == "hostname"
+    assert nodes[f"investigation:{investigation['id']}"]["entity_type"] == (
+        "investigation"
+    )
+    assert "part_of_investigation" in {
+        edge["relationship_type"] for edge in graph["edges"]
+    }
+
+
+def test_graph_traversal_keeps_same_value_entity_types_separate(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    store.add_relationship(
+        "root.example",
+        "shared.example",
+        "certificate_name",
+        target_entity_type="hostname",
+    )
+    store.add_relationship(
+        "shared.example",
+        "other.example",
+        "domain_related",
+        source_entity_type="domain",
+        target_entity_type="domain",
+    )
+
+    graph = store.relationship_graph("root.example", max_depth=3)
+    shared_hostname_graph = store.relationship_graph(
+        "shared.example", max_depth=1, entity_type="hostname"
+    )
+    shared_domain_graph = store.relationship_graph(
+        "shared.example", max_depth=1, entity_type="domain"
+    )
+
+    assert "other.example" not in {node["id"] for node in graph["nodes"]}
+    assert {node["id"] for node in shared_hostname_graph["nodes"]} == {
+        "shared.example",
+        "root.example",
+    }
+    assert {node["id"] for node in shared_domain_graph["nodes"]} == {
+        "shared.example",
+        "other.example",
+    }
+
+
+def test_relationship_rejects_unknown_explicit_entity_type(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+
+    try:
+        store.add_relationship(
+            "evil.example",
+            "203.0.113.7",
+            "resolves_to",
+            target_entity_type="made_up_type",
+        )
+    except ValueError as error:
+        assert "entity type" in str(error)
+    else:
+        raise AssertionError("unsupported graph entity types must be rejected")
+
+
+def test_pivot_suggestions_rank_typed_nodes_with_provenance_and_time_bounds(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    store.add_relationship(
+        "evil.example",
+        "203.0.113.7",
+        "resolves_to",
+        confidence=0.7,
+        evidence_source="passive_dns",
+        recorded_at="2025-12-01T00:00:00+00:00",
+        valid_from="2025-01-01T00:00:00+00:00",
+        valid_to="2030-01-01T00:00:00+00:00",
+    )
+    store.add_relationship(
+        "evil.example",
+        "certificate:crtsh:123",
+        "has_certificate",
+        confidence=0.8,
+        target_entity_type="certificate",
+        recorded_at="2025-12-01T00:00:00+00:00",
+        valid_from="2025-01-01T00:00:00+00:00",
+        valid_to="2030-01-01T00:00:00+00:00",
+    )
+    store.add_relationship(
+        "evil.example",
+        "expired.example",
+        "cname_to",
+        confidence=1.0,
+        recorded_at="2020-01-01T00:00:00+00:00",
+        valid_from="2020-01-01T00:00:00+00:00",
+        valid_to="2021-01-01T00:00:00+00:00",
+    )
+
+    result = store.suggest_pivots("evil.example", as_of="2026-01-01T00:00:00+00:00")
+
+    assert result["methodology"] == "confidence_x_entity_type_v1"
+    assert [item["entity_type"] for item in result["candidates"]] == [
+        "certificate",
+        "ip",
+    ]
+    assert result["candidates"][0]["priority_score"] == 0.8
+    assert result["candidates"][1]["supporting_edges"][0]["evidence_source"] == (
+        "passive_dns"
+    )
+    assert result["budget"]["max_depth"] == 1
 
 
 def test_provider_relationships_link_to_observations_and_pivots(tmp_path):
@@ -536,6 +671,12 @@ def test_provider_relationships_link_to_observations_and_pivots(tmp_path):
     assert edge["valid_from"] == "2025-12-01T00:00:00+00:00"
     assert edge["valid_to"] == "2026-01-09T00:00:00+00:00"
     assert edge["attributes"] == {"record_type": "A"}
+    graph = store.relationship_graph("example.com")
+    assert any(
+        node["entity_type"] == "provider_observation"
+        and node["linked_edge_evidence"]["observation_id"] == observation_id
+        for node in graph["nodes"]
+    )
     try:
         store.add_relationship(
             "example.com",

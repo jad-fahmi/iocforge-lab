@@ -116,6 +116,17 @@ class PassiveDNS(Connector):
                     "source_ioc": source_value,
                     "target_ioc": target_value,
                     "relationship_type": relationship_type,
+                    "source_entity_type": (
+                        "hostname"
+                        if relationship_type == "resolves_to"
+                        and source_value != ioc
+                        else "domain"
+                    ),
+                    "target_entity_type": (
+                        "ip"
+                        if relationship_type == "resolves_to"
+                        else "hostname"
+                    ),
                     "valid_from": valid_from.isoformat() if valid_from else None,
                     "valid_to": last_seen.isoformat() if last_seen else None,
                     "attributes": {"record_type": rrtype, "rrname": rrname},

@@ -63,6 +63,24 @@ class CrtSh(Connector):
             valid_to = _normalize_date(certificate.get("not_after"))
             if valid_from and valid_to and valid_from > valid_to:
                 continue
+            certificate_id = certificate.get("id")
+            certificate_node = f"certificate:crtsh:{certificate_id}"
+            if certificate_id is not None:
+                related_entities.append(
+                    {
+                        "source_ioc": ioc,
+                        "target_ioc": certificate_node,
+                        "relationship_type": "has_certificate",
+                        "source_entity_type": "domain",
+                        "target_entity_type": "certificate",
+                        "valid_from": valid_from,
+                        "valid_to": valid_to,
+                        "attributes": {
+                            "certificate_id": certificate_id,
+                            "issuer_name": certificate.get("issuer_name"),
+                        },
+                    }
+                )
             for name in str(certificate.get("name_value", "")).splitlines():
                 target = name.lower().lstrip("*.").rstrip(".")
                 if not target or target == ioc.lower().rstrip("."):
@@ -72,6 +90,8 @@ class CrtSh(Connector):
                         "source_ioc": ioc,
                         "target_ioc": target,
                         "relationship_type": "certificate_name",
+                        "source_entity_type": "domain",
+                        "target_entity_type": "hostname",
                         "valid_from": valid_from,
                         "valid_to": valid_to,
                         "attributes": {
@@ -80,6 +100,22 @@ class CrtSh(Connector):
                         },
                     }
                 )
+                if certificate_id is not None:
+                    related_entities.append(
+                        {
+                            "source_ioc": certificate_node,
+                            "target_ioc": target,
+                            "relationship_type": "certificate_name",
+                            "source_entity_type": "certificate",
+                            "target_entity_type": "hostname",
+                            "valid_from": valid_from,
+                            "valid_to": valid_to,
+                            "attributes": {
+                                "certificate_id": certificate_id,
+                                "issuer_name": certificate.get("issuer_name"),
+                            },
+                        }
+                    )
         return SourceResult(
             source=self.name,
             ioc=ioc,
