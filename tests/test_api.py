@@ -24,9 +24,15 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
 
     assert response.status_code == 200
     assert "IOCForge Analyst Workbench" in response.text
-    assert "IOC relationships" in response.text
+    assert "Evidence-backed relationships" in response.text
     assert "Create investigation" in response.text
     assert "Add to investigation" in response.text
+    assert "Decision trace and scoring inputs" in response.text
+    assert "Compare snapshots" in response.text
+    assert "Event chain:" in response.text
+    assert "Download reproducible .iocforge bundle" in response.text
+    assert "Validate and replay offline" in response.text
+    assert "/pivots?limit=25" in response.text
     assert "const API = '/api/v1'" in response.text
     assert "p.available" in response.text
     assert "p.healthy" not in response.text

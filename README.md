@@ -70,7 +70,7 @@ Analysts can override a verdict through the API. An override requires a reason, 
 
 An investigation has a title, description, lifecycle state, indicators, enrichment history, and timeline. Cases can move through `open`, `triaged`, and `closed`. Changes to the case and analyst decisions are retained as events. A Markdown report can be generated from the persisted case state.
 
-IOCForge records sourced, time-bounded IOC relationships from DNS, passive DNS, and certificate-transparency observations. Each provider-derived edge links to its supporting evidence observation. The API supports bounded graph traversal and time filtering; typed infrastructure entities and a graph-focused workbench remain in progress.
+IOCForge records sourced, time-bounded IOC relationships from DNS, passive DNS, and certificate-transparency observations. Each provider-derived edge links to its supporting evidence observation. The API and browser workbench expose bounded typed-graph traversal, ranked pivots, temporal filtering, evidence timelines, deterministic replay, snapshot comparison, and investigation bundle inspection/export.
 
 ## Intelligence sources
 
@@ -281,7 +281,7 @@ MISP export returns an unpublished MISP-compatible event with mapped IOC attribu
 - Enrichment sends submitted indicators to whichever external providers are enabled. Review provider terms and your organization's data handling requirements before submitting sensitive indicators.
 - STIX support intentionally excludes compound pattern evaluation and unsupported indicator types.
 - MISP interoperability produces or consumes local JSON; IOCForge does not publish directly to a MISP server.
-- The browser workbench is lightweight and does not yet expose graph traversal, historical replay comparison, or typed infrastructure nodes.
+- The browser workbench presents graph relationships in provenance tables rather than an interactive node-link visualization; detailed replay and bundle validation payloads are available in expandable structured views.
 
 See [`docs/threat-model.md`](docs/threat-model.md) for operating assumptions and security details.
 
@@ -329,7 +329,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the request flow and comp
 
 ## Project status
 
-IOCForge is under active development. The current release line is `0.1.x`; API and workbench details may change as the investigation model develops. The most important planned work is a complete sample investigation, a clear evidence timeline, and graph exploration that retains source provenance on every relationship.
+IOCForge is under active development. The current release line is `0.1.x`; API and workbench details may change as the investigation model develops. The next product milestone is a complete T1/T2 demonstration investigation with evolving evidence, verdicts, and graph state, plus a more navigable visual graph view.
 
 Issues and pull requests are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
