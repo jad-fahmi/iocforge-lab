@@ -181,6 +181,7 @@ ioc-enrich --compare 17 24
 ioc-enrich --bundle-export 3 --bundle-output case.iocforge
 ioc-enrich --bundle-inspect case.iocforge
 ioc-enrich --pivots evil.example --pivot-limit 20
+ioc-enrich --evaluate-fixture tests/fixtures/provider-evaluation-v1.json
 ```
 
 `--replay` accepts the enrichment history ID shown by `--history` and outputs
@@ -192,6 +193,8 @@ scoring inputs, and event chains. `--bundle-inspect` validates checksums and
 event integrity, then replays supported snapshots from embedded evidence only.
 `--pivots` ranks direct, currently valid graph neighbors by edge confidence and
 entity type, and includes the supporting relationship provenance.
+`--evaluate-fixture` measures providers from a labeled JSON fixture without
+making provider requests. See [provider evaluation methodology](docs/provider-evaluation.md).
 
 `--fail-on-malicious` returns a nonzero exit code when a malicious verdict is found. Use `-v` for operational logs and repeat it, or pass `--debug`, for connector-level debugging. Logs go to stderr so JSON, CSV, and report output remain machine-readable.
 
@@ -220,6 +223,7 @@ The versioned API includes:
 | `GET /api/v1/investigations/{id}/integrity` | Verify the investigation-event hash chain |
 | `GET /api/v1/investigations/{id}/bundle` | Download a self-contained `.iocforge` archive |
 | `POST /api/v1/investigations/bundles/inspect` | Load, validate, and replay an archive offline (`application/zip` body) |
+| `POST /api/v1/evaluation/run` | Run deterministic provider metrics from an offline labeled fixture |
 | `POST /api/v1/relationships` | Record an analyst relationship or one tied to a supporting observation |
 | `GET /api/v1/indicators/{ioc}/graph?depth=2&as_of=...&entity_type=...` | Traverse typed relationships with depth and time bounds |
 | `GET /api/v1/indicators/{ioc}/pivots?limit=25&as_of=...` | Rank direct infrastructure pivots with edge provenance |

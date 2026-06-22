@@ -62,7 +62,17 @@ def test_crashing_connector_does_not_sink_lookup():
     result = _engine([CrashingConnector(api_key="x")]).enrich("evil.com")
 
     assert result.sources[0].error == "boom"
+    assert result.sources[0].latency_ms is not None
+    assert result.sources[0].latency_ms >= 0
     assert result.verdict == "clean"
+
+
+def test_engine_records_per_source_latency():
+    result = _engine([RecordingConnector(api_key="x")]).enrich("evil.com")
+
+    assert result.sources[0].latency_ms is not None
+    assert result.sources[0].latency_ms >= 0
+    assert result.sources[0].cache_hit is False
 
 
 def test_enrich_many_dedupes_and_preserves_order():
@@ -81,6 +91,10 @@ def test_enrich_with_real_cache_and_multiple_connectors(tmp_path):
     engine.connectors = [RecordingConnector(api_key="x"), OtherConnector(api_key="x")]
 
     result = engine.enrich("evil.com")
+    cached = engine.enrich("evil.com")
 
     assert len(result.sources) == 2
     assert result.verdict == "clean"
+    assert len(cached.sources) == 2
+    assert all(source.cache_hit for source in cached.sources)
+    assert all(source.latency_ms is not None for source in cached.sources)

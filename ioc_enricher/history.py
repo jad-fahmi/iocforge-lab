@@ -821,6 +821,10 @@ class HistoryStore:
     ) -> int:
         """Insert an immutable provider observation and link it to a snapshot."""
         source = dict(source)
+        # Latency and cache status describe this lookup attempt, not the
+        # deduplicated provider payload stored as immutable evidence.
+        source.pop("latency_ms", None)
+        source.pop("cache_hit", None)
         source.setdefault("collected_at", "")
         source.setdefault("connector_version", "unknown")
         source.setdefault("normalization_version", "1")

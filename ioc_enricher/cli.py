@@ -9,6 +9,7 @@ from ioc_enricher.cache import Cache
 from ioc_enricher.config import ENV_KEYS, Config, load_dotenv
 from ioc_enricher.context import InternalContext
 from ioc_enricher.engine import REGISTRY, Engine
+from ioc_enricher.evaluation import evaluate_fixture, load_fixture
 from ioc_enricher.history import HistoryStore
 from ioc_enricher.ioc.extract import extract_iocs
 from ioc_enricher.log import setup
@@ -142,6 +143,11 @@ def build_parser():
         metavar="TYPE",
         help="disambiguate a pivot root as domain, hostname, IP, or another graph type",
     )
+    p.add_argument(
+        "--evaluate-fixture",
+        metavar="PATH",
+        help="evaluate providers from a labeled offline JSON fixture",
+    )
     return p
 
 
@@ -249,6 +255,14 @@ def main(argv=None):
         finally:
             store.close()
         print(json.dumps({"pivots": pivots}, indent=2))
+        return 0
+    if args.evaluate_fixture is not None:
+        try:
+            evaluation = evaluate_fixture(load_fixture(args.evaluate_fixture))
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        print(json.dumps({"evaluation": evaluation}, indent=2))
         return 0
     if args.bundle_export is not None:
         if not args.bundle_output:

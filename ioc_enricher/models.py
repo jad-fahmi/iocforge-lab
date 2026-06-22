@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -37,8 +38,14 @@ class SourceResult:
     freshness: Optional[dict] = None
     extraction_metadata: dict = field(default_factory=dict)
     related_entities: list = field(default_factory=list)
+    latency_ms: Optional[float] = None
+    cache_hit: bool = False
 
     def __post_init__(self):
+        if self.latency_ms is not None and (
+            not math.isfinite(self.latency_ms) or self.latency_ms < 0
+        ):
+            raise ValueError("latency_ms must be finite and non-negative")
         if self.raw_response_sha256 is None:
             canonical = json.dumps(
                 self.raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False

@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from time import perf_counter
 from typing import Any
 
 from ioc_enricher.connectors.abuseipdb import AbuseIPDB
@@ -73,15 +74,25 @@ class Engine:
 
         active = [c for c in self.connectors if c.supports(ioc_type)]
 
+        def collect(connector):
+            started = perf_counter()
+            try:
+                source_result = connector.run(ioc, ioc_type, self.cache)
+                error = None
+            except Exception as exc:
+                source_result = connector._empty(ioc, ioc_type, error=str(exc))
+                error = exc
+            source_result.latency_ms = round((perf_counter() - started) * 1000, 3)
+            return source_result, error
+
         with ThreadPoolExecutor(max_workers=len(active) or 1) as pool:
-            futures = {pool.submit(c.run, ioc, ioc_type, self.cache): c for c in active}
+            futures = {pool.submit(collect, c): c for c in active}
             for f, conn in futures.items():
-                try:
-                    result.add(f.result())
-                except Exception as exc:
-                    # a broken connector should not sink the whole lookup
-                    log.exception("connector %s crashed", conn.name)
-                    result.add(conn._empty(ioc, ioc_type, error=str(exc)))
+                source_result, error = f.result()
+                if error is not None:
+                    # A broken connector should not sink the whole lookup.
+                    log.error("connector %s crashed: %s", conn.name, error)
+                result.add(source_result)
 
         result.score, result.verdict = score(result, settings=self.config.scoring)
         if self.history is not None:

@@ -90,6 +90,7 @@ class Connector(abc.ABC):
                 result = SourceResult(**hit)
                 if result.connector_version == "unknown":
                     result.connector_version = self.version
+                result.cache_hit = True
                 return result
 
         result = self.enrich(ioc, ioc_type)
@@ -119,6 +120,7 @@ class Connector(abc.ABC):
                 stale_result = SourceResult(**payload)
                 if stale_result.connector_version == "unknown":
                     stale_result.connector_version = self.version
+                stale_result.cache_hit = True
                 return stale_result
 
         # only cache real answers, not transient errors

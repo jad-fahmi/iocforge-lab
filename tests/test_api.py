@@ -1,9 +1,12 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 from ioc_enricher.api import app as api_module
 from ioc_enricher.api.rate_limit import RateLimiter
 from ioc_enricher.bundles import inspect_bundle
 from ioc_enricher.config import Config
 from ioc_enricher.engine import Engine
+from ioc_enricher.evaluation import load_fixture
 from ioc_enricher.history import HistoryStore
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult, SourceResult
@@ -253,6 +256,18 @@ def test_investigation_bundle_api_exports_and_loads_offline(
     assert inspect_bundle(exported.content)["investigation"]["title"] == "Bundle case"
     assert loaded.status_code == 200
     assert loaded.json()["event_integrity"]["investigation"]["valid"] is True
+
+
+def test_provider_evaluation_api_runs_an_offline_fixture():
+    fixture = load_fixture(
+        Path(__file__).parent / "fixtures" / "provider-evaluation-v1.json"
+    )
+
+    response = TestClient(api_module.app).post("/api/v1/evaluation/run", json=fixture)
+
+    assert response.status_code == 200
+    assert response.json()["methodology"] == "iocforge-provider-evaluation-v1"
+    assert response.json()["providers"]["alpha"]["coverage"] == 0.75
 
 
 def test_dashboard_endpoint_exposes_provider_and_persisted_metrics(

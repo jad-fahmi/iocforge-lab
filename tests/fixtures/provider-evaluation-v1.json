@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "name": "small reproducible provider evaluation",
+  "providers": ["alpha", "beta"],
+  "cases": [
+    {
+      "id": "malicious-a",
+      "ioc": "bad-a.example",
+      "as_of": "2026-02-02T00:00:00+00:00",
+      "truth": {"malicious": true},
+      "sources": [
+        {
+          "source": "alpha",
+          "found": true,
+          "malicious": true,
+          "observed_at": "2026-02-01T00:00:00+00:00",
+          "latency_ms": 120.5
+        },
+        {
+          "source": "beta",
+          "found": true,
+          "malicious": false,
+          "observed_at": "2026-02-01T00:00:00+00:00",
+          "latency_ms": 100
+        }
+      ]
+    },
+    {
+      "id": "benign-a",
+      "ioc": "good-a.example",
+      "as_of": "2026-02-02T00:00:00+00:00",
+      "truth": {"malicious": false},
+      "sources": [
+        {
+          "source": "alpha",
+          "found": true,
+          "malicious": true,
+          "observed_at": "2026-01-01T00:00:00+00:00",
+          "latency_ms": 80
+        },
+        {
+          "source": "beta",
+          "found": false,
+          "malicious": null,
+          "error": "HTTP 429 rate limited",
+          "latency_ms": 30
+        }
+      ]
+    },
+    {
+      "id": "malicious-b",
+      "ioc": "bad-b.example",
+      "as_of": "2026-02-02T00:00:00+00:00",
+      "truth": {"malicious": true},
+      "sources": [
+        {
+          "source": "alpha",
+          "found": false,
+          "malicious": null,
+          "error": "provider timeout",
+          "latency_ms": 20
+        },
+        {
+          "source": "beta",
+          "found": true,
+          "malicious": true,
+          "observed_at": "2026-02-03T00:00:00+00:00",
+          "latency_ms": 50
+        }
+      ]
+    },
+    {
+      "id": "benign-b",
+      "ioc": "good-b.example",
+      "as_of": "2026-02-02T00:00:00+00:00",
+      "truth": {"malicious": false},
+      "sources": [
+        {
+          "source": "alpha",
+          "found": true,
+          "malicious": false,
+          "observed_at": "2026-02-02T00:00:00+00:00",
+          "latency_ms": 10
+        },
+        {
+          "source": "beta",
+          "found": true,
+          "malicious": false,
+          "observed_at": "2026-02-02T00:00:00+00:00",
+          "latency_ms": 12
+        }
+      ]
+    }
+  ]
+}

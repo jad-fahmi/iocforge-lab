@@ -39,6 +39,31 @@ def test_history_migrates_and_preserves_snapshots(tmp_path):
     }
 
 
+def test_snapshot_keeps_lookup_latency_outside_deduplicated_evidence(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.add(
+        SourceResult(
+            source="provider",
+            ioc="example.com",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            raw={"answer": "203.0.113.9"},
+            latency_ms=42.5,
+            cache_hit=False,
+        )
+    )
+
+    enrichment_id = store.record(result)
+
+    snapshot = store.list_enrichments("example.com")[0]
+    evidence = store.observations_for_enrichment(enrichment_id)[0]["observation"]
+    assert snapshot["result"]["sources"][0]["latency_ms"] == 42.5
+    assert snapshot["result"]["sources"][0]["cache_hit"] is False
+    assert "latency_ms" not in evidence
+    assert "cache_hit" not in evidence
+
+
 def test_dashboard_summary_aggregates_verdicts_and_case_states(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     store.record(

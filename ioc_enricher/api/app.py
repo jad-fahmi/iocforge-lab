@@ -1,5 +1,6 @@
 """Versioned FastAPI application for IOC enrichment."""
 
+import json
 import os
 from functools import lru_cache
 from typing import Any, Literal
@@ -22,6 +23,10 @@ from ioc_enricher.bundles import (
 from ioc_enricher.cache import Cache
 from ioc_enricher.config import Config, load_dotenv
 from ioc_enricher.engine import Engine
+from ioc_enricher.evaluation import (
+    MAX_EVALUATION_FIXTURE_BYTES,
+    evaluate_fixture,
+)
 from ioc_enricher.history import HistoryStore
 from ioc_enricher.interoperability.misp import export_event, import_event
 from ioc_enricher.interoperability.stix import export_bundle, import_bundle
@@ -746,6 +751,22 @@ async def inspect_uploaded_investigation_bundle(request: Request) -> dict[str, A
     try:
         return inspect_investigation_bundle(body)
     except (ValueError, KeyError, TypeError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@api.post("/evaluation/run", tags=["evaluation"])
+async def run_provider_evaluation(request: Request) -> dict[str, Any]:
+    """Evaluate a labeled offline fixture without calling providers."""
+    content_length = request.headers.get("content-length", "")
+    if content_length.isdigit() and int(content_length) > MAX_EVALUATION_FIXTURE_BYTES:
+        raise HTTPException(status_code=413, detail="fixture exceeds the 10 MiB limit")
+    body = await request.body()
+    if len(body) > MAX_EVALUATION_FIXTURE_BYTES:
+        raise HTTPException(status_code=413, detail="fixture exceeds the 10 MiB limit")
+    try:
+        fixture = json.loads(body)
+        return evaluate_fixture(fixture)
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 

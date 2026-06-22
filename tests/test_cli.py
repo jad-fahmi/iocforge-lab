@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from ioc_enricher import cli
 from ioc_enricher.ioc.types import IocType
@@ -118,6 +120,16 @@ def test_cli_ranks_saved_graph_pivots(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert '"ioc": "evil.example"' in output
     assert '"limit": 3' in output
+
+
+def test_cli_evaluates_offline_fixture(capsys):
+    fixture_path = Path(__file__).parent / "fixtures" / "provider-evaluation-v1.json"
+
+    assert cli.main(["--evaluate-fixture", str(fixture_path)]) == 0
+
+    output = capsys.readouterr().out
+    assert '"methodology": "iocforge-provider-evaluation-v1"' in output
+    assert '"balanced_accuracy": 0.75' in output
 
 
 def test_cli_inspects_investigation_bundle_offline(monkeypatch, tmp_path, capsys):

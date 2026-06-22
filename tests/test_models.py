@@ -1,6 +1,7 @@
 import hashlib
 import json
 
+import pytest
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import SourceResult
 
@@ -59,3 +60,14 @@ def test_serialization_refreshes_fingerprint_after_raw_payload_mutation():
 
     assert serialized["raw_response_sha256"] != original_hash
     assert serialized["raw_response_sha256"] == hashlib.sha256(canonical).hexdigest()
+
+
+@pytest.mark.parametrize("latency_ms", [-1.0, float("nan"), float("inf")])
+def test_source_latency_must_be_finite_and_non_negative(latency_ms):
+    with pytest.raises(ValueError, match="latency_ms"):
+        SourceResult(
+            source="provider",
+            ioc="example.com",
+            ioc_type=IocType.DOMAIN,
+            latency_ms=latency_ms,
+        )

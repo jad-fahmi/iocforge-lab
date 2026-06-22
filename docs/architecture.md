@@ -35,9 +35,10 @@ The transformation proceeds in dependency order:
    event chains can now be verified. A versioned `.iocforge` archive packages
    case metadata, linked snapshots and evidence, bounded graph state, and event
    chains; CLI and API inspection verifies and replays it without live providers.
-5. **Provider evaluation and scheduling:** measure provider behavior on
-   reproducible fixtures, then use that evidence to improve the existing
-   single-process orchestration, quotas, retry policy, and backpressure.
+5. **Provider evaluation and scheduling:** a versioned fixture evaluator now
+   measures coverage, failure, latency, freshness, disagreement, overlap, and
+   labeled classification errors. Use representative repeated evaluations to
+   inform future single-process scheduling, quotas, retries, and backpressure.
 6. **Interfaces and engineering evidence:** expose evidence, timeline, replay,
    graph, and bundle operations through current CLI/API/UI surfaces, with
    adversarial fixtures and measured performance for each subsystem.
