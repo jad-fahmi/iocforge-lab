@@ -6,6 +6,15 @@ ANALYST_UI = r"""<!doctype html>
 <style>
 :root { color-scheme: dark; --bg:#0b1220; --panel:#121d31; --line:#273650; --ink:#e6edf7; --muted:#9db0ca; --blue:#64b5ff; --red:#ff8686; --amber:#ffd166; --green:#6ee7b7; }
 * { box-sizing:border-box } body { margin:0; font:15px system-ui,sans-serif; background:var(--bg); color:var(--ink) } header { padding:24px max(5vw,24px); border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:20px; align-items:center } h1 { margin:0; font-size:1.45rem } h2 { margin:0 0 16px; font-size:1.1rem } p { color:var(--muted) } nav { display:flex; gap:8px; flex-wrap:wrap } button, input, select { font:inherit; border-radius:7px; padding:9px 12px; border:1px solid var(--line) } button { color:var(--ink); background:#1a2b47; cursor:pointer } button:hover,button.active { background:#244d7e; border-color:var(--blue) } input, select { width:min(640px,100%); background:#091221; color:var(--ink) } main { max-width:1200px; margin:auto; padding:28px 5vw 60px } section[hidden] { display:none } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:20px } .card,.panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px } .metric { font-size:1.7rem; font-weight:700; color:var(--blue) } .label { color:var(--muted); font-size:.85rem; text-transform:uppercase; letter-spacing:.06em } .panel { margin-top:16px } .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center } table { width:100%; border-collapse:collapse } th,td { text-align:left; padding:9px; border-bottom:1px solid var(--line); vertical-align:top } th { color:var(--muted); font-size:.8rem } .status { padding:3px 8px; border-radius:12px; display:inline-block; background:#24364f } .malicious { color:var(--red) } .suspicious { color:var(--amber) } .clean { color:var(--green) } .error { color:var(--red); white-space:pre-wrap } .list { margin:0; padding-left:20px } .empty { color:var(--muted); padding:12px 0 } code { color:#b9d7ff; overflow-wrap:anywhere } pre { max-height:420px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:#091221; border-radius:7px; padding:12px } details { margin:8px 0 } .timeline-row { border-left:2px solid var(--line); margin:0 0 0 8px; padding:8px 14px } .timeline-row time { color:var(--muted); font-size:.82rem } .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center } a { color:var(--blue) } @media(max-width:600px) { header { align-items:flex-start; flex-direction:column } th:nth-child(4),td:nth-child(4) { display:none } }
+.graph-canvas { overflow:auto; max-height:680px; border:1px solid var(--line); border-radius:8px; background:#091221; margin:12px 0 }
+.graph-canvas svg { display:block; max-width:none; min-width:720px; font:13px system-ui,sans-serif }
+.graph-edge { stroke:#59708e; stroke-width:1.6 }
+.graph-edge-label { fill:#b7c6d9; font-size:11px; paint-order:stroke; stroke:#091221; stroke-width:4px; stroke-linejoin:round }
+.graph-node { cursor:pointer }
+.graph-node rect { fill:#172a43; stroke:#5880aa; stroke-width:1.5 }
+.graph-node:hover rect,.graph-node:focus rect { fill:#244d7e; stroke:var(--blue); stroke-width:2.5; outline:none }
+.graph-node .graph-value { fill:var(--ink); font-weight:600 }
+.graph-node .graph-type { fill:var(--muted); font-size:11px }
 </style></head><body>
 <header><div><h1>IOCForge Analyst Workbench</h1><p>Evidence-led indicator triage and investigation context.</p></div><nav aria-label="Workbench sections"><button class="active" data-view="dashboard">Dashboard</button><button data-view="search">IOC search</button><button data-view="history">History</button><button data-view="cases">Investigations</button></nav></header>
 <main>
@@ -57,6 +66,45 @@ async function loadHistory() {
   } catch(error) { renderError(target,error); }
 }
 function caseTimeline(events,indicatorEvents,snapshots) { const items=[];(events||[]).forEach(event=>items.push({at:event.created_at,kind:'Case: '+event.event_type,detail:event.data}));(indicatorEvents||[]).forEach(event=>items.push({at:event.created_at,kind:'Indicator: '+event.event_type,detail:event.data}));(snapshots||[]).forEach(item=>items.push({at:item.looked_up_at,kind:`Enrichment #${item.id}: ${item.verdict} (score ${item.score})`,detail:{confidence:item.confidence,scoring_version:item.result?.scoring_version}}));items.sort((a,b)=>String(b.at||'').localeCompare(String(a.at||'')));if(!items.length)return empty('No timeline events or enrichment snapshots.');const list=node('div');items.forEach(item=>{const row=node('div',undefined,'timeline-row');row.append(node('time',item.at||'Unknown time'),node('p',item.kind),node('code',JSON.stringify(item.detail)));list.append(row)});return list; }
+async function renderGraphExplorer(target, initialGraph, initialRoot, initialType) {
+  clear(target);
+  target.append(node('h3', `Navigable relationship graph for ${initialRoot}`));
+  target.append(empty('Select a node to pivot. Edges retain provider, observation, confidence, and validity details.'));
+  const controls=node('form',undefined,'row'), depthLabel=node('label','Depth'), depth=node('select');
+  for(let value=1;value<=5;value++){const option=node('option',String(value));option.value=value;option.selected=value===3;depth.append(option);} depthLabel.append(depth);
+  const timeLabel=node('label','As of'), asOf=node('input'); asOf.type='datetime-local'; asOf.setAttribute('aria-label','Graph valid at this time'); timeLabel.append(asOf);
+  const back=actionButton('Back to previous pivot',()=>{if(trail.length){const previous=trail.pop();load(previous.ioc,previous.type,false);}}); back.disabled=true;
+  const refresh=node('button','Refresh graph'); refresh.type='submit'; controls.append(depthLabel,timeLabel,back,refresh); target.append(controls);
+  const status=node('p',undefined,'empty'), canvas=node('div',undefined,'graph-canvas'), details=node('div'); target.append(status,canvas,details);
+  const trail=[]; let currentRoot=initialRoot, currentType=initialType;
+  function queryTime(){return asOf.value?new Date(asOf.value).toISOString():undefined;}
+  async function load(ioc,entityType,remember,suppliedGraph){
+    if(remember)trail.push({ioc:currentRoot,type:currentType}); currentRoot=ioc;currentType=entityType;back.disabled=!trail.length;
+    clear(canvas);clear(details);status.textContent=`Loading ${ioc}...`;
+    try{const time=queryTime();const graph=suppliedGraph||await api(`/indicators/${encodeURIComponent(ioc)}/graph?depth=${depth.value}&limit=100${time?`&as_of=${encodeURIComponent(time)}`:''}&entity_type=${encodeURIComponent(entityType)}`);draw(graph,ioc,entityType);}
+    catch(error){status.textContent=error.message;}
+  }
+  function draw(graph,root,rootType){
+    clear(canvas);clear(details);const nodes=graph.nodes||[],edges=graph.edges||[];
+    status.textContent=`Root ${root} (${rootType}) · depth ${graph.max_depth} · ${nodes.length} nodes · ${edges.length} edges${graph.truncated?' · result budget reached':''}${graph.as_of?` · as of ${graph.as_of}`:''}`;
+    if(!edges.length){canvas.append(empty('No persisted relationships at this time.'));return;}
+    const NS='http://www.w3.org/2000/svg',svg=document.createElementNS(NS,'svg');
+    const keyFor=item=>item.entity_id==null?`${item.entity_type}:${item.id}`:String(item.entity_id),byKey=new Map(nodes.map(item=>[keyFor(item),item]));
+    const rootNode=nodes.find(item=>item.entity_type===rootType&&(item.id===root||item.canonical_value===root))||nodes.find(item=>item.id===root)||nodes[0];
+    const rootKey=keyFor(rootNode),distance=new Map([[rootKey,0]]),buckets=[[rootNode]],queue=[rootKey],adjacent=new Map();
+    edges.forEach(edge=>{const a=String(edge.source_entity_id),b=String(edge.target_entity_id);if(!adjacent.has(a))adjacent.set(a,[]);if(!adjacent.has(b))adjacent.set(b,[]);adjacent.get(a).push(b);adjacent.get(b).push(a);});
+    while(queue.length){const key=queue.shift(),level=distance.get(key);for(const next of adjacent.get(key)||[]){if(!byKey.has(next)||distance.has(next))continue;distance.set(next,level+1);if(!buckets[level+1])buckets[level+1]=[];buckets[level+1].push(byKey.get(next));queue.push(next);}}
+    const visible=buckets.flat().filter(Boolean),maxCount=Math.max(1,...buckets.map(bucket=>bucket?.length||0)),width=Math.max(720,buckets.length*270+40),height=Math.max(220,maxCount*104+36);
+    svg.setAttribute('viewBox',`0 0 ${width} ${height}`);svg.setAttribute('role','img');svg.setAttribute('aria-label',`Relationship graph rooted at ${root}`);svg.setAttribute('width',width);svg.setAttribute('height',height);
+    const defs=document.createElementNS(NS,'defs'),marker=document.createElementNS(NS,'marker');marker.setAttribute('id','graph-arrow');marker.setAttribute('viewBox','0 0 10 10');marker.setAttribute('refX','9');marker.setAttribute('refY','5');marker.setAttribute('markerWidth','6');marker.setAttribute('markerHeight','6');marker.setAttribute('orient','auto-start-reverse');const arrow=document.createElementNS(NS,'path');arrow.setAttribute('d','M 0 0 L 10 5 L 0 10 z');arrow.setAttribute('fill','#59708e');marker.append(arrow);defs.append(marker);svg.append(defs);
+    const positions=new Map();buckets.forEach((bucket,level)=>{if(bucket)bucket.forEach((item,index)=>{positions.set(keyFor(item),{x:24+level*270,y:(height/(bucket.length+1))*(index+1)});});});
+    edges.forEach(edge=>{const start=positions.get(String(edge.source_entity_id)),end=positions.get(String(edge.target_entity_id));if(!start||!end)return;const line=document.createElementNS(NS,'line');line.setAttribute('x1',start.x+190);line.setAttribute('y1',start.y);line.setAttribute('x2',end.x);line.setAttribute('y2',end.y);line.setAttribute('class','graph-edge');line.setAttribute('marker-end','url(#graph-arrow)');const title=document.createElementNS(NS,'title');title.textContent=`${edge.evidence_source||'analyst'} · confidence ${edge.confidence} · observation ${edge.evidence_observation_id||'none'} · valid ${edge.valid_from||'unknown'} to ${edge.valid_to||'open'}`;line.append(title);svg.append(line);const label=document.createElementNS(NS,'text');label.setAttribute('x',(start.x+190+end.x)/2);label.setAttribute('y',(start.y+end.y)/2-5);label.setAttribute('text-anchor','middle');label.setAttribute('class','graph-edge-label');label.textContent=edge.relationship_type;svg.append(label);});
+    visible.forEach(item=>{const key=keyFor(item),point=positions.get(key),group=document.createElementNS(NS,'g');group.setAttribute('class','graph-node');group.setAttribute('tabindex','0');group.setAttribute('role','button');group.setAttribute('aria-label',`Pivot to ${item.entity_type} ${item.display_value||item.id}`);group.setAttribute('transform',`translate(${point.x} ${point.y-27})`);const title=document.createElementNS(NS,'title');title.textContent=`${item.entity_type}: ${item.display_value||item.id}${item.linked_edge_evidence?` · ${item.linked_edge_evidence.source} observation ${item.linked_edge_evidence.observation_id}`:''}`;group.append(title);const rect=document.createElementNS(NS,'rect');rect.setAttribute('width','190');rect.setAttribute('height','54');rect.setAttribute('rx','8');group.append(rect);const value=document.createElementNS(NS,'text');value.setAttribute('x','10');value.setAttribute('y','22');value.setAttribute('class','graph-value');const full=item.display_value||item.id;value.textContent=full.length>27?`${full.slice(0,24)}…`:full;group.append(value);const type=document.createElementNS(NS,'text');type.setAttribute('x','10');type.setAttribute('y','42');type.setAttribute('class','graph-type');type.textContent=item.entity_type;group.append(type);const pivot=()=>{if(key!==rootKey)load(item.id,item.entity_type,true);};group.addEventListener('click',pivot);group.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();pivot();}});svg.append(group);});
+    canvas.append(svg);details.append(table(['From','Relationship','To','Entity types','Confidence','Provider / observation','Validity'],edges.map(edge=>[edge.source_ioc,edge.relationship_type,edge.target_ioc,`${edge.source_entity_type} → ${edge.target_entity_type}`,edge.confidence,`${edge.evidence_source} / ${edge.evidence_observation_id?`observation ${edge.evidence_observation_id}`:'analyst'}`,`${edge.valid_from||'unknown'} → ${edge.valid_to||'open'}`])));details.append(structuredPanel('Graph nodes and edge provenance',graph));
+  }
+  controls.addEventListener('submit',event=>{event.preventDefault();trail.length=0;load(currentRoot,currentType,false);});
+  await load(initialRoot,initialType,false,initialGraph);
+}
 async function inspectCaseIndicator(investigationId, ioc, caseEvents) {
   const timeline = byId('case-timeline');
   const graphTarget = byId('case-graph');
@@ -80,24 +128,8 @@ async function inspectCaseIndicator(investigationId, ioc, caseEvents) {
       caseTimeline(caseEvents, indicatorEvents, history.items)
     );
 
-    graphTarget.append(node('h3', `Typed relationship graph for ${ioc}`));
-    if (graph.edges.length) {
-      graphTarget.append(table(
-        ['From', 'Relationship', 'To', 'Entity types', 'Confidence', 'Source / observation', 'Valid from'],
-        graph.edges.map(edge => [
-          edge.source_ioc,
-          edge.relationship_type,
-          edge.target_ioc,
-          `${edge.source_entity_type} -> ${edge.target_entity_type}`,
-          edge.confidence,
-          `${edge.evidence_source} / ${edge.evidence_observation_id ? 'observation ' + edge.evidence_observation_id : 'analyst'}`,
-          edge.valid_from
-        ])
-      ));
-      graphTarget.append(structuredPanel('Graph nodes and edge provenance', graph));
-    } else {
-      graphTarget.append(empty('No persisted relationships for this indicator.'));
-    }
+    const graphRoot=graph.nodes.find(item=>item.id===ioc)||graph.nodes[0];
+    await renderGraphExplorer(graphTarget,graph,ioc,graphRoot?.entity_type||'domain');
     graphTarget.append(
       renderList('Ranked pivots', pivots.candidates.map(candidate =>
         `${candidate.entity_type}: ${candidate.ioc} (score ${candidate.priority_score}; ${candidate.supporting_edges.length} supporting edge(s))`

@@ -46,8 +46,9 @@ The transformation proceeds in dependency order:
    graph, comparison, integrity, and bundle operations through the CLI, API,
    and browser workbench. The workbench now shows provider provenance and
    decision traces, investigation/indicator timelines, typed graph edges and
-   pivots, historical replay and comparison, event-chain status, and bundle
-   export/offline inspection. The local benchmark runner measures synthetic
+   pivots, a bounded time-filterable node-link explorer, historical replay and
+   comparison, event-chain status, and bundle export/offline inspection. The
+   local benchmark runner measures synthetic
    enrichment/scheduler throughput,
    SQLite history growth, case linking, graph pivots, and deterministic replay;
    expand performance evidence with realistic datasets and repeated runs.

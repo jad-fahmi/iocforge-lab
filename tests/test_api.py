@@ -32,6 +32,10 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
     assert "Event chain:" in response.text
     assert "Download reproducible .iocforge bundle" in response.text
     assert "Validate and replay offline" in response.text
+    assert "Navigable relationship graph" in response.text
+    assert "datetime-local" in response.text
+    assert "Back to previous pivot" in response.text
+    assert "graph-node" in response.text
     assert "/pivots?limit=25" in response.text
     assert "const API = '/api/v1'" in response.text
     assert "p.available" in response.text
