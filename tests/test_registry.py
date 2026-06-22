@@ -36,6 +36,26 @@ def test_registry_rejects_unknown_requested_connector():
         ConnectorRegistry([ExampleConnector]).build(Config(), ["missing"])
 
 
+def test_registry_applies_provider_timeout_and_retry_policy():
+    config = Config(
+        providers={
+            "example": {
+                "timeout_seconds": 3.5,
+                "retries": 4,
+                "backoff_base_seconds": 0.2,
+                "max_retry_after_seconds": 5,
+            }
+        }
+    )
+
+    connector = ConnectorRegistry([ExampleConnector]).build(config)[0]
+
+    assert connector.timeout == 3.5
+    assert connector.max_retries == 4
+    assert connector.backoff_base_seconds == 0.2
+    assert connector.max_retry_after_seconds == 5
+
+
 def test_engine_reports_provider_capabilities_without_keys():
     providers = Engine(Config()).provider_status()
     virustotal = next(

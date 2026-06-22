@@ -130,6 +130,39 @@ Credentials are read from environment variables or `~/.config/iocforge-lab/confi
 Providers can be disabled without deleting their credentials:
 
 ```json
+{
+  "scheduler": {
+    "max_concurrency": 8,
+    "max_pending": 32,
+    "include_optional": true
+  },
+  "providers": {
+    "virustotal": {
+      "enabled": true,
+      "priority": 10,
+      "concurrency": 2,
+      "requests_per_window": 4,
+      "window_seconds": 60,
+      "timeout_seconds": 8,
+      "retries": 2,
+      "backoff_base_seconds": 1,
+      "max_retry_after_seconds": 30
+    },
+    "crtsh": {"optional": true}
+  }
+}
+```
+
+Scheduler defaults retain current behavior: all providers are included, calls
+have a 10-second per-request timeout and up to two retries, and quotas apply
+only when configured. `max_concurrency` and `max_pending` bound work submitted
+through one engine. Provider priority sorts each lookup's dispatch order;
+`optional: true` sources can be omitted by setting
+`scheduler.include_optional` to `false`. Per-provider quotas are enforced in
+memory for the lifetime of the engine. See [architecture notes](docs/architecture.md)
+for how retry delays and timeout bounds work.
+
+```json
 {"providers": {"shodan": {"enabled": false}}}
 ```
 

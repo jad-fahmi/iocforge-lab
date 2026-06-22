@@ -28,6 +28,7 @@ class DNS(Connector):
         try:
             for record_type in self.record_types:
                 try:
+                    self._admit_request()
                     answer = resolver.resolve(ioc, record_type)
                     records[record_type] = [
                         str(record).rstrip(".") for record in answer

@@ -57,7 +57,23 @@ class ConnectorRegistry:
         if unknown:
             raise ValueError(f"unknown source(s): {', '.join(sorted(unknown))}")
         return [
-            connector_type(api_key=config.key_for(name))
+            connector_type(
+                api_key=config.key_for(name),
+                timeout=config.providers.get(name, {}).get(
+                    "timeout_seconds", config.scheduler.get("timeout_seconds", 10.0)
+                ),
+                max_retries=config.providers.get(name, {}).get(
+                    "retries", config.scheduler.get("retries", 2)
+                ),
+                backoff_base_seconds=config.providers.get(name, {}).get(
+                    "backoff_base_seconds",
+                    config.scheduler.get("backoff_base_seconds", 1.0),
+                ),
+                max_retry_after_seconds=config.providers.get(name, {}).get(
+                    "max_retry_after_seconds",
+                    config.scheduler.get("max_retry_after_seconds", 30.0),
+                ),
+            )
             for name, connector_type in self._types.items()
             if (requested is None or name in requested)
             and config.provider_enabled(name)

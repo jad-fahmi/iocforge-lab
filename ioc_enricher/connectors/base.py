@@ -1,8 +1,11 @@
 import abc
 import math
 import time
+from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from threading import Lock
+from typing import Callable
 
 import httpx
 
@@ -11,6 +14,24 @@ from ioc_enricher.log import get
 from ioc_enricher.models import SourceResult
 
 log = get(__name__)
+_REQUEST_ADMISSION: ContextVar[Callable[[], None] | None] = ContextVar(
+    "iocforge_request_admission", default=None
+)
+
+
+def set_request_admission(callback: Callable[[], None]) -> Token:
+    """Set a per-lookup quota callback for this connector worker thread."""
+    return _REQUEST_ADMISSION.set(callback)
+
+
+def reset_request_admission(token: Token) -> None:
+    _REQUEST_ADMISSION.reset(token)
+
+
+def admit_request() -> None:
+    callback = _REQUEST_ADMISSION.get()
+    if callback is not None:
+        callback()
 
 
 class Connector(abc.ABC):
@@ -22,44 +43,70 @@ class Connector(abc.ABC):
     supported: tuple = ()
     requires_api_key = True
 
-    def __init__(self, api_key=None, timeout=10.0, client=None):
+    def __init__(
+        self,
+        api_key=None,
+        timeout=10.0,
+        client=None,
+        max_retries=2,
+        backoff_base_seconds=1.0,
+        max_retry_after_seconds=30.0,
+    ):
         self.api_key = api_key
-        self.timeout = timeout
+        self.timeout = _positive_number(timeout, "timeout")
         self._client = client
+        self._client_lock = Lock()
+        self.max_retries = _non_negative_number(max_retries, "max_retries", integer=True)
+        self.backoff_base_seconds = _non_negative_number(
+            backoff_base_seconds, "backoff_base_seconds"
+        )
+        self.max_retry_after_seconds = _non_negative_number(
+            max_retry_after_seconds, "max_retry_after_seconds"
+        )
 
     @property
     def client(self):
         if self._client is None:
-            self._client = httpx.Client(timeout=self.timeout)
+            with self._client_lock:
+                if self._client is None:
+                    self._client = httpx.Client(timeout=self.timeout)
         return self._client
 
     def supports(self, ioc_type: IocType) -> bool:
         return ioc_type in self.supported
 
-    def request(self, method, url, max_retries=2, **kwargs):
+    def _admit_request(self) -> None:
+        admit_request()
+
+    def request(self, method, url, max_retries=None, **kwargs):
         """Request with bounded retries for transient upstream failures."""
+        max_retries = self.max_retries if max_retries is None else max_retries
+        max_retries = _non_negative_number(max_retries, "max_retries", integer=True)
         attempt = 0
         while True:
+            admit_request()
             try:
                 resp = self.client.request(method, url, **kwargs)
             except (httpx.TimeoutException, httpx.NetworkError):
                 if attempt >= max_retries:
                     raise
-                wait = min(2**attempt, 30)
+                wait = min(self.backoff_base_seconds * 2**attempt, self.max_retry_after_seconds)
                 log.warning("%s request failed, retrying in %ss", self.name, wait)
                 time.sleep(wait)
                 attempt += 1
                 continue
 
             if resp.status_code == 429 and attempt < max_retries:
-                wait = _retry_after(resp.headers.get("Retry-After"))
+                wait = _retry_after(
+                    resp.headers.get("Retry-After"), self.max_retry_after_seconds
+                )
                 log.warning("%s rate limited, sleeping %ss", self.name, wait)
                 time.sleep(wait)
                 attempt += 1
                 continue
 
             if resp.status_code >= 500 and attempt < max_retries:
-                wait = min(2**attempt, 30)
+                wait = min(self.backoff_base_seconds * 2**attempt, self.max_retry_after_seconds)
                 log.warning(
                     "%s server error %s, retrying in %ss",
                     self.name,
@@ -72,25 +119,31 @@ class Connector(abc.ABC):
 
             return resp
 
-    def get(self, url, max_retries=2, **kwargs):
+    def get(self, url, max_retries=None, **kwargs):
         return self.request("GET", url, max_retries=max_retries, **kwargs)
 
-    def post(self, url, max_retries=2, **kwargs):
+    def post(self, url, max_retries=None, **kwargs):
         return self.request("POST", url, max_retries=max_retries, **kwargs)
 
     @abc.abstractmethod
     def enrich(self, ioc: str, ioc_type: IocType) -> SourceResult: ...
 
-    def run(self, ioc, ioc_type, cache=None) -> SourceResult:
+    def _cached_result(self, ioc, cache) -> SourceResult | None:
+        hit = cache.get(self.name, ioc)
+        if hit is None:
+            return None
+        hit["ioc_type"] = IocType(hit["ioc_type"])
+        result = SourceResult(**hit)
+        if result.connector_version == "unknown":
+            result.connector_version = self.version
+        result.cache_hit = True
+        return result
+
+    def run(self, ioc, ioc_type, cache=None, skip_fresh_cache=False) -> SourceResult:
         """enrich with an optional cache in front."""
-        if cache is not None:
-            hit = cache.get(self.name, ioc)
-            if hit is not None:
-                hit["ioc_type"] = IocType(hit["ioc_type"])
-                result = SourceResult(**hit)
-                if result.connector_version == "unknown":
-                    result.connector_version = self.version
-                result.cache_hit = True
+        if cache is not None and not skip_fresh_cache:
+            result = self._cached_result(ioc, cache)
+            if result is not None:
                 return result
 
         result = self.enrich(ioc, ioc_type)
@@ -140,9 +193,9 @@ class Connector(abc.ABC):
         )
 
 
-def _retry_after(value):
+def _retry_after(value, maximum=30):
     if value is None:
-        return 2
+        return min(2, maximum)
     try:
         delay = float(value)
     except ValueError:
@@ -152,7 +205,30 @@ def _retry_after(value):
                 retry_at = retry_at.replace(tzinfo=timezone.utc)
             delay = (retry_at - datetime.now(timezone.utc)).total_seconds()
         except (TypeError, ValueError, OverflowError):
-            return 2
+            return min(2, maximum)
     if not math.isfinite(delay):
-        return 2
-    return min(max(delay, 0), 30)
+        return min(2, maximum)
+    return min(max(delay, 0), maximum)
+
+
+def _non_negative_number(value, name, integer=False):
+    valid_type = isinstance(value, int) if integer else isinstance(value, (int, float))
+    if (
+        isinstance(value, bool)
+        or not valid_type
+        or not math.isfinite(value)
+        or value < 0
+    ):
+        raise ValueError(f"{name} must be finite and non-negative")
+    return int(value) if integer else float(value)
+
+
+def _positive_number(value, name):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise ValueError(f"{name} must be finite and positive")
+    return float(value)

@@ -75,6 +75,25 @@ def test_engine_records_per_source_latency():
     assert result.sources[0].cache_hit is False
 
 
+def test_engine_reports_optional_sources_skipped_by_policy():
+    connector = RecordingConnector(api_key="x")
+    engine = Engine(
+        Config(
+            providers={connector.name: {"optional": True}},
+            scheduler={"include_optional": False},
+        ),
+        sources=[],
+    )
+    engine.connectors = [connector]
+
+    try:
+        result = engine.enrich("evil.com")
+        assert result.sources[0].error == "optional provider skipped by scheduler policy"
+        assert connector.calls == []
+    finally:
+        engine.close()
+
+
 def test_enrich_many_dedupes_and_preserves_order():
     conn = RecordingConnector(api_key="x")
     results = _engine([conn]).enrich_many(["evil.com", "good.com", "evil.com"])
@@ -98,3 +117,31 @@ def test_enrich_with_real_cache_and_multiple_connectors(tmp_path):
     assert len(cached.sources) == 2
     assert all(source.cache_hit for source in cached.sources)
     assert all(source.latency_ms is not None for source in cached.sources)
+
+
+def test_cached_results_do_not_consume_provider_quota(tmp_path):
+    class RequestRecordingConnector(RecordingConnector):
+        def enrich(self, ioc, ioc_type):
+            self._admit_request()
+            return super().enrich(ioc, ioc_type)
+
+    cache = Cache(path=tmp_path / "quota-cache.db", ttl=3600)
+    config = Config(
+        providers={"recorder": {"requests_per_window": 1, "window_seconds": 60}}
+    )
+    engine = Engine(config, cache=cache, sources=[])
+    connector = RequestRecordingConnector(api_key="x")
+    engine.connectors = [connector]
+
+    try:
+        first = engine.enrich("evil.com")
+        admitted = len(engine.scheduler._starts["recorder"])
+        cached = engine.enrich("evil.com")
+
+        assert first.sources[0].cache_hit is False
+        assert cached.sources[0].cache_hit is True
+        assert len(engine.scheduler._starts["recorder"]) == admitted == 1
+        assert connector.calls == ["evil.com"]
+    finally:
+        engine.close()
+        cache.close()

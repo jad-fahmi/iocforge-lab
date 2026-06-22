@@ -34,13 +34,16 @@ def load_dotenv(path=".env"):
 
 
 class Config:
-    def __init__(self, keys=None, cache_ttl=3600, providers=None, scoring=None):
+    def __init__(
+        self, keys=None, cache_ttl=3600, providers=None, scoring=None, scheduler=None
+    ):
         self.keys = keys or {}
         self.cache_ttl = cache_ttl
         # A provider omitted from configuration remains enabled.  This keeps
         # existing installations working while allowing explicit opt-out.
         self.providers = providers or {}
         self.scoring = scoring or {}
+        self.scheduler = scheduler or {}
 
     def key_for(self, source):
         return self.keys.get(source)
@@ -53,12 +56,14 @@ class Config:
         keys = {}
         providers = {}
         scoring = {}
+        scheduler = {}
         path = Path(path) if path else DEFAULT_PATH
         if path.exists():
             data = json.loads(path.read_text())
             keys.update(data.get("keys", {}))
             providers.update(data.get("providers", {}))
             scoring.update(data.get("scoring", {}))
+            scheduler.update(data.get("scheduler", {}))
 
         # env always wins over the file
         for source, env in ENV_KEYS.items():
@@ -72,4 +77,5 @@ class Config:
             cache_ttl=ttl,
             providers=providers,
             scoring=scoring,
+            scheduler=scheduler,
         )

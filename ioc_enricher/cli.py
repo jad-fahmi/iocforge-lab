@@ -329,6 +329,10 @@ def main(argv=None):
 
         results = engine.enrich_many(iocs, progress=progress)
 
+    close_engine = getattr(engine, "close", None)
+    if close_engine is not None:
+        close_engine()
+
     if args.quiet:
         results = [r for r in results if r.verdict in ("malicious", "suspicious")]
 

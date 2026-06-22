@@ -35,10 +35,13 @@ The transformation proceeds in dependency order:
    event chains can now be verified. A versioned `.iocforge` archive packages
    case metadata, linked snapshots and evidence, bounded graph state, and event
    chains; CLI and API inspection verifies and replays it without live providers.
-5. **Provider evaluation and scheduling:** a versioned fixture evaluator now
+5. **Provider evaluation and scheduling:** a versioned fixture evaluator
    measures coverage, failure, latency, freshness, disagreement, overlap, and
-   labeled classification errors. Use representative repeated evaluations to
-   inform future single-process scheduling, quotas, retries, and backpressure.
+   labeled classification errors. The engine now uses a bounded single-process
+   scheduler with per-provider concurrency and sliding-window quotas, priority
+   ordering, optional-source control, and configurable request retries/timeouts.
+   Repeated evaluations can inform later policy tuning; fixture scores do not
+   automatically alter provider weights.
 6. **Interfaces and engineering evidence:** expose evidence, timeline, replay,
    graph, and bundle operations through current CLI/API/UI surfaces, with
    adversarial fixtures and measured performance for each subsystem.
@@ -84,6 +87,16 @@ required. Configuration can disable any provider without removing its key.
 The cache is deliberately in front of individual connectors, so cached provider
 answers retain their original source attribution. The engine never lets one
 provider failure prevent results from the others.
+
+The scheduler bounds concurrent provider work and queued submissions across
+lookups made through the same engine. Provider policy is configured under each
+`providers.<name>` object; `requests_per_window` and `window_seconds` enforce an
+in-memory sliding-window quota. Priority is applied when each lookup is
+dispatched. Optional providers can be skipped with `scheduler.include_optional`
+while remaining visible in the result as not run. Retry limits use bounded
+exponential backoff, honor numeric or HTTP-date `Retry-After` values, and cap
+waits with `max_retry_after_seconds`. HTTP attempts use the configured provider
+timeout; DNS resolver calls use that timeout as their lifetime bound.
 
 The `passive_dns` connector uses CIRCL's Passive DNS endpoint for historical
 records only. It explicitly sends the provider's `dribble-disable-active-query`
