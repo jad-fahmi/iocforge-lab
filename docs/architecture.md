@@ -53,6 +53,15 @@ The transformation proceeds in dependency order:
    SQLite history growth, case linking, graph pivots, and deterministic replay;
    expand performance evidence with realistic datasets and repeated runs.
 
+The `python -m ioc_enricher.demo --output <path>` walkthrough creates its own
+temporary SQLite history, seeds two explicitly timestamped synthetic provider
+snapshots and temporal graph states, and exports a portable investigation
+bundle. It prints the evidence and graph diff, both scoring traces, replay
+checks, and offline bundle-integrity report. It does not construct an engine,
+load provider credentials, or access the default history database. Its reserved
+`.example` domain and documentation IP ranges make it illustrative rather than
+an evaluation of provider accuracy or realistic campaign attribution.
+
 The evidence foundation now stores provenance on each `SourceResult` and in a
 normalized `evidence_observations` table linked to enrichment snapshots by
 stable observation IDs. The SHA-256 value fingerprints the structured `raw`

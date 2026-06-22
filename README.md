@@ -229,6 +229,24 @@ entity type, and includes the supporting relationship provenance.
 `--evaluate-fixture` measures providers from a labeled JSON fixture without
 making provider requests. See [provider evaluation methodology](docs/provider-evaluation.md).
 
+### Reproducible T1/T2 walkthrough
+
+Generate a complete synthetic investigation without contacting providers or
+opening IOCForge's normal history database:
+
+```shell
+python -m ioc_enricher.demo --output demo/t1-t2.iocforge
+```
+
+The command writes a portable case bundle and prints a JSON walkthrough with
+the T1 and T2 verdicts, decision traces, evidence and graph changes, replay
+checks, and bundle integrity. The scenario starts with a benign classification
+and one historical IP, then adds malicious classifications, a new IP, a
+certificate, and a certificate-linked hostname. Timestamps are generated for
+each run; all provider observations and relationships are synthetic. Inspect
+the archive with `ioc-enrich --bundle-inspect demo/t1-t2.iocforge` or upload it
+in the workbench's **Inspect an .iocforge bundle** form.
+
 `--fail-on-malicious` returns a nonzero exit code when a malicious verdict is found. Use `-v` for operational logs and repeat it, or pass `--debug`, for connector-level debugging. Logs go to stderr so JSON, CSV, and report output remain machine-readable.
 
 ## HTTP API
@@ -329,7 +347,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the request flow and comp
 
 ## Project status
 
-IOCForge is under active development. The current release line is `0.1.x`; API and workbench details may change as the investigation model develops. The next product milestone is a complete T1/T2 demonstration investigation with evolving evidence, verdicts, and graph state, including a reproducible walkthrough that runs without live providers.
+IOCForge is under active development. The current release line is `0.1.x`; API and workbench details may change as the investigation model develops. A provider-free T1/T2 walkthrough now exercises changing evidence, verdicts, graph state, historical replay, and bundle inspection. The next milestone is to deepen that scenario with realistic multi-stage case fixtures and a guided comparison inside the workbench.
 
 Issues and pull requests are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
