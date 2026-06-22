@@ -43,8 +43,10 @@ The transformation proceeds in dependency order:
    Repeated evaluations can inform later policy tuning; fixture scores do not
    automatically alter provider weights.
 6. **Interfaces and engineering evidence:** expose evidence, timeline, replay,
-   graph, and bundle operations through current CLI/API/UI surfaces, with
-   adversarial fixtures and measured performance for each subsystem.
+   graph, and bundle operations through current CLI/API/UI surfaces. The local
+   benchmark runner now measures synthetic enrichment/scheduler throughput,
+   SQLite history growth, case linking, graph pivots, and deterministic replay;
+   expand performance evidence with realistic datasets and repeated runs.
 
 The evidence foundation now stores provenance on each `SourceResult` and in a
 normalized `evidence_observations` table linked to enrichment snapshots by

@@ -285,6 +285,19 @@ MISP export returns an unpublished MISP-compatible event with mapped IOC attribu
 
 See [`docs/threat-model.md`](docs/threat-model.md) for operating assumptions and security details.
 
+## Performance evidence
+
+Run the offline benchmark harness to measure scheduler throughput, persisted
+history growth, replay, and graph pivot lookup without contacting live
+providers:
+
+```shell
+python -m benchmarks.run_benchmarks --indicators 100
+```
+
+See [`docs/performance.md`](docs/performance.md) for workload parameters and
+interpretation.
+
 ## Development
 
 Install development dependencies and run the project checks:
