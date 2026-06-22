@@ -233,6 +233,58 @@ async function inspectCaseIndicator(investigationId, ioc, caseEvents) {
   }
 }
 async function openCase(id) { const target=byId('case-detail');clear(target);target.append(empty(`Loading investigation ${id}...`));try{const [investigation,events,integrity]=await Promise.all([api(`/investigations/${id}`),api(`/investigations/${id}/events?limit=200`),api(`/investigations/${id}/integrity`)]);clear(target);const header=node('div',undefined,'panel');header.append(node('h2',investigation.title),node('p',`${investigation.status} | ${investigation.indicators.length} indicator(s) | updated ${investigation.updated_at}`),node('p',investigation.description||'No description.'));const actions=node('div',undefined,'actions'),bundle=node('a','Download reproducible .iocforge bundle');bundle.href=`${API}/investigations/${id}/bundle`;bundle.download=`iocforge-investigation-${id}.iocforge`;actions.append(bundle,node('span',`Event chain: ${integrity.valid?'valid':'INVALID'} (${integrity.checked_events} event(s))`,integrity.valid?'clean':'error'));header.append(actions);target.append(header);const eventPanel=node('div',undefined,'panel');eventPanel.append(node('h3','Investigation event timeline'),caseTimeline(events,[],[]));target.append(eventPanel);const selectForm=node('form',undefined,'row panel'),select=node('select');investigation.indicators.forEach(ioc=>{const option=node('option',ioc);option.value=ioc;select.append(option)});selectForm.append(node('label','Inspect indicator'),select,actionButton('Load evidence and graph',()=>inspectCaseIndicator(id,select.value,events)));target.append(selectForm);const timeline=node('div',undefined,'panel'),graph=node('div',undefined,'panel'),snapshots=node('div',undefined,'panel'),comparison=node('div',undefined,'panel');timeline.id='case-timeline';graph.id='case-graph';snapshots.id='case-snapshots';comparison.id='case-comparison';target.append(timeline,graph,snapshots,comparison);if(investigation.indicators.length)await inspectCaseIndicator(id,investigation.indicators[0],events);else timeline.append(empty('Add an indicator to inspect its evidence.'));}catch(error){renderError(target,error)} }
-byId('bundle-form').addEventListener('submit',async event=>{event.preventDefault();const target=byId('bundle-result');clear(target);const file=byId('bundle-file').files[0];if(!file){target.append(empty('Choose an .iocforge bundle first.'));return}target.append(empty('Validating bundle checksums, event chains, and offline replay...'));try{const report=await api('/investigations/bundles/inspect',{method:'POST',headers:{'Content-Type':'application/zip'},body:file});clear(target);target.append(node('h3','Offline bundle inspection'),node('p',`Investigation: ${report.investigation?.title||'unknown'} | event integrity: ${report.event_integrity?.investigation?.valid?'valid':'invalid'}`),structuredPanel('Validation and replay report',report,true));}catch(error){renderError(target,error)}});
+function renderBundleComparisons(comparisons) {
+  if (!comparisons?.length) return empty('The bundle contains no consecutive snapshots to compare.');
+  const output=node('div');
+  comparisons.forEach(item=>{
+    const panel=node('div',undefined,'panel');
+    const before=item.baseline, after=item.comparison;
+    panel.append(
+      node('h3',`${item.ioc}: ${before.verdict} (${before.score}) -> ${after.verdict} (${after.score})`),
+      node('p',`T1 ${before.looked_up_at} | T2 ${after.looked_up_at} | score delta ${item.score_delta} | verdict changed: ${item.verdict_changed}`),
+      renderList('Evidence added in the later snapshot',item.evidence.added.map(entry=>{
+        const observation=entry.observation||{};
+        const contribution=entry.decision_contribution||{};
+        return `${observation.source||'unknown source'} | ${contribution.status||'not scored'} | SHA-256 ${observation.raw_response_sha256||'unavailable'} | raw ${JSON.stringify(observation.raw||{})}`;
+      })),
+      renderList('Evidence removed from the later snapshot',item.evidence.removed_from_snapshot.map(entry=>{
+        const observation=entry.observation||{};
+        return `${observation.source||'unknown source'} | SHA-256 ${observation.raw_response_sha256||'unavailable'} | raw ${JSON.stringify(observation.raw||{})}`;
+      })),
+      renderList('Changed decision contribution for retained evidence',item.evidence.decision_contribution_changes.map(change=>
+        `${change.source||'unknown source'} observation ${change.observation_id} | before ${JSON.stringify(change.baseline)} | after ${JSON.stringify(change.comparison)}`
+      )),
+      renderList('New graph relationships',item.graph.added_edges.map(edge=>
+        `${edge.source_ioc} --${edge.relationship_type}--> ${edge.target_ioc} | ${edge.evidence_source} observation ${edge.evidence_observation_id||'none'} | confidence ${edge.confidence} | valid ${edge.valid_from||'unknown'} to ${edge.valid_to||'open'}`
+      )),
+      renderList('Expired or removed graph relationships',item.graph.removed_edges.map(edge=>
+        `${edge.source_ioc} --${edge.relationship_type}--> ${edge.target_ioc} | ${edge.evidence_source} observation ${edge.evidence_observation_id||'none'} | valid ${edge.valid_from||'unknown'} to ${edge.valid_to||'open'}`
+      )),
+      renderList('Offline replay checks',[
+        `T1: replayable ${item.replay.baseline?.replayable}; matches original ${item.replay.baseline?.matches_original}`,
+        `T2: replayable ${item.replay.comparison?.replayable}; matches original ${item.replay.comparison?.matches_original}`
+      ])
+    );
+    output.append(panel);
+  });
+  return output;
+}
+byId('bundle-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const target=byId('bundle-result');clear(target);
+  const file=byId('bundle-file').files[0];
+  if(!file){target.append(empty('Choose an .iocforge bundle first.'));return;}
+  target.append(empty('Validating bundle checksums, event chains, offline replay, and snapshot comparisons...'));
+  try{
+    const report=await api('/investigations/bundles/inspect',{method:'POST',headers:{'Content-Type':'application/zip'},body:file});
+    clear(target);
+    target.append(
+      node('h3','Offline bundle inspection'),
+      node('p',`Investigation: ${report.investigation?.title||'unknown'} | ${report.snapshot_count} snapshot(s) | event integrity: ${report.event_integrity?.investigation?.valid?'valid':'invalid'}`),
+      renderBundleComparisons(report.comparisons),
+      structuredPanel('Full bundle validation, evidence, graph, and replay data',report,true)
+    );
+  }catch(error){renderError(target,error);}
+});
 loadDashboard();
 </script></body></html>"""

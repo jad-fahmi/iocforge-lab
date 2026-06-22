@@ -62,6 +62,12 @@ load provider credentials, or access the default history database. Its reserved
 `.example` domain and documentation IP ranges make it illustrative rather than
 an evaluation of provider accuracy or realistic campaign attribution.
 
+Offline bundle inspection compares each indicator's adjacent snapshots using
+the embedded observations and temporally filtered graph edges. It includes
+contributing decision-trace rows and relationship provenance in its diffs, so
+the workbench can show why the later decision or pivot set changed without
+reopening the originating database.
+
 The evidence foundation now stores provenance on each `SourceResult` and in a
 normalized `evidence_observations` table linked to enrichment snapshots by
 stable observation IDs. The SHA-256 value fingerprints the structured `raw`

@@ -223,7 +223,8 @@ the original and recalculated scoring traces without querying providers.
 removed observations, decision changes, replay status, and graph differences.
 Bundles contain the case timeline, linked snapshots and evidence, graph edges,
 scoring inputs, and event chains. `--bundle-inspect` validates checksums and
-event integrity, then replays supported snapshots from embedded evidence only.
+event integrity, replays supported snapshots from embedded evidence, and
+compares adjacent snapshots and their time-bounded graph without providers.
 `--pivots` ranks direct, currently valid graph neighbors by edge confidence and
 entity type, and includes the supporting relationship provenance.
 `--evaluate-fixture` measures providers from a labeled JSON fixture without
@@ -245,7 +246,8 @@ and one historical IP, then adds malicious classifications, a new IP, a
 certificate, and a certificate-linked hostname. Timestamps are generated for
 each run; all provider observations and relationships are synthetic. Inspect
 the archive with `ioc-enrich --bundle-inspect demo/t1-t2.iocforge` or upload it
-in the workbench's **Inspect an .iocforge bundle** form.
+in the workbench's **Inspect an .iocforge bundle** form to review the offline
+snapshot comparison, new evidence, graph changes, and replay checks.
 
 `--fail-on-malicious` returns a nonzero exit code when a malicious verdict is found. Use `-v` for operational logs and repeat it, or pass `--debug`, for connector-level debugging. Logs go to stderr so JSON, CSV, and report output remain machine-readable.
 
@@ -347,7 +349,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the request flow and comp
 
 ## Project status
 
-IOCForge is under active development. The current release line is `0.1.x`; API and workbench details may change as the investigation model develops. A provider-free T1/T2 walkthrough now exercises changing evidence, verdicts, graph state, historical replay, and bundle inspection. The next milestone is to deepen that scenario with realistic multi-stage case fixtures and a guided comparison inside the workbench.
+IOCForge is under active development. The current release line is `0.1.x`; API and workbench details may change as the investigation model develops. A provider-free T1/T2 walkthrough now exercises changing evidence, verdicts, graph state, historical replay, and offline bundle comparison. The next milestone is to deepen the scenario with realistic multi-stage case fixtures and adversarial timeline variations.
 
 Issues and pull requests are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 

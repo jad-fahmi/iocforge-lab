@@ -35,3 +35,11 @@ def test_t1_t2_demo_writes_self_contained_offline_case(tmp_path, capsys):
     assert inspected["snapshot_count"] == 2
     assert inspected["event_integrity"]["investigation"]["valid"] is True
     assert all(result["matches_original"] for result in inspected["replay"])
+    assert len(inspected["comparisons"]) == 1
+    offline_comparison = inspected["comparisons"][0]
+    assert offline_comparison["verdict_changed"] is True
+    assert offline_comparison["replay"]["baseline"]["matches_original"] is True
+    assert offline_comparison["replay"]["comparison"]["matches_original"] is True
+    assert "198.51.100.27" in {
+        edge["target_ioc"] for edge in offline_comparison["graph"]["added_edges"]
+    }

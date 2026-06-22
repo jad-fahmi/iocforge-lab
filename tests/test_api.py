@@ -5,6 +5,7 @@ from ioc_enricher.api import app as api_module
 from ioc_enricher.api.rate_limit import RateLimiter
 from ioc_enricher.bundles import inspect_bundle
 from ioc_enricher.config import Config
+from ioc_enricher.demo import create_demo_bundle
 from ioc_enricher.engine import Engine
 from ioc_enricher.evaluation import load_fixture
 from ioc_enricher.history import HistoryStore
@@ -32,6 +33,8 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
     assert "Event chain:" in response.text
     assert "Download reproducible .iocforge bundle" in response.text
     assert "Validate and replay offline" in response.text
+    assert "Evidence added in the later snapshot" in response.text
+    assert "offline replay, and snapshot comparisons" in response.text
     assert "Navigable relationship graph" in response.text
     assert "datetime-local" in response.text
     assert "Back to previous pivot" in response.text
@@ -266,6 +269,23 @@ def test_investigation_bundle_api_exports_and_loads_offline(
     assert inspect_bundle(exported.content)["investigation"]["title"] == "Bundle case"
     assert loaded.status_code == 200
     assert loaded.json()["event_integrity"]["investigation"]["valid"] is True
+    assert loaded.json()["comparisons"] == []
+
+
+def test_bundle_inspection_api_compares_snapshots_offline():
+    bundle, _ = create_demo_bundle()
+
+    response = TestClient(api_module.app).post(
+        "/api/v1/investigations/bundles/inspect",
+        content=bundle,
+        headers={"content-type": "application/zip"},
+    )
+
+    assert response.status_code == 200
+    comparison = response.json()["comparisons"][0]
+    assert comparison["verdict_changed"] is True
+    assert comparison["replay"]["baseline"]["matches_original"] is True
+    assert comparison["replay"]["comparison"]["matches_original"] is True
 
 
 def test_provider_evaluation_api_runs_an_offline_fixture():

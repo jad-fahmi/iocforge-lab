@@ -53,6 +53,7 @@ def test_investigation_bundle_replays_without_providers_and_includes_graph(tmp_p
     assert report["graph"]["edges"][0]["target_ioc"] == "203.0.113.10"
     assert report["event_integrity"]["investigation"]["valid"] is True
     assert report["event_integrity"]["indicators"]["evil.example"]["valid"] is True
+    assert report["comparisons"] == []
     assert report["replay"] == [
         {
             "enrichment_id": 1,
@@ -97,3 +98,11 @@ def test_bundle_rejects_extra_archive_members(tmp_path):
 
     with pytest.raises(ValueError, match="only bundle.json"):
         inspect_bundle(altered.getvalue())
+
+
+def test_bundle_rejects_malformed_temporal_graph_edges(tmp_path):
+    payload = _bundle_payload(tmp_path)
+    payload["graph"]["edges"][0]["target_entity_id"] = "not-an-entity-id"
+
+    with pytest.raises(ValueError, match="graph edge is invalid"):
+        inspect_bundle(build_bundle(payload))
