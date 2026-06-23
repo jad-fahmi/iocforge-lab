@@ -114,12 +114,13 @@ async function inspectCaseIndicator(investigationId, ioc, caseEvents) {
   timeline.append(empty('Loading indicator evidence and timeline...'));
   try {
     const encoded = encodeURIComponent(ioc);
-    const [history, indicatorEvents, indicatorIntegrity, graph, pivots] = await Promise.all([
+    const [history, indicatorEvents, indicatorIntegrity, graph, pivots, pivotPaths] = await Promise.all([
       api(`/history?ioc=${encoded}&limit=100`),
       api(`/indicators/${encoded}/events?limit=100`),
       api(`/indicators/${encoded}/integrity`).catch(() => null),
       api(`/indicators/${encoded}/graph?depth=3&limit=100`),
-      api(`/indicators/${encoded}/pivots?limit=25`)
+      api(`/indicators/${encoded}/pivots?limit=25`),
+      api(`/indicators/${encoded}/pivot-paths?depth=4&limit=25`)
     ]);
     clear(timeline);
     timeline.append(
@@ -133,6 +134,9 @@ async function inspectCaseIndicator(investigationId, ioc, caseEvents) {
     graphTarget.append(
       renderList('Ranked pivots', pivots.candidates.map(candidate =>
         `${candidate.entity_type}: ${candidate.ioc} (score ${candidate.priority_score}; ${candidate.supporting_edges.length} supporting edge(s))`
+      )),
+      renderList('Multi-hop pivot paths', pivotPaths.candidates.map(candidate =>
+        `${candidate.path.map(item=>`${item.entity_type}: ${item.ioc}`).join(' -> ')} (score ${candidate.priority_score}; ${candidate.hop_count} hop(s); ${candidate.hops.map(hop=>`${hop.evidence_source} observation ${hop.evidence_observation_id||'analyst'}`).join(' -> ')})`
       )),
       node('p', `Depth ${graph.max_depth}; ${graph.edges.length} edge(s); truncated: ${graph.truncated}.`, 'empty')
     );

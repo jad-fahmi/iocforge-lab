@@ -35,6 +35,17 @@ class FakeHistory:
             "entity_type": entity_type,
         }
 
+    def suggest_pivot_paths(
+        self, ioc, limit=25, max_depth=4, as_of=None, entity_type=None
+    ):
+        return {
+            "ioc": ioc,
+            "limit": limit,
+            "max_depth": max_depth,
+            "as_of": as_of,
+            "entity_type": entity_type,
+        }
+
     def close(self):
         pass
 
@@ -119,6 +130,19 @@ def test_cli_ranks_saved_graph_pivots(monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert '"ioc": "evil.example"' in output
+    assert '"limit": 3' in output
+
+
+def test_cli_ranks_bounded_multi_hop_pivot_paths(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "HistoryStore", FakeHistory)
+
+    assert cli.main(
+        ["--pivot-paths", "evil.example", "--pivot-depth", "4", "--pivot-limit", "3"]
+    ) == 0
+
+    output = capsys.readouterr().out
+    assert '"ioc": "evil.example"' in output
+    assert '"max_depth": 4' in output
     assert '"limit": 3' in output
 
 

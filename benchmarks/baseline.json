@@ -1,8 +1,8 @@
 {
   "case_linking": {
-    "elapsed_seconds": 0.798342,
+    "elapsed_seconds": 0.685923,
     "indicator_count": 100,
-    "indicators_per_second": 125.26
+    "indicators_per_second": 145.789
   },
   "environment": {
     "logical_cpus": 8,
@@ -10,14 +10,18 @@
     "python": "3.13.2"
   },
   "graph": {
-    "elapsed_ms": 0.966,
+    "elapsed_ms": 1.173,
+    "pivot_path_elapsed_ms": 56.518,
+    "pivot_path_expansions": 404,
+    "pivot_path_truncated": false,
+    "pivot_paths_returned": 100,
     "pivots_returned": 1,
     "root": "bench-000000.example"
   },
-  "methodology": "iocforge-local-benchmark-v1",
+  "methodology": "iocforge-local-benchmark-v2",
   "offline_enrichment": {
-    "elapsed_seconds": 0.058112,
-    "indicators_per_second": 1720.824,
+    "elapsed_seconds": 0.076555,
+    "indicators_per_second": 1306.242,
     "results": 100,
     "scheduler": {
       "max_active_by_provider": {
@@ -41,19 +45,19 @@
     "scheduler_concurrency": 8
   },
   "replay": {
-    "mean_ms": 0.431,
-    "p50_ms": 0.411,
-    "p95_ms": 0.568,
+    "mean_ms": 0.478,
+    "p50_ms": 0.439,
+    "p95_ms": 0.693,
     "sample_count": 20,
     "total_samples": 20
   },
   "scheduler_with_history": {
-    "elapsed_seconds": 1.05332,
-    "indicators_per_second": 94.938,
+    "elapsed_seconds": 1.035704,
+    "indicators_per_second": 96.553,
     "results": 100,
     "scheduler": {
       "max_active_by_provider": {
-        "benchmark_primary": 4,
+        "benchmark_primary": 3,
         "benchmark_secondary": 4
       },
       "max_active_tasks": 6,
@@ -73,11 +77,11 @@
       "enrichment_observations": 200,
       "enrichments": 100,
       "evidence_observations": 200,
-      "graph_entities": 401,
+      "graph_entities": 403,
       "indicator_events": 0,
-      "indicator_relationships": 200,
+      "indicator_relationships": 202,
       "investigation_events": 101
     }
   },
-  "workload_sha256": "4d2b9746a15fda5e3ebec03e61b93cecc8a7dff5cbb29060695f17ceebc77c84"
+  "workload_sha256": "c60bf5b5665e9589312b2a69ec96082f7b593c9a75ff86deabfb78b486e71dd5"
 }

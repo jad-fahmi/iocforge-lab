@@ -214,6 +214,7 @@ ioc-enrich --compare 17 24
 ioc-enrich --bundle-export 3 --bundle-output case.iocforge
 ioc-enrich --bundle-inspect case.iocforge
 ioc-enrich --pivots evil.example --pivot-limit 20
+ioc-enrich --pivot-paths evil.example --pivot-depth 4 --pivot-limit 20
 ioc-enrich --evaluate-fixture tests/fixtures/provider-evaluation-v1.json
 ```
 
@@ -227,6 +228,10 @@ event integrity, replays supported snapshots from embedded evidence, and
 compares adjacent snapshots and their time-bounded graph without providers.
 `--pivots` ranks direct, currently valid graph neighbors by edge confidence and
 entity type, and includes the supporting relationship provenance.
+`--pivot-paths` ranks simple multi-hop paths to infrastructure entities and
+retains the source, observation, and validity interval for each hop. The score
+uses the weakest edge confidence, endpoint type weight, and a `1 / hops` depth
+penalty; it is a transparent prioritization heuristic, not a probability.
 `--evaluate-fixture` measures providers from a labeled JSON fixture without
 making provider requests. See [provider evaluation methodology](docs/provider-evaluation.md).
 
@@ -283,6 +288,7 @@ The versioned API includes:
 | `POST /api/v1/relationships` | Record an analyst relationship or one tied to a supporting observation |
 | `GET /api/v1/indicators/{ioc}/graph?depth=2&as_of=...&entity_type=...` | Traverse typed relationships with depth and time bounds |
 | `GET /api/v1/indicators/{ioc}/pivots?limit=25&as_of=...` | Rank direct infrastructure pivots with edge provenance |
+| `GET /api/v1/indicators/{ioc}/pivot-paths?depth=4&limit=25&as_of=...` | Rank bounded multi-hop pivot paths with per-hop provenance |
 | `GET /api/v1/investigations/{id}/report` | Render a Markdown case report |
 
 Investigation routes support creating and updating cases, changing lifecycle state, reviewing their timeline, and applying indicator verdict overrides. The API also provides STIX and MISP import/export routes under `/api/v1/interoperability/`.

@@ -39,6 +39,8 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
     assert "datetime-local" in response.text
     assert "Back to previous pivot" in response.text
     assert "graph-node" in response.text
+    assert "Multi-hop pivot paths" in response.text
+    assert "/pivot-paths?depth=4&limit=25" in response.text
     assert "/pivots?limit=25" in response.text
     assert "const API = '/api/v1'" in response.text
     assert "p.available" in response.text
@@ -456,6 +458,30 @@ def test_relationship_endpoints_return_graph_data(monkeypatch, tmp_path):
     )
     assert pivots.status_code == 200
     assert pivots.json()["candidates"][0]["entity_type"] == "ip"
+    store.add_relationship(
+        "203.0.113.7",
+        "certificate:crtsh:7",
+        "has_certificate",
+        confidence=0.9,
+        evidence_source="crtsh",
+        source_entity_type="ip",
+        target_entity_type="certificate",
+    )
+    paths = client.get(
+        "/api/v1/indicators/evil.example/pivot-paths",
+        params={"depth": 2, "as_of": "2099-01-01T00:00:00+00:00"},
+    )
+    assert paths.status_code == 200
+    certificate_path = next(
+        item for item in paths.json()["candidates"]
+        if item["ioc"] == "certificate:crtsh:7"
+    )
+    assert [item["entity_type"] for item in certificate_path["path"]] == [
+        "domain",
+        "ip",
+        "certificate",
+    ]
+    assert paths.json()["budget"]["max_depth"] == 2
     invalid_time = client.get(
         "/api/v1/indicators/evil.example/graph", params={"as_of": "not-a-date"}
     )

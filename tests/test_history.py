@@ -664,6 +664,102 @@ def test_pivot_suggestions_rank_typed_nodes_with_provenance_and_time_bounds(tmp_
     assert result["budget"]["max_depth"] == 1
 
 
+def test_multihop_pivot_paths_retain_provenance_and_time_bounds(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    timestamp = "2025-01-01T00:00:00+00:00"
+    chain = [
+        ("login.example", "192.0.2.44", "resolves_to", "domain", "ip", 0.9, "passive_dns"),
+        ("192.0.2.44", "certificate:crtsh:991", "has_certificate", "ip", "certificate", 0.8, "crtsh"),
+        ("certificate:crtsh:991", "shared-login.example.net", "certificate_name", "certificate", "hostname", 0.95, "crtsh"),
+        ("shared-login.example.net", "https://shared-login.example.net/login", "hosts_url", "hostname", "url", 0.7, "urlscan"),
+        ("https://shared-login.example.net/login", "a" * 64, "downloads", "url", "file_hash", 0.85, "malwarebazaar"),
+    ]
+    for source, target, relationship, source_type, target_type, confidence, provider in chain:
+        store.add_relationship(
+            source,
+            target,
+            relationship,
+            confidence=confidence,
+            evidence_source=provider,
+            recorded_at=timestamp,
+            valid_from=timestamp,
+            source_entity_type=source_type,
+            target_entity_type=target_type,
+        )
+    store.add_relationship(
+        "login.example",
+        "expired.example",
+        "resolves_to",
+        recorded_at="2020-01-01T00:00:00+00:00",
+        valid_from="2020-01-01T00:00:00+00:00",
+        valid_to="2021-01-01T00:00:00+00:00",
+    )
+
+    result = store.suggest_pivot_paths(
+        "login.example", max_depth=5, as_of="2026-01-01T00:00:00+00:00"
+    )
+
+    by_value = {item["ioc"]: item for item in result["candidates"]}
+    payload_hash = "a" * 64
+    path = by_value[payload_hash]
+    assert [item["entity_type"] for item in path["path"]] == [
+        "domain",
+        "ip",
+        "certificate",
+        "hostname",
+        "url",
+        "file_hash",
+    ]
+    assert [item["relationship_type"] for item in path["hops"]] == [
+        "resolves_to",
+        "has_certificate",
+        "certificate_name",
+        "hosts_url",
+        "downloads",
+    ]
+    assert [item["evidence_source"] for item in path["hops"]] == [
+        "passive_dns",
+        "crtsh",
+        "crtsh",
+        "urlscan",
+        "malwarebazaar",
+    ]
+    assert path["priority_basis"]["minimum_edge_confidence"] == 0.7
+    assert path["priority_basis"]["hop_count"] == 5
+    assert result["budget"]["truncated"] is False
+    assert "expired.example" not in by_value
+
+    shallower = store.suggest_pivot_paths(
+        "login.example", max_depth=4, as_of="2026-01-01T00:00:00+00:00"
+    )
+    assert payload_hash not in {item["ioc"] for item in shallower["candidates"]}
+
+
+def test_multihop_pivot_search_obeys_expansion_budget(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    values = ["root.example", *(f"node-{index}.example" for index in range(10))]
+    for left_index, source in enumerate(values):
+        for target in values[left_index + 1 :]:
+            store.add_relationship(
+                source,
+                target,
+                "related_to",
+                confidence=0.9,
+                recorded_at="2025-01-01T00:00:00+00:00",
+                valid_from="2025-01-01T00:00:00+00:00",
+                source_entity_type="domain",
+                target_entity_type="domain",
+            )
+
+    result = store.suggest_pivot_paths(
+        "root.example", max_depth=5, as_of="2026-01-01T00:00:00+00:00"
+    )
+
+    assert result["budget"]["expansions"] == 5000
+    assert result["budget"]["max_expansions"] == 5000
+    assert result["budget"]["truncated"] is True
+
+
 def test_provider_relationships_link_to_observations_and_pivots(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)

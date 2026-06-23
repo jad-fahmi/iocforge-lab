@@ -14,6 +14,7 @@ import platform
 import statistics
 import tempfile
 import threading
+from contextlib import ExitStack, closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import perf_counter, sleep
@@ -26,9 +27,32 @@ from ioc_enricher.history import HistoryStore
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import SourceResult
 
-METHODOLOGY = "iocforge-local-benchmark-v1"
+METHODOLOGY = "iocforge-local-benchmark-v2"
 PROVIDERS = ("benchmark_primary", "benchmark_secondary")
 BASE_TIME = datetime(2024, 1, 1, tzinfo=timezone.utc)
+PIVOT_PATH = (
+    (
+        "bench-000000.example",
+        "pivot-000000.related.example",
+        "resolves_to",
+        "domain",
+        "domain",
+    ),
+    (
+        "pivot-000000.related.example",
+        "certificate:benchmark:000000",
+        "has_certificate",
+        "domain",
+        "certificate",
+    ),
+    (
+        "certificate:benchmark:000000",
+        "pivot-leaf-000000.related.example",
+        "certificate_name",
+        "certificate",
+        "hostname",
+    ),
+)
 
 
 class Activity:
@@ -189,7 +213,10 @@ def run_benchmarks(
 
     iocs = [f"bench-{index:06d}.example" for index in range(indicators)]
     workload_digest = hashlib.sha256(
-        json.dumps(iocs, separators=(",", ":")).encode("utf-8")
+        json.dumps(
+            {"indicators": iocs, "pivot_path": PIVOT_PATH},
+            separators=(",", ":"),
+        ).encode("utf-8")
     ).hexdigest()
     scheduler_settings = {
         "max_concurrency": scheduler_concurrency,
@@ -206,9 +233,11 @@ def run_benchmarks(
     online_engine.close()
     scheduler_report = online_activity.snapshot()
 
-    with tempfile.TemporaryDirectory(prefix="iocforge-benchmark-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="iocforge-benchmark-"
+    ) as temporary, ExitStack() as cleanup:
         database_path = Path(temporary) / "history.sqlite3"
-        store = HistoryStore(database_path)
+        store = cleanup.enter_context(closing(HistoryStore(database_path)))
         baseline_database_bytes = database_path.stat().st_size
         investigation = store.create_investigation(
             "Synthetic benchmark", "Generated locally for performance measurement"
@@ -243,14 +272,28 @@ def run_benchmarks(
             if replay is None or not replay.get("replayable"):
                 raise RuntimeError(f"benchmark snapshot {enrichment_id} did not replay")
 
+        for source, target, relationship, source_type, target_type in PIVOT_PATH[1:]:
+            store.add_relationship(
+                source,
+                target,
+                relationship,
+                confidence=0.9,
+                evidence_source="benchmark_fixture",
+                source_entity_type=source_type,
+                target_entity_type=target_type,
+            )
+
         graph_started = perf_counter()
         pivots = store.suggest_pivots(iocs[0], limit=100)
         graph_query_ms = (perf_counter() - graph_started) * 1000
+        path_started = perf_counter()
+        pivot_paths = store.suggest_pivot_paths(iocs[0], limit=100, max_depth=4)
+        path_query_ms = (perf_counter() - path_started) * 1000
         counts = _storage_counts(store)
         pivot_count = len(pivots["candidates"])
+        pivot_path_count = len(pivot_paths["candidates"])
         persistent_scheduler_report = persistent_activity.snapshot()
         persistent_engine.close()
-        store.close()
         database_bytes = database_path.stat().st_size
 
     if len(online_results) != indicators or len(persisted_results) != indicators:
@@ -297,6 +340,10 @@ def run_benchmarks(
             "root": iocs[0],
             "pivots_returned": pivot_count,
             "elapsed_ms": round(graph_query_ms, 3),
+            "pivot_paths_returned": pivot_path_count,
+            "pivot_path_elapsed_ms": round(path_query_ms, 3),
+            "pivot_path_expansions": pivot_paths["budget"]["expansions"],
+            "pivot_path_truncated": pivot_paths["budget"]["truncated"],
         },
         "storage": {
             "database_bytes": database_bytes,

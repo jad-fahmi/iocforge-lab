@@ -611,6 +611,26 @@ def indicator_pivots(
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 
+@api.get("/indicators/{ioc}/pivot-paths", tags=["relationships"])
+def indicator_pivot_paths(
+    ioc: str,
+    limit: int = Query(default=25, ge=1, le=100),
+    depth: int = Query(default=4, ge=1, le=5),
+    as_of: str | None = None,
+    entity_type: str | None = None,
+) -> dict[str, Any]:
+    try:
+        return _history_store().suggest_pivot_paths(
+            ioc,
+            limit=limit,
+            max_depth=depth,
+            as_of=as_of,
+            entity_type=entity_type,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
 @api.post(
     "/investigations",
     response_model=InvestigationResponse,

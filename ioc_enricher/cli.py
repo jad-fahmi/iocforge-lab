@@ -133,6 +133,11 @@ def build_parser():
         help="rank evidence-backed infrastructure pivots from saved graph edges",
     )
     p.add_argument(
+        "--pivot-paths",
+        metavar="IOC",
+        help="rank bounded multi-hop paths to evidence-backed pivots",
+    )
+    p.add_argument(
         "--pivot-limit",
         type=int,
         default=25,
@@ -142,6 +147,12 @@ def build_parser():
         "--pivot-entity-type",
         metavar="TYPE",
         help="disambiguate a pivot root as domain, hostname, IP, or another graph type",
+    )
+    p.add_argument(
+        "--pivot-depth",
+        type=int,
+        default=4,
+        help="maximum relationship hops for --pivot-paths (default: 4)",
     )
     p.add_argument(
         "--evaluate-fixture",
@@ -240,6 +251,22 @@ def main(argv=None):
             print("one or both enrichment history IDs were not found", file=sys.stderr)
             return 1
         print(json.dumps({"comparison": comparison}, indent=2))
+        return 0
+    if args.pivot_paths is not None:
+        store = HistoryStore()
+        try:
+            paths = store.suggest_pivot_paths(
+                args.pivot_paths,
+                limit=args.pivot_limit,
+                max_depth=args.pivot_depth,
+                entity_type=args.pivot_entity_type,
+            )
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        finally:
+            store.close()
+        print(json.dumps({"pivot_paths": paths}, indent=2))
         return 0
     if args.pivots is not None:
         store = HistoryStore()

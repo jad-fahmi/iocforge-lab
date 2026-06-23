@@ -5,6 +5,7 @@ import json
 import logging
 import sqlite3
 import threading
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,18 @@ GRAPH_ENTITY_TYPES = {
     "unknown",
 }
 HOSTNAME_RELATIONSHIPS = {"cname_to", "mail_exchange", "nameserver", "certificate_name"}
+PIVOT_ENTITY_WEIGHTS = {
+    "certificate": 1.0,
+    "ip": 0.95,
+    "hostname": 0.9,
+    "domain": 0.85,
+    "file_hash": 0.8,
+    "url": 0.75,
+    "asn": 0.7,
+    "email": 0.5,
+    "cve": 0.5,
+}
+MAX_PIVOT_PATH_EXPANSIONS = 5000
 
 
 def _entity_type_for(
@@ -2173,17 +2186,6 @@ class HistoryStore:
             ioc, limit=500, max_depth=1, as_of=at, entity_type=entity_type
         )
         nodes_by_id = {node["entity_id"]: node for node in graph["nodes"]}
-        type_priority = {
-            "certificate": 1.0,
-            "ip": 0.95,
-            "hostname": 0.9,
-            "domain": 0.85,
-            "file_hash": 0.8,
-            "url": 0.75,
-            "asn": 0.7,
-            "email": 0.5,
-            "cve": 0.5,
-        }
         candidates: dict[int, dict[str, Any]] = {}
         for edge in graph["edges"]:
             if edge["source_ioc"] == ioc:
@@ -2198,7 +2200,7 @@ class HistoryStore:
             if node is None:
                 continue
             entity_type = node["entity_type"]
-            weight = type_priority.get(entity_type)
+            weight = PIVOT_ENTITY_WEIGHTS.get(entity_type)
             if weight is None:
                 continue
             confidence = float(edge["confidence"])
@@ -2259,6 +2261,192 @@ class HistoryStore:
                 "edge_limit": 500,
                 "edges_considered": len(graph["edges"]),
                 "truncated": graph["truncated"],
+            },
+        }
+
+    def suggest_pivot_paths(
+        self,
+        ioc: str,
+        limit: int = 25,
+        max_depth: int = 4,
+        as_of: str | None = None,
+        entity_type: str | None = None,
+    ) -> dict[str, Any]:
+        """Rank bounded simple paths to evidence-backed infrastructure pivots."""
+        if not 1 <= limit <= 100:
+            raise ValueError("pivot limit must be between 1 and 100")
+        if not 1 <= max_depth <= 5:
+            raise ValueError("pivot path depth must be between 1 and 5")
+        at = _normalize_timestamp(as_of) or datetime.now(timezone.utc).isoformat()
+        graph = self.relationship_graph(
+            ioc, limit=500, max_depth=max_depth, as_of=at, entity_type=entity_type
+        )
+        nodes = {node["entity_id"]: node for node in graph["nodes"]}
+        root_type = _entity_type_for(ioc, explicit=entity_type)
+        root_value = _canonical_entity_value(ioc, root_type)
+        root = next(
+            (
+                entity_id
+                for entity_id, node in nodes.items()
+                if node["entity_type"] == root_type
+                and node["canonical_value"] == root_value
+            ),
+            None,
+        )
+        adjacency: dict[int, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
+        for edge in graph["edges"]:
+            source_id = edge["source_entity_id"]
+            target_id = edge["target_entity_id"]
+            if source_id is None or target_id is None:
+                continue
+            adjacency[source_id].append((target_id, edge))
+            adjacency[target_id].append((source_id, edge))
+        for links in adjacency.values():
+            links.sort(
+                key=lambda item: (
+                    -float(item[1]["confidence"]),
+                    nodes[item[0]]["entity_type"],
+                    nodes[item[0]]["canonical_value"],
+                    item[1]["id"],
+                )
+            )
+
+        ranked_by_entity: dict[int, dict[str, Any]] = {}
+        expansions = 0
+        budget_truncated = False
+        if root is not None:
+            stack: list[
+                tuple[int, tuple[int, ...], tuple[tuple[int, int, dict[str, Any]], ...]]
+            ] = [(root, (root,), ())]
+            while stack:
+                current, path_nodes, path_edges = stack.pop()
+                if len(path_edges) >= max_depth:
+                    continue
+                for neighbor, edge in reversed(adjacency.get(current, [])):
+                    if expansions >= MAX_PIVOT_PATH_EXPANSIONS:
+                        budget_truncated = True
+                        break
+                    expansions += 1
+                    if neighbor in path_nodes:
+                        continue
+                    next_nodes = (*path_nodes, neighbor)
+                    next_edges = (*path_edges, (current, neighbor, edge))
+                    pivot_node = nodes[neighbor]
+                    weight = PIVOT_ENTITY_WEIGHTS.get(pivot_node["entity_type"])
+                    if weight is not None:
+                        edge_confidence = [
+                            float(path_edge[2]["confidence"])
+                            for path_edge in next_edges
+                        ]
+                        confidence_floor = min(edge_confidence)
+                        hops = len(next_edges)
+                        depth_penalty = 1 / hops
+                        priority_score = round(
+                            confidence_floor * weight * depth_penalty, 4
+                        )
+                        path_key = tuple(next_nodes)
+                        previous = ranked_by_entity.get(neighbor)
+                        candidate_key = (priority_score, -hops)
+                        should_replace = previous is None
+                        if previous is not None:
+                            previous_key = (
+                                previous["priority_score"],
+                                -previous["hop_count"],
+                            )
+                            should_replace = candidate_key > previous_key or (
+                                candidate_key == previous_key
+                                and path_key < tuple(previous["_path_entity_ids"])
+                            )
+                        if should_replace:
+                            path_description = []
+                            for entity_id in next_nodes:
+                                path_node = nodes[entity_id]
+                                path_description.append(
+                                    {
+                                        "entity_id": entity_id,
+                                        "ioc": path_node["display_value"],
+                                        "entity_type": path_node["entity_type"],
+                                    }
+                                )
+                            hops_description = []
+                            for from_id, to_id, path_edge in next_edges:
+                                hops_description.append(
+                                    {
+                                        "from": nodes[from_id]["display_value"],
+                                        "to": nodes[to_id]["display_value"],
+                                        "traversal": (
+                                            "forward"
+                                            if path_edge["source_entity_id"] == from_id
+                                            else "reverse"
+                                        ),
+                                        "source_ioc": path_edge["source_ioc"],
+                                        "target_ioc": path_edge["target_ioc"],
+                                        "relationship_type": path_edge[
+                                            "relationship_type"
+                                        ],
+                                        "confidence": float(path_edge["confidence"]),
+                                        "evidence_source": path_edge[
+                                            "evidence_source"
+                                        ],
+                                        "evidence_observation_id": path_edge[
+                                            "evidence_observation_id"
+                                        ],
+                                        "created_at": path_edge["created_at"],
+                                        "valid_from": path_edge["valid_from"],
+                                        "valid_to": path_edge["valid_to"],
+                                        "attributes": path_edge["attributes"],
+                                    }
+                                )
+                            ranked_by_entity[neighbor] = {
+                                "ioc": pivot_node["display_value"],
+                                "entity_type": pivot_node["entity_type"],
+                                "canonical_value": pivot_node["canonical_value"],
+                                "priority_score": priority_score,
+                                "hop_count": hops,
+                                "priority_basis": {
+                                    "minimum_edge_confidence": confidence_floor,
+                                    "entity_type_weight": weight,
+                                    "hop_count": hops,
+                                    "depth_penalty": round(depth_penalty, 4),
+                                    "formula": (
+                                        "minimum_edge_confidence * "
+                                        "entity_type_weight / hop_count"
+                                    ),
+                                },
+                                "path": path_description,
+                                "hops": hops_description,
+                                "_path_entity_ids": path_key,
+                            }
+                    if len(next_edges) < max_depth:
+                        stack.append((neighbor, next_nodes, next_edges))
+                if budget_truncated:
+                    break
+
+        ranked = sorted(
+            ranked_by_entity.values(),
+            key=lambda candidate: (
+                -candidate["priority_score"],
+                candidate["hop_count"],
+                candidate["entity_type"],
+                candidate["canonical_value"],
+                candidate["_path_entity_ids"],
+            ),
+        )[:limit]
+        for candidate in ranked:
+            candidate.pop("_path_entity_ids")
+        return {
+            "ioc": ioc,
+            "as_of": at,
+            "methodology": "confidence_floor_x_entity_type_over_hops_v1",
+            "candidates": ranked,
+            "budget": {
+                "max_depth": max_depth,
+                "edge_limit": 500,
+                "max_expansions": MAX_PIVOT_PATH_EXPANSIONS,
+                "expansions": expansions,
+                "truncated": bool(
+                    graph["truncated"] or budget_truncated
+                ),
             },
         }
 
