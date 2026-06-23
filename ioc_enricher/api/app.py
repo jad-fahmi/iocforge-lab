@@ -792,7 +792,12 @@ def download_investigation_bundle(investigation_id: int) -> Response:
 
 
 @api.post("/investigations/bundles/inspect", tags=["investigations"])
-async def inspect_uploaded_investigation_bundle(request: Request) -> dict[str, Any]:
+async def inspect_uploaded_investigation_bundle(
+    request: Request,
+    as_of: str | None = None,
+    baseline_as_of: str | None = None,
+    comparison_as_of: str | None = None,
+) -> dict[str, Any]:
     """Load, validate, and replay a bundle without contacting providers."""
     content_length = request.headers.get("content-length", "")
     if content_length.isdigit() and int(content_length) > MAX_BUNDLE_BYTES:
@@ -801,7 +806,12 @@ async def inspect_uploaded_investigation_bundle(request: Request) -> dict[str, A
     if len(body) > MAX_BUNDLE_BYTES:
         raise HTTPException(status_code=413, detail="bundle exceeds the 100 MiB limit")
     try:
-        return inspect_investigation_bundle(body)
+        return inspect_investigation_bundle(
+            body,
+            as_of=as_of,
+            baseline_as_of=baseline_as_of,
+            comparison_as_of=comparison_as_of,
+        )
     except (ValueError, KeyError, TypeError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 

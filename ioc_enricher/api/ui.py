@@ -21,7 +21,7 @@ ANALYST_UI = r"""<!doctype html>
 <section id="dashboard"><h2>Operational dashboard</h2><div class="grid" id="metrics"></div><div class="panel"><h2>Provider health</h2><div id="providers"></div></div><div class="panel"><h2>Recent enrichment</h2><div id="recent"></div></div></section>
 <section id="search" hidden><h2>IOC search</h2><form id="search-form" class="row"><input id="ioc" required placeholder="Domain, URL, IP, hash, email, CVE, ASN…" aria-label="Indicator of compromise"><button>Enrich indicator</button></form><div id="result"></div></section>
 <section id="history" hidden><h2>Enrichment history</h2><div id="history-data"></div><div id="history-detail"></div></section>
-<section id="cases" hidden><h2>Investigations</h2><form id="case-form" class="row"><input id="case-title" required maxlength="200" placeholder="Investigation title" aria-label="Investigation title"><input id="case-description" maxlength="2000" placeholder="Optional description" aria-label="Investigation description"><button>Create investigation</button></form><form id="bundle-form" class="row panel"><label for="bundle-file">Inspect an .iocforge bundle</label><input id="bundle-file" type="file" accept=".iocforge,application/zip" required><button>Validate and replay offline</button></form><div id="bundle-result"></div><div id="case-data"></div><div id="case-detail"></div></section>
+<section id="cases" hidden><h2>Investigations</h2><form id="case-form" class="row"><input id="case-title" required maxlength="200" placeholder="Investigation title" aria-label="Investigation title"><input id="case-description" maxlength="2000" placeholder="Optional description" aria-label="Investigation description"><button>Create investigation</button></form><form id="bundle-form" class="row panel"><label for="bundle-file">Inspect an .iocforge bundle</label><input id="bundle-file" type="file" accept=".iocforge,application/zip" required><label for="bundle-as-of">Reconstruct at</label><input id="bundle-as-of" type="datetime-local" aria-label="Offline bundle replay time"><label for="bundle-baseline">Compare baseline</label><input id="bundle-baseline" type="datetime-local" aria-label="Offline bundle comparison baseline"><label for="bundle-comparison">with</label><input id="bundle-comparison" type="datetime-local" aria-label="Offline bundle comparison time"><button>Validate and replay offline</button></form><div id="bundle-result"></div><div id="case-data"></div><div id="case-detail"></div></section>
 </main>
 <script>
 const API = '/api/v1';
@@ -398,9 +398,15 @@ byId('bundle-form').addEventListener('submit',async event=>{
   const target=byId('bundle-result');clear(target);
   const file=byId('bundle-file').files[0];
   if(!file){target.append(empty('Choose an .iocforge bundle first.'));return;}
+  const baseline=byId('bundle-baseline').value,comparison=byId('bundle-comparison').value;
+  if(Boolean(baseline)!==Boolean(comparison)){target.append(empty('Enter both comparison times, or leave both blank.'));return;}
   target.append(empty('Validating bundle checksums, event chains, offline replay, and snapshot comparisons...'));
   try{
-    const report=await api('/investigations/bundles/inspect',{method:'POST',headers:{'Content-Type':'application/zip'},body:file});
+    const query=new URLSearchParams(),asOf=byId('bundle-as-of').value;
+    if(asOf)query.set('as_of',new Date(asOf).toISOString());
+    if(baseline)query.set('baseline_as_of',new Date(baseline).toISOString());
+    if(comparison)query.set('comparison_as_of',new Date(comparison).toISOString());
+    const report=await api(`/investigations/bundles/inspect${query.size?`?${query}`:''}`,{method:'POST',headers:{'Content-Type':'application/zip'},body:file});
     clear(target);
     target.append(
       node('h3','Offline bundle inspection'),
@@ -408,6 +414,8 @@ byId('bundle-form').addEventListener('submit',async event=>{
       renderBundleComparisons(report.comparisons),
       structuredPanel('Full bundle validation, evidence, graph, and replay data',report,true)
     );
+    if(report.investigation_replay){const replay=report.investigation_replay;target.append(node('h3','Offline investigation reconstruction'),node('p',`As of ${replay.as_of}: state complete ${replay.state_complete}; replayable ${replay.replayable}; ${replay.indicator_count||0} member(s).`),renderList('Historical members',(replay.indicators||[]).map(item=>`${item.ioc}: ${item.latest_enrichment?.source_verdict||'no saved enrichment'}; analyst override ${item.analyst_state.verdict_override||'none'}`)),structuredPanel('Offline reconstructed state',replay));}
+    if(report.investigation_comparison){const diff=report.investigation_comparison;target.append(node('h3','Offline investigation comparison'),node('p',`Replayable at both times: ${diff.replayable}; members added ${diff.membership.added.join(', ')||'none'}; removed ${diff.membership.removed.join(', ')||'none'}.`),renderList('Changed indicator decisions',diff.indicators.filter(item=>item.decision.verdict_changed||item.decision.score_delta!==0||item.evidence.added.length||item.analyst_state_changed).map(item=>`${item.ioc}: ${item.decision.baseline_verdict||'none'} -> ${item.decision.comparison_verdict||'none'}; score delta ${item.decision.score_delta??'unavailable'}; new evidence ${item.evidence.added.map(row=>`${row.observation?.source||'unknown'} observation ${row.id}`).join(', ')||'none'}`)),renderList('Newly valid graph relationships',diff.graph.added_edges.map(edge=>`${edge.source_ioc} --${edge.relationship_type}--> ${edge.target_ioc} | ${edge.evidence_source} observation ${edge.evidence_observation_id||'analyst'}`)),structuredPanel('Offline evidence, analyst-event, graph, and integrity diff',diff));}
   }catch(error){renderError(target,error);}
 });
 loadDashboard();

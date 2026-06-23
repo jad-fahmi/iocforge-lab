@@ -145,6 +145,17 @@ def build_parser():
         help="validate and replay a .iocforge bundle offline",
     )
     p.add_argument(
+        "--bundle-as-of",
+        metavar="TIMESTAMP",
+        help="reconstruct bundle investigation state at this ISO 8601 time",
+    )
+    p.add_argument(
+        "--bundle-compare-as-of",
+        nargs=2,
+        metavar=("BASELINE_TIME", "COMPARISON_TIME"),
+        help="compare two investigation states from an offline bundle",
+    )
+    p.add_argument(
         "--pivots",
         metavar="IOC",
         help="rank evidence-backed infrastructure pivots from saved graph edges",
@@ -226,6 +237,15 @@ def render(results, fmt, report=None, summary=None):
 def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
     args = build_parser().parse_args(argv)
+    if (
+        args.bundle_inspect is None
+        and (args.bundle_as_of is not None or args.bundle_compare_as_of is not None)
+    ):
+        print(
+            "--bundle-as-of and --bundle-compare-as-of require --bundle-inspect",
+            file=sys.stderr,
+        )
+        return 2
 
     if args.debug or args.verbose >= 2:
         setup("DEBUG")
@@ -380,7 +400,20 @@ def main(argv=None):
         return 0
     if args.bundle_inspect is not None:
         try:
-            report = inspect_bundle(args.bundle_inspect)
+            report = inspect_bundle(
+                args.bundle_inspect,
+                as_of=args.bundle_as_of,
+                baseline_as_of=(
+                    args.bundle_compare_as_of[0]
+                    if args.bundle_compare_as_of
+                    else None
+                ),
+                comparison_as_of=(
+                    args.bundle_compare_as_of[1]
+                    if args.bundle_compare_as_of
+                    else None
+                ),
+            )
         except (OSError, ValueError, KeyError, TypeError) as error:
             print(str(error), file=sys.stderr)
             return 2

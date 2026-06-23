@@ -43,7 +43,10 @@ The transformation proceeds in dependency order:
 4. **Investigation integrity and bundles:** per-indicator and per-investigation
    event chains can now be verified. A versioned `.iocforge` archive packages
    case metadata, linked snapshots and evidence, bounded graph state, and event
-   chains; CLI and API inspection verifies and replays it without live providers.
+   chains; CLI, API, and workbench inspection can reconstruct and compare whole
+   investigation states at selected times using only the archive. Historical
+   membership, source decisions, analyst overrides, and graph changes remain
+   available offline without provider access or the originating history database.
 5. **Provider evaluation and scheduling:** a versioned fixture evaluator
    measures coverage, failure, latency, freshness, disagreement, overlap, and
    labeled classification errors. The engine now uses a bounded single-process

@@ -49,6 +49,9 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
     assert "/investigations/${investigationId}/replay?as_of=" in response.text
     assert "Compare historical investigation states" in response.text
     assert "/investigations/${investigationId}/compare?baseline_as_of=" in response.text
+    assert "Offline bundle comparison baseline" in response.text
+    assert "/investigations/bundles/inspect${query.size?`?${query}`:''}" in response.text
+    assert "Offline investigation comparison" in response.text
     assert "const API = '/api/v1'" in response.text
     assert "p.available" in response.text
     assert "p.healthy" not in response.text
@@ -268,7 +271,7 @@ def test_investigation_bundle_api_exports_and_loads_offline(
         f"/api/v1/investigations/{investigation['id']}/bundle"
     )
     loaded = client.post(
-        "/api/v1/investigations/bundles/inspect",
+        "/api/v1/investigations/bundles/inspect?as_of=2099-01-01T00%3A00%3A00Z&baseline_as_of=2099-01-01T00%3A00%3A00Z&comparison_as_of=2100-01-01T00%3A00%3A00Z",
         content=exported.content,
         headers={"content-type": "application/zip"},
     )
@@ -279,6 +282,8 @@ def test_investigation_bundle_api_exports_and_loads_offline(
     assert loaded.status_code == 200
     assert loaded.json()["event_integrity"]["investigation"]["valid"] is True
     assert loaded.json()["comparisons"] == []
+    assert loaded.json()["investigation_replay"]["replayable"] is True
+    assert loaded.json()["investigation_comparison"]["replayable"] is True
 
 
 def test_bundle_inspection_api_compares_snapshots_offline():

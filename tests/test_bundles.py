@@ -1,7 +1,9 @@
 import io
 import json
 import zipfile
+from datetime import datetime, timezone
 
+import ioc_enricher.history as history_module
 import pytest
 from ioc_enricher.bundles import build_bundle, inspect_bundle
 from ioc_enricher.history import HistoryStore
@@ -63,6 +65,109 @@ def test_investigation_bundle_replays_without_providers_and_includes_graph(tmp_p
             "scored_at": "2026-01-01T00:00:00+00:00",
         }
     ]
+
+
+def test_bundle_reconstructs_and_compares_investigation_offline(tmp_path, monkeypatch):
+    class Clock(datetime):
+        current = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current.astimezone(tz) if tz else cls.current.replace(tzinfo=None)
+
+    monkeypatch.setattr(history_module, "datetime", Clock)
+    store = HistoryStore(tmp_path / "temporal.db")
+    t1 = "2026-01-01T00:00:00+00:00"
+    t2 = "2026-01-03T00:00:00+00:00"
+    investigation = store.create_investigation("T1 bundle case", "Original")
+    store.add_investigation_indicator(investigation["id"], "evil.example")
+    first = EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN)
+    first.add(
+        SourceResult(
+            source="passive_dns",
+            ioc="evil.example",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            malicious=True,
+            score=0.9,
+            observed_at=t1,
+            collected_at=t1,
+            raw={"answer": "203.0.113.10"},
+            related_entities=[
+                {
+                    "source_ioc": "evil.example",
+                    "target_ioc": "203.0.113.10",
+                    "relationship_type": "resolves_to",
+                    "confidence": 0.9,
+                    "valid_from": t1,
+                }
+            ],
+        )
+    )
+    score(first, as_of=t1)
+    store.record(first, looked_up_at=t1)
+    store.set_verdict_override("evil.example", "suspicious", "Review pending")
+
+    Clock.current = datetime(2026, 1, 3, tzinfo=timezone.utc)
+    second = EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN)
+    second.add(
+        SourceResult(
+            source="passive_dns",
+            ioc="evil.example",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            malicious=False,
+            score=0.0,
+            observed_at=t2,
+            collected_at=t2,
+            raw={"answer": "198.51.100.20"},
+            related_entities=[
+                {
+                    "source_ioc": "evil.example",
+                    "target_ioc": "198.51.100.20",
+                    "relationship_type": "resolves_to",
+                    "confidence": 0.95,
+                    "valid_from": t2,
+                }
+            ],
+        )
+    )
+    score(second, as_of=t2)
+    store.record(second, looked_up_at=t2)
+    store.add_investigation_indicator(investigation["id"], "new.example")
+    store.update_investigation(
+        investigation["id"], description="Updated", status="closed"
+    )
+    store.clear_verdict_override("evil.example")
+    payload = store.investigation_bundle_payload(investigation["id"])
+    store.close()
+    assert payload is not None
+
+    report = inspect_bundle(
+        build_bundle(payload),
+        as_of="2026-01-02T00:00:00Z",
+        baseline_as_of="2026-01-02T00:00:00Z",
+        comparison_as_of=t2,
+    )
+    replay = report["investigation_replay"]
+    comparison = report["investigation_comparison"]
+
+    assert replay["state_complete"] is True
+    assert replay["replayable"] is True
+    assert replay["indicator_count"] == 1
+    assert replay["investigation"]["description"] == "Original"
+    assert replay["indicators"][0]["analyst_state"]["verdict_override"] == "suspicious"
+    assert replay["indicators"][0]["latest_enrichment"]["source_verdict"] == "malicious"
+    assert comparison["membership"]["added"] == ["new.example"]
+    evil = next(item for item in comparison["indicators"] if item["ioc"] == "evil.example")
+    assert evil["decision"]["baseline_verdict"] == "malicious"
+    assert evil["decision"]["comparison_verdict"] == "clean"
+    assert evil["evidence"]["added"]
+    assert evil["analyst_state_changed"] is True
+    assert any(
+        edge["target_ioc"] == "198.51.100.20"
+        for edge in comparison["graph"]["added_edges"]
+    )
 
 
 def test_bundle_checksum_detects_modified_payload(tmp_path):

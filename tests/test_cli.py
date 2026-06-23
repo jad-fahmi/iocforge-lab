@@ -206,12 +206,39 @@ def test_cli_inspects_investigation_bundle_offline(monkeypatch, tmp_path, capsys
     monkeypatch.setattr(
         cli,
         "inspect_bundle",
-        lambda _path: {"investigation": {"title": "Offline case"}},
+        lambda _path, **_kwargs: {"investigation": {"title": "Offline case"}},
     )
 
     assert cli.main(["--bundle-inspect", str(bundle_path)]) == 0
 
     assert '"title": "Offline case"' in capsys.readouterr().out
+
+
+def test_cli_replays_and_compares_bundle_investigation_offline(
+    monkeypatch, tmp_path, capsys
+):
+    bundle_path = tmp_path / "case.iocforge"
+    bundle_path.write_bytes(b"local bundle")
+
+    def inspect(_path, **kwargs):
+        return {"offline_times": kwargs}
+
+    monkeypatch.setattr(cli, "inspect_bundle", inspect)
+    assert cli.main(
+        [
+            "--bundle-inspect",
+            str(bundle_path),
+            "--bundle-as-of",
+            "2026-01-01T00:00:00Z",
+            "--bundle-compare-as-of",
+            "2026-01-01T00:00:00Z",
+            "2026-01-02T00:00:00Z",
+        ]
+    ) == 0
+
+    output = capsys.readouterr().out
+    assert '"as_of": "2026-01-01T00:00:00Z"' in output
+    assert '"comparison_as_of": "2026-01-02T00:00:00Z"' in output
 
 
 def test_cli_exports_investigation_bundle(monkeypatch, tmp_path, capsys):
