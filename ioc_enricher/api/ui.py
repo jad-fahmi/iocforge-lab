@@ -114,8 +114,9 @@ async function inspectCaseIndicator(investigationId, ioc, caseEvents) {
   timeline.append(empty('Loading indicator evidence and timeline...'));
   try {
     const encoded = encodeURIComponent(ioc);
-    const [history, indicatorEvents, indicatorIntegrity, graph, pivots, pivotPaths] = await Promise.all([
+    const [history, indicator, indicatorEvents, indicatorIntegrity, graph, pivots, pivotPaths] = await Promise.all([
       api(`/history?ioc=${encoded}&limit=100`),
+      api(`/indicators/${encoded}`),
       api(`/indicators/${encoded}/events?limit=100`),
       api(`/indicators/${encoded}/integrity`).catch(() => null),
       api(`/indicators/${encoded}/graph?depth=3&limit=100`),
@@ -123,9 +124,69 @@ async function inspectCaseIndicator(investigationId, ioc, caseEvents) {
       api(`/indicators/${encoded}/pivot-paths?depth=4&limit=25`)
     ]);
     clear(timeline);
+    const overridePanel = node('div', undefined, 'panel');
+    function renderOverride(currentIndicator) {
+      clear(overridePanel);
+      const latestSnapshot = history.items?.[0];
+      overridePanel.append(
+        node('h3', 'Source verdict and analyst override'),
+        node('p', `Latest source-derived verdict: ${latestSnapshot?.verdict || 'unknown'} (score ${latestSnapshot?.score ?? 'unavailable'}). This verdict is reproduced by snapshot replay.`)
+      );
+      if (currentIndicator.verdict_override) {
+        overridePanel.append(
+          node('p', `Active analyst override: ${currentIndicator.verdict_override}`),
+          node('p', `Reason: ${currentIndicator.override_reason || 'unavailable'} | recorded ${currentIndicator.override_at || 'unknown time'}`)
+        );
+      } else {
+        overridePanel.append(empty('No analyst verdict override is active.'));
+      }
+      const form = node('form', undefined, 'row');
+      const verdictSelect = node('select');
+      ['clean', 'low', 'suspicious', 'malicious'].forEach(value => {
+        const option = node('option', value);
+        option.value = value;
+        option.selected = value === (currentIndicator.verdict_override || 'suspicious');
+        verdictSelect.append(option);
+      });
+      const reason = node('textarea');
+      reason.required = true;
+      reason.maxLength = 10000;
+      reason.placeholder = 'Reason for the analyst override';
+      reason.setAttribute('aria-label', 'Reason for the analyst override');
+      const submit = node('button', currentIndicator.verdict_override ? 'Update analyst override' : 'Set analyst override');
+      submit.type = 'submit';
+      form.append(node('label', 'Override verdict'), verdictSelect, reason, submit);
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        try {
+          await api(`/indicators/${encoded}/verdict-override`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({verdict: verdictSelect.value, reason: reason.value})
+          });
+          await inspectCaseIndicator(investigationId, ioc, caseEvents);
+        } catch (error) {
+          overridePanel.append(node('p', error.message, 'error'));
+        }
+      });
+      overridePanel.append(form);
+      if (currentIndicator.verdict_override) {
+        const clearButton = actionButton('Clear analyst override', async () => {
+          try {
+            await api(`/indicators/${encoded}/verdict-override`, {method: 'DELETE'});
+            await inspectCaseIndicator(investigationId, ioc, caseEvents);
+          } catch (error) {
+            overridePanel.append(node('p', error.message, 'error'));
+          }
+        });
+        overridePanel.append(clearButton);
+      }
+    }
+    renderOverride(indicator);
     timeline.append(
       node('h3', `Investigation and indicator timeline: ${ioc}`),
       node('p', indicatorIntegrity ? `Indicator event chain: ${indicatorIntegrity.valid ? 'valid' : 'INVALID'} (${indicatorIntegrity.checked_events} event(s))` : 'No indicator event chain is recorded yet.', indicatorIntegrity?.valid === false ? 'error' : 'empty'),
+      overridePanel,
       caseTimeline(caseEvents, indicatorEvents, history.items)
     );
 

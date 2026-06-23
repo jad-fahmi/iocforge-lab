@@ -73,6 +73,14 @@ contributing decision-trace rows and relationship provenance in its diffs, so
 the workbench can show why the later decision or pivot set changed without
 reopening the originating database.
 
+Analyst verdict overrides remain separate from the source-derived score and
+verdict, so historical replay continues to reproduce the provider evidence
+decision. Setting or clearing an override appends a hash-chained indicator
+event. The workbench displays the latest source verdict beside the active
+override, its reason, and its recorded time, and exposes the audited set/clear
+workflow during case inspection. Bundles include both the current override and
+the indicator event history.
+
 The evidence foundation now stores provenance on each `SourceResult` and in a
 normalized `evidence_observations` table linked to enrichment snapshots by
 stable observation IDs. The SHA-256 value fingerprints the structured `raw`

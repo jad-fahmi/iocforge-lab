@@ -42,6 +42,9 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
     assert "Multi-hop pivot paths" in response.text
     assert "/pivot-paths?depth=4&limit=25" in response.text
     assert "/pivots?limit=25" in response.text
+    assert "Source verdict and analyst override" in response.text
+    assert "/verdict-override" in response.text
+    assert "Clear analyst override" in response.text
     assert "const API = '/api/v1'" in response.text
     assert "p.available" in response.text
     assert "p.healthy" not in response.text
