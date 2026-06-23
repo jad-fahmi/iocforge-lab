@@ -110,7 +110,9 @@ required. Configuration can disable any provider without removing its key.
 
 The cache is deliberately in front of individual connectors, so cached provider
 answers retain their original source attribution. The engine never lets one
-provider failure prevent results from the others.
+provider failure prevent results from the others. Invalid cache JSON, timestamps,
+and provider-result shapes are evicted as misses; a corrupt cached record cannot
+hide the live provider's result or outage.
 
 The scheduler bounds concurrent provider work and queued submissions across
 lookups made through the same engine. Provider policy is configured under each

@@ -128,21 +128,68 @@ class Connector(abc.ABC):
     @abc.abstractmethod
     def enrich(self, ioc: str, ioc_type: IocType) -> SourceResult: ...
 
-    def _cached_result(self, ioc, cache) -> SourceResult | None:
+    def _cached_result(
+        self, ioc, cache, ioc_type: IocType | None = None
+    ) -> SourceResult | None:
         hit = cache.get(self.name, ioc)
         if hit is None:
             return None
-        hit["ioc_type"] = IocType(hit["ioc_type"])
-        result = SourceResult(**hit)
+        result = self._source_from_cache(hit, ioc, ioc_type, cache)
+        if result is None:
+            return None
         if result.connector_version == "unknown":
             result.connector_version = self.version
         result.cache_hit = True
         return result
 
+    def _source_from_cache(self, value, ioc, ioc_type, cache):
+        try:
+            if not isinstance(value, dict):
+                raise ValueError("cached provider result is not an object")
+            payload = dict(value)
+            payload["ioc_type"] = IocType(payload["ioc_type"])
+            result = SourceResult(**payload)
+            if (
+                result.source != self.name
+                or result.ioc != ioc
+                or (ioc_type is not None and result.ioc_type != ioc_type)
+                or not isinstance(result.raw, dict)
+                or not isinstance(result.tags, list)
+                or any(not isinstance(tag, str) for tag in result.tags)
+                or not isinstance(result.extraction_metadata, dict)
+                or not isinstance(result.related_entities, list)
+                or any(not isinstance(item, dict) for item in result.related_entities)
+                or not (
+                    result.freshness is None or isinstance(result.freshness, dict)
+                )
+                or not isinstance(result.found, bool)
+                or (
+                    result.malicious is not None
+                    and not isinstance(result.malicious, bool)
+                )
+                or not (
+                    result.error is None or isinstance(result.error, str)
+                )
+                or any(
+                    item is not None
+                    and (
+                        not isinstance(item, (int, float))
+                        or isinstance(item, bool)
+                        or not math.isfinite(item)
+                    )
+                    for item in (result.score, result.confidence)
+                )
+            ):
+                raise ValueError("cached provider result has invalid fields")
+        except (KeyError, TypeError, ValueError, OverflowError):
+            cache.delete(self.name, ioc)
+            return None
+        return result
+
     def run(self, ioc, ioc_type, cache=None, skip_fresh_cache=False) -> SourceResult:
         """enrich with an optional cache in front."""
         if cache is not None and not skip_fresh_cache:
-            result = self._cached_result(ioc, cache)
+            result = self._cached_result(ioc, cache, ioc_type)
             if result is not None:
                 return result
 
@@ -158,8 +205,12 @@ class Connector(abc.ABC):
         if cache is not None and result.error is not None:
             stale = cache.lookup(self.name, ioc, allow_stale=True)
             if stale is not None and stale.stale:
-                payload = dict(stale.value)
-                raw = dict(payload.get("raw", {}))
+                stale_result = self._source_from_cache(
+                    stale.value, ioc, ioc_type, cache
+                )
+                if stale_result is None:
+                    return result
+                raw = dict(stale_result.raw)
                 raw.update(
                     {
                         "cache_stale": True,
@@ -167,10 +218,8 @@ class Connector(abc.ABC):
                         "live_lookup_error": result.error,
                     }
                 )
-                payload["raw"] = raw
-                payload["tags"] = sorted(set(payload.get("tags", [])) | {"stale_cache"})
-                payload["ioc_type"] = IocType(payload["ioc_type"])
-                stale_result = SourceResult(**payload)
+                stale_result.raw = raw
+                stale_result.tags = sorted(set(stale_result.tags) | {"stale_cache"})
                 if stale_result.connector_version == "unknown":
                     stale_result.connector_version = self.version
                 stale_result.cache_hit = True

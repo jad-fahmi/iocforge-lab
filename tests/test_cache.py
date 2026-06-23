@@ -18,6 +18,44 @@ def test_missing_key_returns_none(tmp_path):
     assert c.get("src", "nope") is None
 
 
+def test_malformed_cache_json_is_evicted_as_a_miss(tmp_path):
+    c = Cache(path=tmp_path / "c.db", ttl=3600)
+    c.set("src", "1.2.3.4", {"found": True})
+    c.conn.execute(
+        "UPDATE entries SET value = ? WHERE k = ?",
+        ("{truncated", "src:1.2.3.4"),
+    )
+    c.conn.commit()
+
+    assert c.get("src", "1.2.3.4") is None
+    assert c.conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0] == 0
+
+
+def test_non_object_and_invalid_timestamp_cache_entries_are_evicted(tmp_path):
+    c = Cache(path=tmp_path / "c.db", ttl=3600)
+    c.set("scalar", "1.2.3.4", {"found": True})
+    c.set("bad-time", "1.2.3.4", {"found": True})
+    c.set("non-finite", "1.2.3.4", {"found": True})
+    c.conn.execute(
+        "UPDATE entries SET value = ? WHERE k = ?",
+        ("[]", "scalar:1.2.3.4"),
+    )
+    c.conn.execute(
+        "UPDATE entries SET ts = ? WHERE k = ?",
+        ("not-a-timestamp", "bad-time:1.2.3.4"),
+    )
+    c.conn.execute(
+        "UPDATE entries SET value = ? WHERE k = ?",
+        ('{"score": NaN}', "non-finite:1.2.3.4"),
+    )
+    c.conn.commit()
+
+    assert c.lookup("scalar", "1.2.3.4") is None
+    assert c.lookup("bad-time", "1.2.3.4") is None
+    assert c.lookup("non-finite", "1.2.3.4") is None
+    assert c.conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0] == 0
+
+
 def test_expired_entry_returns_none(tmp_path):
     c = Cache(path=tmp_path / "c.db", ttl=0.01)
     c.set("src", "1.2.3.4", {"found": True})
@@ -62,6 +100,49 @@ def test_live_failure_uses_labeled_stale_result(tmp_path):
     assert "stale_cache" in result.tags
     assert result.raw["cache_stale"] is True
     assert result.raw["live_lookup_error"] == "timeout"
+
+
+def test_malformed_cached_provider_result_does_not_hide_live_failure(tmp_path):
+    c = Cache(path=tmp_path / "c.db", ttl=3600)
+    c.set(
+        "failing",
+        "example.com",
+        {
+            "source": "failing",
+            "ioc": "example.com",
+            "ioc_type": "not-an-ioc-type",
+            "found": True,
+            "raw": {},
+        },
+    )
+
+    result = FailingConnector().run("example.com", IocType.DOMAIN, cache=c)
+
+    assert result.error == "timeout"
+    assert "stale_cache" not in result.tags
+    assert c.conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0] == 0
+
+
+def test_corrupt_stale_provider_result_is_not_used_as_fallback(tmp_path):
+    c = Cache(path=tmp_path / "c.db", ttl=0.01)
+    c.set(
+        "failing",
+        "example.com",
+        {
+            "source": "failing",
+            "ioc": "example.com",
+            "ioc_type": "not-an-ioc-type",
+            "found": True,
+            "raw": {},
+        },
+    )
+    time.sleep(0.05)
+
+    result = FailingConnector().run("example.com", IocType.DOMAIN, cache=c)
+
+    assert result.error == "timeout"
+    assert "stale_cache" not in result.tags
+    assert c.conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0] == 0
 
 
 def test_purge_expired_removes_old_rows(tmp_path):

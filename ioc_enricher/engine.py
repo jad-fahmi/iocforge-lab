@@ -88,7 +88,7 @@ class Engine:
             if self.cache is not None:
                 started = perf_counter()
                 try:
-                    cached = connector._cached_result(ioc, self.cache)
+                    cached = connector._cached_result(ioc, self.cache, ioc_type)
                 except Exception as exc:
                     log.error("cache lookup for %s failed: %s", connector.name, exc)
                     cached = None

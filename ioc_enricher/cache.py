@@ -1,4 +1,5 @@
 import json
+import math
 import sqlite3
 import threading
 import time
@@ -13,6 +14,10 @@ class CacheLookup:
     value: dict
     stale: bool
     age_seconds: float
+
+
+def _reject_json_constant(value):
+    raise ValueError(f"invalid JSON numeric constant: {value}")
 
 
 class Cache:
@@ -61,11 +66,29 @@ class Cache:
             if not row:
                 return None
             value, ts = row
-            age_seconds = max(0.0, time.time() - ts)
+            try:
+                stored_at = float(ts)
+                decoded = json.loads(value, parse_constant=_reject_json_constant)
+            except (TypeError, ValueError, UnicodeDecodeError, OverflowError):
+                self._delete_key(key)
+                return None
+            if not math.isfinite(stored_at) or not isinstance(decoded, dict):
+                self._delete_key(key)
+                return None
+            age_seconds = max(0.0, time.time() - stored_at)
             stale = bool(self.ttl and age_seconds > self.ttl)
             if stale and not allow_stale:
                 return None
-            return CacheLookup(json.loads(value), stale, age_seconds)
+            return CacheLookup(decoded, stale, age_seconds)
+
+    def _delete_key(self, key):
+        self.conn.execute("DELETE FROM entries WHERE k = ?", (key,))
+        self.conn.commit()
+
+    def delete(self, source, ioc):
+        """Remove one provider result that failed schema validation."""
+        with self._lock:
+            self._delete_key(self._key(source, ioc))
 
     def purge_expired(self):
         cutoff = time.time() - self.ttl

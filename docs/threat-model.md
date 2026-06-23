@@ -10,6 +10,7 @@ Key risks and controls:
 | API-key disclosure | Keys are read locally from environment/config; status output never returns them. |
 | One provider outage | Timeouts, retries, and per-connector error isolation preserve partial results. |
 | Upstream rate limits | The connector base honors `Retry-After` and backs off transient failures. |
+| Corrupted local cache rows | Invalid JSON, timestamps, or provider-result shapes are evicted and treated as cache misses. |
 | Defanged or malformed input | Inputs are refanged, classified, normalized, and connector type support is checked. |
 | False positives | Source weighting, freshness discounting, explainable evidence, and local context inform review. |
 | Sensitive lookup disclosure | Operators choose providers; the public RDAP connector is keyless but still receives queried IOCs. |
