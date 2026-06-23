@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 import ioc_enricher.history as history_module
+import pytest
 from ioc_enricher.config import Config
 from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
@@ -154,6 +155,46 @@ def test_evidence_observations_have_stable_ids_and_are_immutable(tmp_path):
     assert original["id"] == same_evidence["id"]
     assert original["observation_key"] == same_evidence["observation_key"]
     assert still_original["observation"]["raw"] == {"answer": "203.0.113.7"}
+
+
+def test_sqlite_rejects_evidence_and_snapshot_link_mutation(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.add(
+        SourceResult(
+            source="provider",
+            ioc="example.com",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            raw={"answer": "203.0.113.7"},
+        )
+    )
+    enrichment_id = store.record(result)
+    observation_id = store.observations_for_enrichment(enrichment_id)[0]["id"]
+
+    with pytest.raises(sqlite3.IntegrityError, match="evidence observations are append-only"):
+        store.conn.execute(
+            "UPDATE evidence_observations SET observation_json = '{}' WHERE id = ?",
+            (observation_id,),
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="evidence observations are append-only"):
+        store.conn.execute(
+            "DELETE FROM evidence_observations WHERE id = ?", (observation_id,)
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="snapshot evidence links are append-only"):
+        store.conn.execute(
+            "UPDATE enrichment_observations SET ordinal = 1 WHERE enrichment_id = ?",
+            (enrichment_id,),
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="snapshot evidence links are append-only"):
+        store.conn.execute(
+            "DELETE FROM enrichment_observations WHERE enrichment_id = ?",
+            (enrichment_id,),
+        )
+
+    assert store.observations_for_enrichment(enrichment_id)[0]["observation"]["raw"] == {
+        "answer": "203.0.113.7"
+    }
 
 
 def test_changed_provider_observation_gets_a_new_evidence_id(tmp_path):

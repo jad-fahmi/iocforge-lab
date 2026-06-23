@@ -600,6 +600,24 @@ class HistoryStore:
                             target_entity_type="investigation",
                         )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (10)")
+            if 11 not in applied:
+                self.conn.executescript(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS evidence_observations_no_update
+                    BEFORE UPDATE ON evidence_observations
+                    BEGIN SELECT RAISE(ABORT, 'evidence observations are append-only'); END;
+                    CREATE TRIGGER IF NOT EXISTS evidence_observations_no_delete
+                    BEFORE DELETE ON evidence_observations
+                    BEGIN SELECT RAISE(ABORT, 'evidence observations are append-only'); END;
+                    CREATE TRIGGER IF NOT EXISTS enrichment_observations_no_update
+                    BEFORE UPDATE ON enrichment_observations
+                    BEGIN SELECT RAISE(ABORT, 'snapshot evidence links are append-only'); END;
+                    CREATE TRIGGER IF NOT EXISTS enrichment_observations_no_delete
+                    BEFORE DELETE ON enrichment_observations
+                    BEGIN SELECT RAISE(ABORT, 'snapshot evidence links are append-only'); END;
+                    """
+                )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (11)")
             self.conn.commit()
 
     def _ensure_graph_entity(
