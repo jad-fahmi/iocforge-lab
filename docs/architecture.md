@@ -27,9 +27,11 @@ The transformation proceeds in dependency order:
    at a chosen time. Snapshot replay reproduces a saved score; investigation
    replay now rebuilds case metadata, membership, analyst state, latest eligible
    snapshots, and graph state from event/evidence prefixes at an `as_of` time.
-   It exposes replay and integrity status through the CLI, API, and workbench.
-   Snapshot comparison explains evidence changes, decision differences, and
-   temporal graph changes. Legacy creation events that did not capture all
+   Investigation comparison now diffs two replay points across membership,
+   metadata, source decisions, observations, analyst state, event history, and
+   graph edges. Replay and comparison expose integrity status through the CLI,
+   API, and workbench. Snapshot comparison explains evidence changes, decision
+   differences, and temporal graph changes. Legacy creation events that did not capture all
    initial metadata are reported as incomplete rather than guessed.
 3. **Temporal graph and pivots:** typed entity nodes, direct pivot ranking, and
    bounded multi-hop pivot paths are available. Paths use the weakest edge

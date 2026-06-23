@@ -1291,6 +1291,219 @@ class HistoryStore:
             "methodology": "investigation_event_prefix_and_snapshot_replay_v1",
         }
 
+    def compare_investigations(
+        self, investigation_id: int, baseline_as_of: str, comparison_as_of: str
+    ) -> dict[str, Any] | None:
+        """Explain how a reconstructed investigation changed between two times."""
+        baseline_time = _normalize_timestamp(baseline_as_of)
+        comparison_time = _normalize_timestamp(comparison_as_of)
+        if baseline_time is None or comparison_time is None:
+            raise ValueError("both comparison timestamps are required")
+        if _timestamp_value(comparison_time) < _timestamp_value(baseline_time):
+            raise ValueError("comparison time must not precede the baseline")
+        baseline = self.replay_investigation(investigation_id, baseline_time)
+        comparison = self.replay_investigation(investigation_id, comparison_time)
+        if baseline is None or comparison is None:
+            return None
+
+        before = {item["ioc"]: item for item in baseline.get("indicators", [])}
+        after = {item["ioc"]: item for item in comparison.get("indicators", [])}
+        before_iocs, after_iocs = set(before), set(after)
+        indicator_deltas = []
+        for ioc in sorted(before_iocs | after_iocs):
+            earlier = before.get(ioc)
+            later = after.get(ioc)
+            before_latest = earlier.get("latest_enrichment") if earlier else None
+            after_latest = later.get("latest_enrichment") if later else None
+
+            def observations_for(latest: dict[str, Any] | None) -> dict[int, dict[str, Any]]:
+                if latest is None or latest.get("replay") is None:
+                    return {}
+                return {
+                    item["id"]: item
+                    for item in latest["replay"].get("observations", [])
+                    if isinstance(item.get("id"), int)
+                }
+
+            before_observations = observations_for(before_latest)
+            after_observations = observations_for(after_latest)
+            before_ids, after_ids = set(before_observations), set(after_observations)
+            before_replay = before_latest.get("replay") if before_latest else None
+            after_replay = after_latest.get("replay") if after_latest else None
+
+            def contributions(replay: dict[str, Any] | None) -> dict[int, dict[str, Any]]:
+                if replay is None:
+                    return {}
+                result = replay.get("replayed") if replay.get("replayable") else replay.get("original")
+                trace = result.get("decision_trace", {}) if isinstance(result, dict) else {}
+                return {
+                    item["observation_id"]: item
+                    for item in trace.get("observations", [])
+                    if isinstance(item.get("observation_id"), int)
+                }
+
+            before_trace = contributions(before_replay)
+            after_trace = contributions(after_replay)
+
+            def evidence_rows(
+                observation_ids: set[int],
+                observations: dict[int, dict[str, Any]],
+                trace: dict[int, dict[str, Any]],
+            ) -> list[dict[str, Any]]:
+                return [
+                    {
+                        **observations[observation_id],
+                        "decision_contribution": trace.get(observation_id),
+                    }
+                    for observation_id in sorted(observation_ids)
+                ]
+
+            before_events = {
+                item["id"]: item for item in (earlier or {}).get("analyst_events", [])
+            }
+            after_events = {
+                item["id"]: item for item in (later or {}).get("analyst_events", [])
+            }
+            before_state = earlier.get("analyst_state") if earlier else None
+            after_state = later.get("analyst_state") if later else None
+            before_verdict = before_latest.get("source_verdict") if before_latest else None
+            after_verdict = after_latest.get("source_verdict") if after_latest else None
+            before_score = before_latest.get("source_score") if before_latest else None
+            after_score = after_latest.get("source_score") if after_latest else None
+            indicator_deltas.append(
+                {
+                    "ioc": ioc,
+                    "membership": (
+                        "added"
+                        if earlier is None
+                        else "removed"
+                        if later is None
+                        else "retained"
+                    ),
+                    "baseline": {
+                        "added_at": earlier.get("added_at") if earlier else None,
+                        "latest_enrichment": before_latest,
+                        "analyst_state": before_state,
+                    },
+                    "comparison": {
+                        "added_at": later.get("added_at") if later else None,
+                        "latest_enrichment": after_latest,
+                        "analyst_state": after_state,
+                    },
+                    "decision": {
+                        "verdict_changed": before_verdict != after_verdict,
+                        "baseline_verdict": before_verdict,
+                        "comparison_verdict": after_verdict,
+                        "score_delta": (
+                            round(float(after_score) - float(before_score), 3)
+                            if before_score is not None and after_score is not None
+                            else None
+                        ),
+                        "baseline_replay_matches": (
+                            before_replay.get("matches_original")
+                            if before_replay and before_replay.get("replayable")
+                            else None
+                        ),
+                        "comparison_replay_matches": (
+                            after_replay.get("matches_original")
+                            if after_replay and after_replay.get("replayable")
+                            else None
+                        ),
+                    },
+                    "analyst_state_changed": before_state != after_state,
+                    "evidence": {
+                        "added": evidence_rows(
+                            after_ids - before_ids, after_observations, after_trace
+                        ),
+                        "absent_from_later_snapshot": evidence_rows(
+                            before_ids - after_ids, before_observations, before_trace
+                        ),
+                        "unchanged_observation_ids": sorted(before_ids & after_ids),
+                        "decision_contribution_changes": [
+                            {
+                                "observation_id": observation_id,
+                                "baseline": before_trace.get(observation_id),
+                                "comparison": after_trace.get(observation_id),
+                            }
+                            for observation_id in sorted(before_ids & after_ids)
+                            if before_trace.get(observation_id)
+                            != after_trace.get(observation_id)
+                        ],
+                    },
+                    "analyst_events_added": [
+                        after_events[event_id]
+                        for event_id in sorted(after_events.keys() - before_events.keys())
+                    ],
+                }
+            )
+
+        before_graph = {
+            item["id"]: item for item in baseline.get("graph", {}).get("edges", [])
+        }
+        after_graph = {
+            item["id"]: item for item in comparison.get("graph", {}).get("edges", [])
+        }
+        baseline_case_events = {
+            item["id"]: item for item in baseline.get("events", [])
+        }
+        comparison_case_events = {
+            item["id"]: item for item in comparison.get("events", [])
+        }
+        baseline_metadata = baseline.get("investigation", {})
+        comparison_metadata = comparison.get("investigation", {})
+        metadata_changes = {
+            key: {
+                "baseline": baseline_metadata.get(key),
+                "comparison": comparison_metadata.get(key),
+            }
+            for key in ("title", "description", "status")
+            if baseline_metadata.get(key) != comparison_metadata.get(key)
+        }
+
+        def state_summary(state: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "as_of": state["as_of"],
+                "exists_at_time": state["exists_at_time"],
+                "investigation": state.get("investigation"),
+                "indicator_count": state.get("indicator_count", 0),
+                "state_complete": state.get("state_complete", False),
+                "replayable": state.get("replayable", False),
+                "event_integrity": state.get("event_integrity"),
+                "graph_truncated": state.get("graph", {}).get("truncated", False),
+            }
+
+        return {
+            "investigation_id": investigation_id,
+            "baseline": state_summary(baseline),
+            "comparison": state_summary(comparison),
+            "metadata_changes": metadata_changes,
+            "membership": {
+                "added": sorted(after_iocs - before_iocs),
+                "removed": sorted(before_iocs - after_iocs),
+                "retained": sorted(before_iocs & after_iocs),
+            },
+            "indicators": indicator_deltas,
+            "investigation_events_added": [
+                comparison_case_events[event_id]
+                for event_id in sorted(
+                    comparison_case_events.keys() - baseline_case_events.keys()
+                )
+            ],
+            "graph": {
+                "added_edges": [
+                    after_graph[edge_id]
+                    for edge_id in sorted(after_graph.keys() - before_graph.keys())
+                ],
+                "no_longer_valid_edges": [
+                    before_graph[edge_id]
+                    for edge_id in sorted(before_graph.keys() - after_graph.keys())
+                ],
+            },
+            "replayable": baseline.get("replayable", False)
+            and comparison.get("replayable", False),
+            "methodology": "investigation_state_diff_v1",
+        }
+
     def compare_enrichments(
         self,
         baseline_id: int,

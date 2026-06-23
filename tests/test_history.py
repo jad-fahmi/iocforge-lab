@@ -525,6 +525,9 @@ def test_investigation_replay_reconstructs_membership_decisions_graph_and_overri
         investigation["id"], "2026-01-02T00:00:00Z"
     )
     t2_state = store.replay_investigation(investigation["id"], t2)
+    comparison = store.compare_investigations(
+        investigation["id"], "2026-01-02T00:00:00Z", t2
+    )
     before_creation = store.replay_investigation(
         investigation["id"], "2025-12-31T23:59:59Z"
     )
@@ -553,6 +556,21 @@ def test_investigation_replay_reconstructs_membership_decisions_graph_and_overri
     assert t2_state["investigation"]["status"] == "closed"
     assert t2_state["indicators"][0]["latest_enrichment"]["source_verdict"] == "clean"
     assert t2_state["indicators"][0]["analyst_state"]["verdict_override"] is None
+    assert comparison["membership"]["added"] == ["new.example"]
+    changed = next(item for item in comparison["indicators"] if item["ioc"] == "evil.example")
+    assert changed["decision"]["verdict_changed"] is True
+    assert changed["decision"]["baseline_verdict"] == "malicious"
+    assert changed["decision"]["comparison_verdict"] == "clean"
+    assert changed["evidence"]["added"]
+    assert changed["analyst_state_changed"] is True
+    assert comparison["metadata_changes"]["status"] == {
+        "baseline": "open",
+        "comparison": "closed",
+    }
+    assert any(
+        edge["target_ioc"] == "198.51.100.20"
+        for edge in comparison["graph"]["added_edges"]
+    )
     assert before_creation["exists_at_time"] is False
     assert before_creation["reason"] == "investigation_not_yet_created"
     store.close()

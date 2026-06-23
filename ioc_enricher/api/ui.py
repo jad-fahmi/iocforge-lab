@@ -327,6 +327,33 @@ function investigationReplayPanel(investigationId) {
     }catch(error){renderError(result,error);}
   });
   panel.append(form,result);
+  const comparisonForm=node('form',undefined,'row'),baselineTime=node('input'),comparisonTime=node('input');
+  const localTime=value=>new Date(value.getTime()-value.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  baselineTime.type='datetime-local';baselineTime.required=true;baselineTime.value=localTime(new Date(Date.now()-86400000));
+  comparisonTime.type='datetime-local';comparisonTime.required=true;comparisonTime.value=localTime(new Date());
+  const compareButton=node('button','Compare investigation states');compareButton.type='submit';
+  comparisonForm.append(node('label','Baseline time'),baselineTime,node('label','Comparison time'),comparisonTime,compareButton);
+  const comparisonResult=node('div');comparisonForm.addEventListener('submit',async event=>{
+    event.preventDefault();clear(comparisonResult);comparisonResult.append(empty('Comparing saved investigation states...'));
+    try{
+      const baseline=new Date(baselineTime.value).toISOString(),comparison=new Date(comparisonTime.value).toISOString();
+      const diff=await api(`/investigations/${investigationId}/compare?baseline_as_of=${encodeURIComponent(baseline)}&comparison_as_of=${encodeURIComponent(comparison)}`);
+      clear(comparisonResult);
+      const indicatorChanges=diff.indicators.filter(item=>item.membership!=='retained'||item.decision.verdict_changed||item.decision.score_delta!==0||item.analyst_state_changed||item.evidence.added.length||item.evidence.absent_from_later_snapshot.length).map(item=>{
+        const decision=item.decision;
+        const evidence=item.evidence.added.map(row=>`${row.observation?.source||'unknown'} observation ${row.id}`).join(', ')||'none';
+        return `${item.ioc}: ${item.membership}; verdict ${decision.baseline_verdict||'none'} -> ${decision.comparison_verdict||'none'}; score delta ${decision.score_delta??'unavailable'}; new evidence ${evidence}; analyst state changed ${item.analyst_state_changed}`;
+      });
+      comparisonResult.append(
+        node('p',`Replayable at both times: ${diff.replayable}. Membership added: ${diff.membership.added.join(', ')||'none'}; removed: ${diff.membership.removed.join(', ')||'none'}.`),
+        renderList('Changed indicators',indicatorChanges),
+        renderList('Newly valid graph relationships',diff.graph.added_edges.map(edge=>`${edge.source_ioc} --${edge.relationship_type}--> ${edge.target_ioc} | ${edge.evidence_source} observation ${edge.evidence_observation_id||'analyst'}`)),
+        renderList('Investigation metadata changes',Object.entries(diff.metadata_changes).map(([field,change])=>`${field}: ${JSON.stringify(change.baseline)} -> ${JSON.stringify(change.comparison)}`)),
+        structuredPanel('Full evidence, decision, analyst-event, graph, and integrity diff',diff)
+      );
+    }catch(error){renderError(comparisonResult,error);}
+  });
+  panel.append(node('h3','Compare historical investigation states'),comparisonForm,comparisonResult);
   return panel;
 }
 async function openCase(id) { const target=byId('case-detail');clear(target);target.append(empty(`Loading investigation ${id}...`));try{const [investigation,events,integrity]=await Promise.all([api(`/investigations/${id}`),api(`/investigations/${id}/events?limit=200`),api(`/investigations/${id}/integrity`)]);clear(target);const header=node('div',undefined,'panel');header.append(node('h2',investigation.title),node('p',`${investigation.status} | ${investigation.indicators.length} indicator(s) | updated ${investigation.updated_at}`),node('p',investigation.description||'No description.'));const actions=node('div',undefined,'actions'),bundle=node('a','Download reproducible .iocforge bundle');bundle.href=`${API}/investigations/${id}/bundle`;bundle.download=`iocforge-investigation-${id}.iocforge`;actions.append(bundle,node('span',`Event chain: ${integrity.valid?'valid':'INVALID'} (${integrity.checked_events} event(s))`,integrity.valid?'clean':'error'));header.append(actions);target.append(header,investigationReplayPanel(id));const eventPanel=node('div',undefined,'panel');eventPanel.append(node('h3','Investigation event timeline'),caseTimeline(events,[],[]));target.append(eventPanel);const selectForm=node('form',undefined,'row panel'),select=node('select');investigation.indicators.forEach(ioc=>{const option=node('option',ioc);option.value=ioc;select.append(option)});selectForm.append(node('label','Inspect indicator'),select,actionButton('Load evidence and graph',()=>inspectCaseIndicator(id,select.value,events)));target.append(selectForm);const timeline=node('div',undefined,'panel'),graph=node('div',undefined,'panel'),snapshots=node('div',undefined,'panel'),comparison=node('div',undefined,'panel');timeline.id='case-timeline';graph.id='case-graph';snapshots.id='case-snapshots';comparison.id='case-comparison';target.append(timeline,graph,snapshots,comparison);if(investigation.indicators.length)await inspectCaseIndicator(id,investigation.indicators[0],events);else timeline.append(empty('Add an indicator to inspect its evidence.'));}catch(error){renderError(target,error)} }

@@ -116,6 +116,12 @@ def build_parser():
         help="ISO 8601 time for --replay-investigation",
     )
     p.add_argument(
+        "--compare-investigations",
+        nargs=3,
+        metavar=("INVESTIGATION_ID", "BASELINE_TIME", "COMPARISON_TIME"),
+        help="compare investigation state and evidence across two ISO 8601 times",
+    )
+    p.add_argument(
         "--compare",
         nargs=2,
         type=int,
@@ -266,6 +272,29 @@ def main(argv=None):
             )
             return 1
         print(json.dumps({"investigation_replay": replay}, indent=2))
+        return 0
+    if args.compare_investigations is not None:
+        try:
+            investigation_id = int(args.compare_investigations[0])
+        except ValueError:
+            print("investigation ID must be an integer", file=sys.stderr)
+            return 2
+        store = HistoryStore()
+        try:
+            comparison = store.compare_investigations(
+                investigation_id,
+                args.compare_investigations[1],
+                args.compare_investigations[2],
+            )
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        finally:
+            store.close()
+        if comparison is None:
+            print(f"investigation {investigation_id} was not found", file=sys.stderr)
+            return 1
+        print(json.dumps({"investigation_comparison": comparison}, indent=2))
         return 0
     if args.replay is not None:
         replay = HistoryStore().replay_enrichment(args.replay)

@@ -47,6 +47,8 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
     assert "Clear analyst override" in response.text
     assert "Historical investigation replay" in response.text
     assert "/investigations/${investigationId}/replay?as_of=" in response.text
+    assert "Compare historical investigation states" in response.text
+    assert "/investigations/${investigationId}/compare?baseline_as_of=" in response.text
     assert "const API = '/api/v1'" in response.text
     assert "p.available" in response.text
     assert "p.healthy" not in response.text
@@ -444,6 +446,37 @@ def test_investigation_replay_endpoint_reconstructs_historical_state(
     assert replay.json()["event_integrity"]["investigation"]["valid"] is True
     assert invalid.status_code == 422
     assert missing.status_code == 404
+
+
+def test_investigation_comparison_endpoint_reports_case_changes(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+    client = TestClient(api_module.app)
+    investigation = store.create_investigation("Case")
+
+    comparison = client.get(
+        f"/api/v1/investigations/{investigation['id']}/compare",
+        params={
+            "baseline_as_of": "2020-01-01T00:00:00Z",
+            "comparison_as_of": "2099-01-01T00:00:00Z",
+        },
+    )
+    reversed_times = client.get(
+        f"/api/v1/investigations/{investigation['id']}/compare",
+        params={
+            "baseline_as_of": "2099-01-01T00:00:00Z",
+            "comparison_as_of": "2020-01-01T00:00:00Z",
+        },
+    )
+
+    assert comparison.status_code == 200
+    assert comparison.json()["metadata_changes"]["title"] == {
+        "baseline": None,
+        "comparison": "Case",
+    }
+    assert reversed_times.status_code == 422
 
 
 def test_investigation_report_endpoint_returns_markdown(monkeypatch, tmp_path):

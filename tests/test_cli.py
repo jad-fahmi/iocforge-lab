@@ -31,6 +31,13 @@ class FakeHistory:
             "replayable": True,
         }
 
+    def compare_investigations(self, investigation_id, baseline_as_of, comparison_as_of):
+        return {
+            "investigation_id": investigation_id,
+            "baseline": baseline_as_of,
+            "comparison": comparison_as_of,
+        }
+
     def compare_enrichments(self, baseline_id, comparison_id):
         return {"baseline": baseline_id, "comparison": comparison_id}
 
@@ -130,6 +137,24 @@ def test_cli_replays_investigation_at_requested_time(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert '"investigation_id": 7' in output
     assert '"as_of": "2026-01-01T00:00:00Z"' in output
+
+
+def test_cli_compares_investigation_at_two_times(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "HistoryStore", FakeHistory)
+
+    assert cli.main(
+        [
+            "--compare-investigations",
+            "7",
+            "2026-01-01T00:00:00Z",
+            "2026-01-02T00:00:00Z",
+        ]
+    ) == 0
+
+    output = capsys.readouterr().out
+    assert '"investigation_id": 7' in output
+    assert '"baseline": "2026-01-01T00:00:00Z"' in output
+    assert '"comparison": "2026-01-02T00:00:00Z"' in output
 
 
 def test_cli_compares_two_enrichment_history_ids(monkeypatch, capsys):

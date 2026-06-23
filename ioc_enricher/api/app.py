@@ -703,6 +703,24 @@ def replay_investigation(
     return replay
 
 
+@api.get("/investigations/{investigation_id}/compare", tags=["investigations"])
+def compare_investigations(
+    investigation_id: int,
+    baseline_as_of: str = Query(...),
+    comparison_as_of: str = Query(...),
+) -> dict[str, Any]:
+    """Compare two offline reconstructions of an investigation."""
+    try:
+        comparison = _history_store().compare_investigations(
+            investigation_id, baseline_as_of, comparison_as_of
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if comparison is None:
+        raise HTTPException(status_code=404, detail="investigation not found")
+    return comparison
+
+
 @api.get(
     "/investigations/{investigation_id}/report",
     response_class=PlainTextResponse,

@@ -211,6 +211,7 @@ ioc-enrich evil.example --explain
 ioc-enrich --history evil.example --history-limit 20
 ioc-enrich --replay 17
 ioc-enrich --replay-investigation 3 --as-of 2026-01-01T12:00:00Z
+ioc-enrich --compare-investigations 3 2026-01-01T12:00:00Z 2026-01-02T12:00:00Z
 ioc-enrich --compare 17 24
 ioc-enrich --bundle-export 3 --bundle-output case.iocforge
 ioc-enrich --bundle-inspect case.iocforge
@@ -225,6 +226,9 @@ the original and recalculated scoring traces without querying providers.
 analyst state, each member's latest eligible enrichment, and the time-bounded
 graph at the required `--as-of` timestamp. It reports incomplete historical
 state when event integrity fails or legacy creation events lack initial fields.
+`--compare-investigations` compares two such reconstructions and reports
+membership, metadata, verdict, score, evidence, analyst-event, and graph-edge
+changes without querying providers.
 `--compare` accepts baseline and later snapshot IDs, then reports added and
 removed observations, decision changes, replay status, and graph differences.
 Bundles contain the case timeline, linked snapshots and evidence, graph edges,
@@ -286,6 +290,7 @@ The versioned API includes:
 | `GET /api/v1/history/{enrichment_id}/replay` | Reproduce a saved decision from its stored evidence and scoring configuration |
 | `GET /api/v1/history/{baseline_id}/compare/{comparison_id}` | Compare evidence, scoring decisions, and time-bounded graph state |
 | `GET /api/v1/investigations/{id}/replay?as_of=...` | Reconstruct investigation state from event and evidence history at a selected time |
+| `GET /api/v1/investigations/{id}/compare?baseline_as_of=...&comparison_as_of=...` | Explain membership, decision, evidence, analyst-state, and graph changes across two times |
 | `GET /api/v1/indicators/{ioc}/integrity` | Verify the indicator analyst-event hash chain |
 | `GET /api/v1/investigations/{id}/integrity` | Verify the investigation-event hash chain |
 | `GET /api/v1/investigations/{id}/bundle` | Download a self-contained `.iocforge` archive |
