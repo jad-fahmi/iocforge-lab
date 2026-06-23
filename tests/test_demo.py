@@ -15,8 +15,21 @@ def test_t1_t2_demo_writes_self_contained_offline_case(tmp_path, capsys):
     snapshots = report["snapshots"]
     comparison = report["comparison"]
 
-    assert [item["verdict"] for item in snapshots] == ["clean", "malicious"]
+    assert [item["verdict"] for item in snapshots] == ["low", "malicious"]
+    assert [item["confidence"] for item in snapshots] == ["medium", "high"]
     assert snapshots[0]["score"] < snapshots[1]["score"]
+    assert snapshots[0]["counter_evidence"][0]["source"] == "virustotal"
+    assert snapshots[0]["errors"] == [
+        {"source": "urlhaus", "error": "HTTP 503 service unavailable"}
+    ]
+    assert "stale_observation" in snapshots[0]["reason_codes"]
+    otx_trace = next(
+        item
+        for item in snapshots[0]["decision_trace"]["observations"]
+        if item["source"] == "otx"
+    )
+    assert otx_trace["freshness_factor"] == 0.5
+    assert snapshots[1]["errors"] == []
     assert all(item["replay"]["matches_original"] for item in snapshots)
     assert comparison["verdict_changed"] is True
     assert comparison["score_delta"] > 0

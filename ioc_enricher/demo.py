@@ -31,6 +31,10 @@ def _source(
     found: bool = True,
     malicious: bool | None = None,
     source_score: float | None = None,
+    confidence: float | None = None,
+    error: str | None = None,
+    observed_at: str | None = None,
+    freshness: dict[str, Any] | None = None,
     related_entities: list[dict[str, Any]] | None = None,
 ) -> SourceResult:
     return SourceResult(
@@ -40,13 +44,17 @@ def _source(
         found=found,
         malicious=malicious,
         score=source_score,
+        error=error,
         raw=raw,
-        observed_at=collected_at,
+        observed_at=observed_at or collected_at,
         collected_at=collected_at,
         connector_version="offline-demo/1",
         normalization_version="1",
-        confidence=0.95 if malicious is not None else 0.8,
-        freshness={"state": "fresh", "basis": "synthetic scenario time"},
+        confidence=confidence if confidence is not None else (
+            0.95 if malicious is not None else 0.8
+        ),
+        freshness=freshness
+        or {"state": "fresh", "basis": "synthetic scenario time"},
         related_entities=related_entities or [],
     )
 
@@ -72,8 +80,9 @@ def create_demo_bundle() -> tuple[bytes, dict[str, Any]]:
         try:
             investigation = store.create_investigation(
                 "T1/T2 phishing infrastructure walkthrough",
-                "Synthetic offline scenario: benign provider result at T1, then "
-                "new malicious classifications and infrastructure evidence at T2.",
+                "Synthetic offline scenario: stale conflicting intelligence and "
+                "a provider outage at T1, followed by refreshed classifications "
+                "and infrastructure evidence at T2.",
             )
             investigation_id = int(investigation["id"])
             store.add_investigation_indicator(investigation_id, DEMO_IOC)
@@ -88,6 +97,27 @@ def create_demo_bundle() -> tuple[bytes, dict[str, Any]]:
                         {"positives": 0, "total": 70, "classification": "benign"},
                         malicious=False,
                         source_score=0.0,
+                    ),
+                    _source(
+                        "otx",
+                        t1_text,
+                        {
+                            "classification": "malicious",
+                            "confidence": 45,
+                            "last_seen": _timestamp(t1 - timedelta(days=120)),
+                        },
+                        malicious=True,
+                        source_score=0.45,
+                        confidence=0.45,
+                        observed_at=_timestamp(t1 - timedelta(days=120)),
+                        freshness={"state": "stale", "age_days": 120},
+                    ),
+                    _source(
+                        "urlhaus",
+                        t1_text,
+                        {"http_status": 503},
+                        found=False,
+                        error="HTTP 503 service unavailable",
                     ),
                     _source(
                         "passive_dns",
@@ -122,11 +152,30 @@ def create_demo_bundle() -> tuple[bytes, dict[str, Any]]:
                         source_score=0.93,
                     ),
                     _source(
+                        "otx",
+                        t2_text,
+                        {
+                            "classification": "malicious",
+                            "confidence": 83,
+                            "last_seen": t2_text,
+                        },
+                        malicious=True,
+                        source_score=0.83,
+                        confidence=0.83,
+                    ),
+                    _source(
                         "threatfox",
                         t2_text,
                         {"campaign": "credential-harvest-17", "confidence": 97},
                         malicious=True,
                         source_score=0.97,
+                    ),
+                    _source(
+                        "urlhaus",
+                        t2_text,
+                        {"threat": "credential-phishing", "url_count": 3},
+                        malicious=True,
+                        source_score=0.91,
                     ),
                     _source(
                         "passive_dns",
@@ -198,8 +247,12 @@ def create_demo_bundle() -> tuple[bytes, dict[str, Any]]:
                     "looked_up_at": history["looked_up_at"],
                     "verdict": result["verdict"],
                     "score": result["score"],
+                    "confidence": result["confidence"],
                     "evidence": result["evidence"],
                     "counter_evidence": result["counter_evidence"],
+                    "errors": result["errors"],
+                    "no_data": result["no_data"],
+                    "reason_codes": result["reason_codes"],
                     "decision_trace": result["decision_trace"],
                     "replay": {
                         "replayable": replay["replayable"],

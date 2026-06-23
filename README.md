@@ -241,11 +241,14 @@ python -m ioc_enricher.demo --output demo/t1-t2.iocforge
 
 The command writes a portable case bundle and prints a JSON walkthrough with
 the T1 and T2 verdicts, decision traces, evidence and graph changes, replay
-checks, and bundle integrity. The scenario starts with a benign classification
-and one historical IP, then adds malicious classifications, a new IP, a
-certificate, and a certificate-linked hostname. Timestamps are generated for
-each run; all provider observations and relationships are synthetic. Inspect
-the archive with `ioc-enrich --bundle-inspect demo/t1-t2.iocforge` or upload it
+checks, and bundle integrity. At T1, a benign VirusTotal classification
+conflicts with a low-confidence, 120-day-old OTX result while URLhaus is
+unavailable; freshness weighting and the outage keep the decision at low risk.
+At T2, provider classifications refresh and agree, URLhaus recovers, and new
+passive-DNS and certificate relationships reveal another hostname. Timestamps
+are generated for each run; all provider observations and relationships are
+synthetic. Inspect the archive with
+`ioc-enrich --bundle-inspect demo/t1-t2.iocforge` or upload it
 in the workbench's **Inspect an .iocforge bundle** form to review the offline
 snapshot comparison, new evidence, graph changes, and replay checks.
 
