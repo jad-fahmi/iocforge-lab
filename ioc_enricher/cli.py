@@ -105,6 +105,17 @@ def build_parser():
         help="replay a saved enrichment decision by its history ID",
     )
     p.add_argument(
+        "--replay-investigation",
+        type=int,
+        metavar="INVESTIGATION_ID",
+        help="reconstruct an investigation using saved state at --as-of",
+    )
+    p.add_argument(
+        "--as-of",
+        metavar="TIMESTAMP",
+        help="ISO 8601 time for --replay-investigation",
+    )
+    p.add_argument(
         "--compare",
         nargs=2,
         type=int,
@@ -230,6 +241,31 @@ def main(argv=None):
             ioc=args.history or None, limit=args.history_limit
         )
         print(json.dumps({"history": entries}, indent=2))
+        return 0
+    if args.as_of is not None and args.replay_investigation is None:
+        print("--as-of requires --replay-investigation", file=sys.stderr)
+        return 2
+    if args.replay_investigation is not None:
+        if args.as_of is None:
+            print("--replay-investigation requires --as-of", file=sys.stderr)
+            return 2
+        store = HistoryStore()
+        try:
+            replay = store.replay_investigation(
+                args.replay_investigation, args.as_of
+            )
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        finally:
+            store.close()
+        if replay is None:
+            print(
+                f"investigation {args.replay_investigation} was not found",
+                file=sys.stderr,
+            )
+            return 1
+        print(json.dumps({"investigation_replay": replay}, indent=2))
         return 0
     if args.replay is not None:
         replay = HistoryStore().replay_enrichment(args.replay)

@@ -45,6 +45,8 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
     assert "Source verdict and analyst override" in response.text
     assert "/verdict-override" in response.text
     assert "Clear analyst override" in response.text
+    assert "Historical investigation replay" in response.text
+    assert "/investigations/${investigationId}/replay?as_of=" in response.text
     assert "const API = '/api/v1'" in response.text
     assert "p.available" in response.text
     assert "p.healthy" not in response.text
@@ -410,6 +412,38 @@ def test_investigation_endpoint_updates_lifecycle(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert response.json()["status"] == "closed"
     assert response.json()["description"] == "Remediated"
+
+
+def test_investigation_replay_endpoint_reconstructs_historical_state(
+    monkeypatch, tmp_path
+):
+    store = HistoryStore(tmp_path / "history.db")
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+    client = TestClient(api_module.app)
+    investigation = store.create_investigation("Replay case", "Original")
+    store.add_investigation_indicator(investigation["id"], "evil.example")
+
+    replay = client.get(
+        f"/api/v1/investigations/{investigation['id']}/replay",
+        params={"as_of": "2099-01-01T00:00:00Z"},
+    )
+    invalid = client.get(
+        f"/api/v1/investigations/{investigation['id']}/replay",
+        params={"as_of": "not-a-date"},
+    )
+    missing = client.get(
+        "/api/v1/investigations/999/replay",
+        params={"as_of": "2099-01-01T00:00:00Z"},
+    )
+
+    assert replay.status_code == 200
+    assert replay.json()["investigation"]["description"] == "Original"
+    assert replay.json()["indicators"][0]["ioc"] == "evil.example"
+    assert replay.json()["event_integrity"]["investigation"]["valid"] is True
+    assert invalid.status_code == 422
+    assert missing.status_code == 404
 
 
 def test_investigation_report_endpoint_returns_markdown(monkeypatch, tmp_path):

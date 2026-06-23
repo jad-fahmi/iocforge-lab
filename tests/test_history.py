@@ -1,7 +1,9 @@
 import hashlib
 import json
 import sqlite3
+from datetime import datetime, timezone
 
+import ioc_enricher.history as history_module
 from ioc_enricher.config import Config
 from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
@@ -447,6 +449,115 @@ def test_investigation_lifecycle_update_is_audited(tmp_path):
     assert event["data"] == {"description": "Contained", "status": "closed"}
 
 
+def test_investigation_replay_reconstructs_membership_decisions_graph_and_override(
+    tmp_path, monkeypatch
+):
+    class Clock(datetime):
+        current = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current.astimezone(tz) if tz else cls.current.replace(tzinfo=None)
+
+    monkeypatch.setattr(history_module, "datetime", Clock)
+    store = HistoryStore(tmp_path / "history.db")
+    t1 = "2026-01-01T00:00:00+00:00"
+    t2 = "2026-01-03T00:00:00+00:00"
+    investigation = store.create_investigation("T1 case", "Original description")
+    store.add_investigation_indicator(investigation["id"], "evil.example")
+
+    t1_result = EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN)
+    t1_result.add(
+        SourceResult(
+            source="virustotal",
+            ioc="evil.example",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            malicious=True,
+            score=0.9,
+            observed_at=t1,
+            related_entities=[
+                {
+                    "source_ioc": "evil.example",
+                    "target_ioc": "203.0.113.10",
+                    "relationship_type": "resolves_to",
+                    "confidence": 0.9,
+                    "valid_from": t1,
+                }
+            ],
+        )
+    )
+    score(t1_result, as_of=t1)
+    store.record(t1_result, looked_up_at=t1)
+    store.set_verdict_override("evil.example", "suspicious", "EDR review pending")
+
+    Clock.current = datetime(2026, 1, 3, tzinfo=timezone.utc)
+    t2_result = EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN)
+    t2_result.add(
+        SourceResult(
+            source="virustotal",
+            ioc="evil.example",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            malicious=False,
+            score=0.0,
+            observed_at=t2,
+            related_entities=[
+                {
+                    "source_ioc": "evil.example",
+                    "target_ioc": "198.51.100.20",
+                    "relationship_type": "resolves_to",
+                    "confidence": 0.95,
+                    "valid_from": t2,
+                }
+            ],
+        )
+    )
+    score(t2_result, as_of=t2)
+    store.record(t2_result, looked_up_at=t2)
+    store.add_investigation_indicator(investigation["id"], "new.example")
+    store.update_investigation(
+        investigation["id"], description="Updated at T2", status="closed"
+    )
+    store.clear_verdict_override("evil.example")
+
+    t1_state = store.replay_investigation(
+        investigation["id"], "2026-01-02T00:00:00Z"
+    )
+    t2_state = store.replay_investigation(investigation["id"], t2)
+    before_creation = store.replay_investigation(
+        investigation["id"], "2025-12-31T23:59:59Z"
+    )
+
+    assert t1_state["state_complete"] is True
+    assert t1_state["replayable"] is True
+    assert t1_state["investigation"] == {
+        "id": investigation["id"],
+        "title": "T1 case",
+        "description": "Original description",
+        "status": "open",
+    }
+    assert t1_state["indicator_count"] == 1
+    assert t1_state["indicators"][0]["latest_enrichment"]["source_verdict"] == "malicious"
+    assert t1_state["indicators"][0]["latest_enrichment"]["replay"]["matches_original"]
+    assert t1_state["indicators"][0]["analyst_state"]["verdict_override"] == "suspicious"
+    assert t1_state["graph"]["as_of"] == "2026-01-02T00:00:00+00:00"
+    assert "203.0.113.10" in {
+        edge["target_ioc"] for edge in t1_state["graph"]["edges"]
+    }
+    assert "198.51.100.20" not in {
+        edge["target_ioc"] for edge in t1_state["graph"]["edges"]
+    }
+    assert t2_state["indicator_count"] == 2
+    assert t2_state["investigation"]["description"] == "Updated at T2"
+    assert t2_state["investigation"]["status"] == "closed"
+    assert t2_state["indicators"][0]["latest_enrichment"]["source_verdict"] == "clean"
+    assert t2_state["indicators"][0]["analyst_state"]["verdict_override"] is None
+    assert before_creation["exists_at_time"] is False
+    assert before_creation["reason"] == "investigation_not_yet_created"
+    store.close()
+
+
 def test_event_chains_verify_and_sqlite_guards_reject_edits(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     store.record(EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN))
@@ -479,6 +590,26 @@ def test_event_chains_verify_and_sqlite_guards_reject_edits(tmp_path):
     integrity = store.verify_indicator_event_chain("evil.example")
     assert integrity["valid"] is False
     assert integrity["first_invalid_event_id"] == indicator_events[0]["id"]
+
+
+def test_investigation_replay_does_not_trust_tampered_creation_event(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    investigation = store.create_investigation("Original title", "Original")
+    store.conn.execute("DROP TRIGGER investigation_events_no_update")
+    store.conn.execute(
+        "UPDATE investigation_events SET data_json = ? WHERE investigation_id = ?",
+        ('{"title":"changed"}', investigation["id"]),
+    )
+    store.conn.commit()
+
+    replay = store.replay_investigation(
+        investigation["id"], "2099-01-01T00:00:00Z"
+    )
+
+    assert replay["exists_at_time"] is None
+    assert replay["state_complete"] is False
+    assert replay["reason"] == "investigation_creation_event_untrusted"
+    assert replay["event_integrity"]["valid"] is False
 
 
 def test_event_chain_migration_backfills_preexisting_events(tmp_path):

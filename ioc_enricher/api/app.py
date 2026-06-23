@@ -689,6 +689,20 @@ def update_investigation(
     return investigation
 
 
+@api.get("/investigations/{investigation_id}/replay", tags=["investigations"])
+def replay_investigation(
+    investigation_id: int, as_of: str = Query(...)
+) -> dict[str, Any]:
+    """Reconstruct investigation state using saved events and evidence only."""
+    try:
+        replay = _history_store().replay_investigation(investigation_id, as_of)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if replay is None:
+        raise HTTPException(status_code=404, detail="investigation not found")
+    return replay
+
+
 @api.get(
     "/investigations/{investigation_id}/report",
     response_class=PlainTextResponse,

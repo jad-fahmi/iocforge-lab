@@ -111,6 +111,13 @@ def _normalize_timestamp(value: str | None) -> str | None:
     return timestamp.astimezone(timezone.utc).isoformat()
 
 
+def _timestamp_value(value: str) -> datetime:
+    normalized = _normalize_timestamp(value)
+    if normalized is None:
+        raise ValueError("timestamp is required")
+    return datetime.fromisoformat(normalized)
+
+
 def _relationship_dict(row: sqlite3.Row) -> dict[str, Any]:
     relationship = dict(row)
     relationship["attributes"] = json.loads(relationship.pop("attributes_json"))
@@ -1007,6 +1014,283 @@ class HistoryStore:
             "observations": observation_rows,
         }
 
+    def replay_investigation(
+        self, investigation_id: int, as_of: str
+    ) -> dict[str, Any] | None:
+        """Reconstruct case membership, decisions, analyst state, and graph at a time."""
+        timestamp = _normalize_timestamp(as_of)
+        if timestamp is None:
+            raise ValueError("as_of timestamp is required")
+        at = _timestamp_value(timestamp)
+        with self._lock:
+            investigation_row = self.conn.execute(
+                "SELECT id FROM investigations WHERE id = ?", (investigation_id,)
+            ).fetchone()
+            event_rows = self.conn.execute(
+                "SELECT id, event_type, data_json, created_at, previous_hash, event_hash "
+                "FROM investigation_events WHERE investigation_id = ? ORDER BY id",
+                (investigation_id,),
+            ).fetchall()
+        if investigation_row is None:
+            return None
+
+        def historical_events(
+            rows: list[sqlite3.Row], table: str, scope_id: str | int
+        ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
+            eligible = []
+            timestamp_errors = []
+            for row in rows:
+                event = dict(row)
+                try:
+                    event_time = _timestamp_value(event["created_at"])
+                except (TypeError, ValueError, OverflowError):
+                    timestamp_errors.append(event["id"])
+                    continue
+                if event_time <= at:
+                    eligible.append(event)
+            previous_hash = EVENT_CHAIN_GENESIS
+            first_invalid = None
+            events = []
+            state_complete = not timestamp_errors
+            for event in eligible:
+                expected_hash = _event_hash(
+                    table,
+                    str(scope_id),
+                    event["id"],
+                    event["event_type"],
+                    event["data_json"],
+                    event["created_at"],
+                    previous_hash,
+                )
+                if (
+                    event["previous_hash"] != previous_hash
+                    or event["event_hash"] != expected_hash
+                ):
+                    first_invalid = event["id"]
+                    state_complete = False
+                    break
+                previous_hash = event["event_hash"]
+                try:
+                    data = json.loads(event.pop("data_json"))
+                except (TypeError, ValueError):
+                    state_complete = False
+                    first_invalid = event["id"]
+                    break
+                if not isinstance(data, dict):
+                    state_complete = False
+                    first_invalid = event["id"]
+                    break
+                event["data"] = data
+                events.append(event)
+            return (
+                events,
+                {
+                    "scope_id": scope_id,
+                    "valid": first_invalid is None and not timestamp_errors,
+                    "checked_events": len(eligible),
+                    "first_invalid_event_id": first_invalid,
+                    "unparseable_timestamp_event_ids": timestamp_errors,
+                    "head_hash": previous_hash if first_invalid is None else None,
+                },
+                state_complete,
+            )
+
+        case_events, case_integrity, case_state_complete = historical_events(
+            event_rows, "investigation_events", investigation_id
+        )
+        investigation_state: dict[str, Any] = {
+            "id": investigation_id,
+            "title": None,
+            "description": None,
+            "status": None,
+        }
+        members: dict[str, str] = {}
+        exists_at_time = False
+        metadata_complete = False
+        for event in case_events:
+            data = event["data"]
+            if event["event_type"] == "investigation_created":
+                exists_at_time = True
+                investigation_state.update(
+                    {key: data[key] for key in ("title", "description", "status") if key in data}
+                )
+                metadata_complete = all(
+                    key in data for key in ("title", "description", "status")
+                )
+            elif event["event_type"] in {
+                "investigation_updated",
+                "investigation_status_updated",
+            }:
+                investigation_state.update(
+                    {key: data[key] for key in ("title", "description", "status") if key in data}
+                )
+            elif event["event_type"] == "indicator_added" and isinstance(
+                data.get("ioc"), str
+            ):
+                members.setdefault(data["ioc"], event["created_at"])
+
+        if not exists_at_time:
+            creation_status: bool | None = (
+                False if case_integrity["valid"] and case_state_complete else None
+            )
+            return {
+                "investigation_id": investigation_id,
+                "as_of": timestamp,
+                "exists_at_time": creation_status,
+                "replayable": False,
+                "reason": (
+                    "investigation_not_yet_created"
+                    if creation_status is False
+                    else "investigation_creation_event_untrusted"
+                ),
+                "state_complete": False,
+                "event_integrity": case_integrity,
+            }
+
+        indicator_states: list[dict[str, Any]] = []
+        graph_nodes: dict[int, dict[str, Any]] = {}
+        graph_edges: dict[int, dict[str, Any]] = {}
+        graph_truncated = False
+        event_integrity = {"investigation": case_integrity, "indicators": {}}
+        state_complete = case_state_complete and metadata_complete
+        for ioc, added_at in members.items():
+            with self._lock:
+                indicator_rows = self.conn.execute(
+                    "SELECT id, event_type, data_json, created_at, previous_hash, event_hash "
+                    "FROM indicator_events WHERE ioc = ? ORDER BY id",
+                    (ioc,),
+                ).fetchall()
+                snapshots = self.conn.execute(
+                    "SELECT id, verdict, score, confidence, looked_up_at FROM enrichments "
+                    "WHERE ioc = ? ORDER BY id",
+                    (ioc,),
+                ).fetchall()
+            events, integrity, indicator_state_complete = historical_events(
+                indicator_rows, "indicator_events", ioc
+            )
+            event_integrity["indicators"][ioc] = integrity
+            state_complete = state_complete and indicator_state_complete
+            indicator_state: dict[str, Any] = {
+                "status": "open",
+                "tags": [],
+                "analyst_notes": "",
+                "verdict_override": None,
+                "override_reason": None,
+                "override_at": None,
+            }
+            for event in events:
+                data = event["data"]
+                if event["event_type"] == "indicator_updated":
+                    for key in ("status", "analyst_notes"):
+                        if key in data:
+                            indicator_state[key] = data[key]
+                    if "tags" in data:
+                        try:
+                            tags = json.loads(data["tags"])
+                        except (TypeError, ValueError):
+                            state_complete = False
+                        else:
+                            if isinstance(tags, list) and all(
+                                isinstance(tag, str) for tag in tags
+                            ):
+                                indicator_state["tags"] = tags
+                            else:
+                                state_complete = False
+                elif event["event_type"] == "verdict_override_set":
+                    indicator_state.update(
+                        {
+                            "verdict_override": data.get("verdict_override"),
+                            "override_reason": data.get("override_reason"),
+                            "override_at": data.get("override_at"),
+                        }
+                    )
+                elif event["event_type"] == "verdict_override_cleared":
+                    indicator_state.update(
+                        {
+                            "verdict_override": None,
+                            "override_reason": None,
+                            "override_at": None,
+                        }
+                    )
+
+            eligible_snapshots = []
+            invalid_snapshot_times = []
+            for snapshot in snapshots:
+                try:
+                    snapshot_time = _timestamp_value(snapshot["looked_up_at"])
+                except (TypeError, ValueError, OverflowError):
+                    invalid_snapshot_times.append(snapshot["id"])
+                    continue
+                if snapshot_time <= at:
+                    eligible_snapshots.append((snapshot_time, snapshot))
+            eligible_snapshots.sort(key=lambda item: (item[0], item[1]["id"]))
+            latest = eligible_snapshots[-1][1] if eligible_snapshots else None
+            if invalid_snapshot_times:
+                state_complete = False
+            replay = (
+                self.replay_enrichment(int(latest["id"])) if latest is not None else None
+            )
+            indicator_states.append(
+                {
+                    "ioc": ioc,
+                    "added_at": added_at,
+                    "analyst_state": indicator_state,
+                    "analyst_events": events,
+                    "event_integrity": integrity,
+                    "invalid_snapshot_timestamp_ids": invalid_snapshot_times,
+                    "latest_enrichment": (
+                        {
+                            "enrichment_id": latest["id"],
+                            "looked_up_at": latest["looked_up_at"],
+                            "source_verdict": latest["verdict"],
+                            "source_score": latest["score"],
+                            "replay": replay,
+                        }
+                        if latest is not None
+                        else None
+                    ),
+                }
+            )
+            remaining = 500 - len(graph_edges)
+            if remaining <= 0:
+                graph_truncated = True
+                continue
+            graph = self.relationship_graph(
+                ioc, limit=remaining, max_depth=5, as_of=timestamp
+            )
+            graph_nodes.update(
+                {node["entity_id"]: node for node in graph["nodes"]}
+            )
+            graph_edges.update({edge["id"]: edge for edge in graph["edges"]})
+            graph_truncated = graph_truncated or bool(graph["truncated"])
+
+        return {
+            "investigation_id": investigation_id,
+            "as_of": timestamp,
+            "exists_at_time": True,
+            "replayable": state_complete
+            and all(
+                item["latest_enrichment"] is None
+                or item["latest_enrichment"]["replay"].get("replayable", False)
+                for item in indicator_states
+            ),
+            "state_complete": state_complete,
+            "investigation": investigation_state,
+            "events": case_events,
+            "indicators": indicator_states,
+            "indicator_count": len(indicator_states),
+            "graph": {
+                "nodes": [graph_nodes[key] for key in sorted(graph_nodes)],
+                "edges": [graph_edges[key] for key in sorted(graph_edges)],
+                "max_depth": 5,
+                "edge_limit": 500,
+                "truncated": graph_truncated,
+                "as_of": timestamp,
+            },
+            "event_integrity": event_integrity,
+            "methodology": "investigation_event_prefix_and_snapshot_replay_v1",
+        }
+
     def compare_enrichments(
         self,
         baseline_id: int,
@@ -1435,7 +1719,11 @@ class HistoryStore:
             self._record_investigation_event(
                 investigation_id,
                 "investigation_created",
-                {"title": title.strip()},
+                {
+                    "title": title.strip(),
+                    "description": description.strip(),
+                    "status": "open",
+                },
                 timestamp,
             )
             self.conn.commit()

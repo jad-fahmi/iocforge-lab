@@ -297,7 +297,39 @@ async function inspectCaseIndicator(investigationId, ioc, caseEvents) {
     snapshotsTarget.append(empty('Snapshot history could not be loaded.'));
   }
 }
-async function openCase(id) { const target=byId('case-detail');clear(target);target.append(empty(`Loading investigation ${id}...`));try{const [investigation,events,integrity]=await Promise.all([api(`/investigations/${id}`),api(`/investigations/${id}/events?limit=200`),api(`/investigations/${id}/integrity`)]);clear(target);const header=node('div',undefined,'panel');header.append(node('h2',investigation.title),node('p',`${investigation.status} | ${investigation.indicators.length} indicator(s) | updated ${investigation.updated_at}`),node('p',investigation.description||'No description.'));const actions=node('div',undefined,'actions'),bundle=node('a','Download reproducible .iocforge bundle');bundle.href=`${API}/investigations/${id}/bundle`;bundle.download=`iocforge-investigation-${id}.iocforge`;actions.append(bundle,node('span',`Event chain: ${integrity.valid?'valid':'INVALID'} (${integrity.checked_events} event(s))`,integrity.valid?'clean':'error'));header.append(actions);target.append(header);const eventPanel=node('div',undefined,'panel');eventPanel.append(node('h3','Investigation event timeline'),caseTimeline(events,[],[]));target.append(eventPanel);const selectForm=node('form',undefined,'row panel'),select=node('select');investigation.indicators.forEach(ioc=>{const option=node('option',ioc);option.value=ioc;select.append(option)});selectForm.append(node('label','Inspect indicator'),select,actionButton('Load evidence and graph',()=>inspectCaseIndicator(id,select.value,events)));target.append(selectForm);const timeline=node('div',undefined,'panel'),graph=node('div',undefined,'panel'),snapshots=node('div',undefined,'panel'),comparison=node('div',undefined,'panel');timeline.id='case-timeline';graph.id='case-graph';snapshots.id='case-snapshots';comparison.id='case-comparison';target.append(timeline,graph,snapshots,comparison);if(investigation.indicators.length)await inspectCaseIndicator(id,investigation.indicators[0],events);else timeline.append(empty('Add an indicator to inspect its evidence.'));}catch(error){renderError(target,error)} }
+function investigationReplayPanel(investigationId) {
+  const panel=node('div',undefined,'panel');
+  panel.append(node('h3','Historical investigation replay'));
+  const form=node('form',undefined,'row'),time=node('input');
+  time.type='datetime-local';time.required=true;time.value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
+  time.setAttribute('aria-label','Reconstruct investigation as of');
+  const submit=node('button','Reconstruct at this time');submit.type='submit';
+  form.append(node('label','Reconstruct as of'),time,submit);
+  const result=node('div');form.addEventListener('submit',async event=>{
+    event.preventDefault();clear(result);result.append(empty('Reconstructing saved investigation state...'));
+    try{
+      const asOf=new Date(time.value).toISOString();
+      const replay=await api(`/investigations/${investigationId}/replay?as_of=${encodeURIComponent(asOf)}`);
+      clear(result);
+      if(replay.exists_at_time===false){result.append(node('p',`Investigation ${investigationId} did not exist at ${replay.as_of}.`),structuredPanel('Historical event integrity',replay.event_integrity));return;}
+      if(replay.exists_at_time===null){result.append(node('p',`The investigation creation event cannot be trusted at ${replay.as_of}; reconstruction is incomplete.`),structuredPanel('Historical event integrity',replay.event_integrity));return;}
+      const members=(replay.indicators||[]).map(item=>{
+        const latest=item.latest_enrichment;
+        const decision=latest?.replay;
+        return `${item.ioc}: ${latest?`source verdict ${latest.source_verdict}; replayable ${decision?.replayable}; matches ${decision?.matches_original}`:'no enrichment available'}; analyst override ${item.analyst_state.verdict_override||'none'}${item.analyst_state.override_reason?` (${item.analyst_state.override_reason})`:''}`;
+      });
+      result.append(
+        node('p',`As of ${replay.as_of}: ${replay.investigation.title}; ${replay.investigation.status}; state complete ${replay.state_complete}; replayable ${replay.replayable}.`),
+        renderList(`Members at that time (${replay.indicator_count})`,members),
+        node('p',`Temporal graph: ${replay.graph.nodes.length} nodes, ${replay.graph.edges.length} edges; truncated ${replay.graph.truncated}.`),
+        structuredPanel('Historical evidence, analyst state, graph, and integrity',replay)
+      );
+    }catch(error){renderError(result,error);}
+  });
+  panel.append(form,result);
+  return panel;
+}
+async function openCase(id) { const target=byId('case-detail');clear(target);target.append(empty(`Loading investigation ${id}...`));try{const [investigation,events,integrity]=await Promise.all([api(`/investigations/${id}`),api(`/investigations/${id}/events?limit=200`),api(`/investigations/${id}/integrity`)]);clear(target);const header=node('div',undefined,'panel');header.append(node('h2',investigation.title),node('p',`${investigation.status} | ${investigation.indicators.length} indicator(s) | updated ${investigation.updated_at}`),node('p',investigation.description||'No description.'));const actions=node('div',undefined,'actions'),bundle=node('a','Download reproducible .iocforge bundle');bundle.href=`${API}/investigations/${id}/bundle`;bundle.download=`iocforge-investigation-${id}.iocforge`;actions.append(bundle,node('span',`Event chain: ${integrity.valid?'valid':'INVALID'} (${integrity.checked_events} event(s))`,integrity.valid?'clean':'error'));header.append(actions);target.append(header,investigationReplayPanel(id));const eventPanel=node('div',undefined,'panel');eventPanel.append(node('h3','Investigation event timeline'),caseTimeline(events,[],[]));target.append(eventPanel);const selectForm=node('form',undefined,'row panel'),select=node('select');investigation.indicators.forEach(ioc=>{const option=node('option',ioc);option.value=ioc;select.append(option)});selectForm.append(node('label','Inspect indicator'),select,actionButton('Load evidence and graph',()=>inspectCaseIndicator(id,select.value,events)));target.append(selectForm);const timeline=node('div',undefined,'panel'),graph=node('div',undefined,'panel'),snapshots=node('div',undefined,'panel'),comparison=node('div',undefined,'panel');timeline.id='case-timeline';graph.id='case-graph';snapshots.id='case-snapshots';comparison.id='case-comparison';target.append(timeline,graph,snapshots,comparison);if(investigation.indicators.length)await inspectCaseIndicator(id,investigation.indicators[0],events);else timeline.append(empty('Add an indicator to inspect its evidence.'));}catch(error){renderError(target,error)} }
 function renderBundleComparisons(comparisons) {
   if (!comparisons?.length) return empty('The bundle contains no consecutive snapshots to compare.');
   const output=node('div');

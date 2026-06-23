@@ -24,9 +24,13 @@ The transformation proceeds in dependency order:
    independently of current lookup views.
 2. **Decision trace and replay:** persist complete scoring inputs and methodology
    configuration, then reconstruct and compare decisions from evidence available
-   at a chosen time. The first replay path now reproduces a saved score and
-   exposes its trace through the CLI and API. Snapshot comparison explains
-   evidence changes, decision differences, and temporal graph changes.
+   at a chosen time. Snapshot replay reproduces a saved score; investigation
+   replay now rebuilds case metadata, membership, analyst state, latest eligible
+   snapshots, and graph state from event/evidence prefixes at an `as_of` time.
+   It exposes replay and integrity status through the CLI, API, and workbench.
+   Snapshot comparison explains evidence changes, decision differences, and
+   temporal graph changes. Legacy creation events that did not capture all
+   initial metadata are reported as incomplete rather than guessed.
 3. **Temporal graph and pivots:** typed entity nodes, direct pivot ranking, and
    bounded multi-hop pivot paths are available. Paths use the weakest edge
    confidence, endpoint type weight, and an explicit depth penalty; every hop
@@ -50,7 +54,8 @@ The transformation proceeds in dependency order:
    and browser workbench. The workbench now shows provider provenance and
    decision traces, investigation/indicator timelines, typed graph edges and
    pivots, a bounded time-filterable node-link explorer, historical replay and
-   comparison, event-chain status, and bundle export/offline inspection. The
+   comparison, whole-investigation as-of reconstruction, analyst override
+   review, event-chain status, and bundle export/offline inspection. The
    local benchmark runner measures synthetic
    enrichment/scheduler throughput,
    SQLite history growth, case linking, graph pivots, and deterministic replay;
