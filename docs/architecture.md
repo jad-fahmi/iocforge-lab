@@ -68,10 +68,9 @@ The transformation proceeds in dependency order:
    pivots, a bounded time-filterable node-link explorer, historical replay and
    comparison, whole-investigation as-of reconstruction, analyst override
    review, event-chain status, and bundle export/offline inspection. The
-   local benchmark runner measures synthetic
-   enrichment/scheduler throughput,
-   SQLite history growth, case linking, graph pivots, and deterministic replay;
-   expand performance evidence with realistic datasets and repeated runs.
+   local benchmark runner measures repeated synthetic enrichment and scheduler
+   throughput, SQLite history growth, case linking, graph pivots, and deterministic
+   replay. Continue expanding workload sizes and graph shapes on target hardware.
 
 The `python -m ioc_enricher.demo --output <path>` walkthrough creates its own
 temporary SQLite history, seeds two explicitly timestamped synthetic provider

@@ -25,36 +25,38 @@ python -m benchmarks.run_benchmarks \
   --scheduler-concurrency 8 \
   --max-pending 32 \
   --replay-samples 100 \
+  --repeats 5 \
+  --warmup-runs 1 \
   --json-output benchmark-report.json
 ```
 
-The report includes a digest of the generated IOC set and pivot-path fixture,
-methodology version, runtime, platform, parameters, row counts, and measured timings. Timings are
-specific to the machine and its current load; compare runs only with the same
-parameters and environment. The synthetic provider delay is a controlled
-workload input, not a claim about live provider performance. Use the separate
-provider evaluation fixtures to study provider coverage and observed latency.
-Percentiles use the nearest-rank method. The harness does not warm up the
-scheduler before timing, so the first run includes executor startup.
+By default, the CLI performs one warm-up run and summarizes three measured
+runs. Its JSON contains every run plus per-metric mean, median, standard
+deviation, minimum, maximum, and nearest-rank p50/p95. Set
+`--repeats 1 --warmup-runs 0` to capture a single sample. The report includes a
+digest of the generated IOC set and pivot-path fixture, methodology version,
+runtime, platform, parameters, row counts, and timings. Timings are specific to the
+machine and its current load; compare runs only with the same parameters and
+environment. The synthetic provider delay is a controlled workload input, not
+a claim about live provider performance. Use the separate provider evaluation
+fixtures to study provider coverage and observed latency.
 
 ## Reference run
 
-[`benchmarks/baseline.json`](../benchmarks/baseline.json) records one reference
-run on Windows 11, Python 3.13.2, and 8 logical CPUs. With 100 indicators, two
-simulated providers, a 1 ms provider delay, and scheduler concurrency 8, it
-measured 1,306.2 indicators/second without history persistence and 96.6
-indicators/second with persistence. Peak observed task concurrency was 8 in the
-first run and 6 in the persisted run. Linking 100 indicators to an investigation
-took 0.69 seconds. Replaying 20 saved snapshots had a 0.439 ms p50 and 0.693 ms
-p95. Direct pivot lookup took 1.173 ms; the bounded multi-hop query took 56.518
-ms and expanded 404 graph edges. The database grew by 937,984 bytes, about 9.4
-KB per indicator for this workload.
+[`benchmarks/baseline.json`](../benchmarks/baseline.json) records a repeated
+reference run on the machine and Python version listed in the file. Its summary
+reports central tendency and run-to-run spread; each individual sample is
+retained so the reader can inspect outliers and confirm the workload digest.
+In this reference, scheduler-only enrichment reached a median 1,564.9
+indicators/second and persistence reached 98.3 indicators/second. The database
+grew by 991,232 bytes (9.9 KB per indicator); median replay p50 was 1.07 ms and
+the bounded pivot-path query took 55.5 ms. The three-run spread is included in
+the JSON report.
 
-This is a single local sample, not a capacity guarantee. The large difference
-between scheduler-only and persisted throughput makes SQLite transaction and
-event/graph writes the next path to profile; it does not yet justify weakening
-the current atomic persistence behavior. Rerun the harness on target hardware
-before choosing storage optimizations.
+These local measurements are not a capacity guarantee. The difference between
+scheduler-only and persisted throughput helps identify paths to profile; it
+does not by itself justify weakening atomic persistence behavior. Rerun the
+harness on target hardware before choosing storage optimizations.
 
 SQLite serializes writes through the history store's lock, which keeps snapshot,
 evidence, graph, and event updates consistent in one local transaction. The

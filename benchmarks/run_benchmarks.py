@@ -28,6 +28,7 @@ from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import SourceResult
 
 METHODOLOGY = "iocforge-local-benchmark-v2"
+SERIES_METHODOLOGY = "iocforge-benchmark-series-v1"
 PROVIDERS = ("benchmark_primary", "benchmark_secondary")
 BASE_TIME = datetime(2024, 1, 1, tzinfo=timezone.utc)
 PIVOT_PATH = (
@@ -173,6 +174,20 @@ def _timings(samples: list[float]) -> dict[str, Any]:
     }
 
 
+def _distribution(samples: list[float]) -> dict[str, Any]:
+    ordered = sorted(samples)
+    return {
+        "sample_count": len(samples),
+        "mean": round(statistics.mean(samples), 3),
+        "median": round(statistics.median(samples), 3),
+        "stdev": round(statistics.stdev(samples), 3) if len(samples) > 1 else 0.0,
+        "min": round(ordered[0], 3),
+        "max": round(ordered[-1], 3),
+        "p50": _percentile(samples, 0.5),
+        "p95": _percentile(samples, 0.95),
+    }
+
+
 def _storage_counts(store: HistoryStore) -> dict[str, int]:
     tables = (
         "enrichments",
@@ -222,6 +237,8 @@ def run_benchmarks(
         "max_concurrency": scheduler_concurrency,
         "max_pending": max_pending,
     }
+
+
     delay_seconds = provider_delay_ms / 1000
 
     online_activity = Activity()
@@ -358,6 +375,62 @@ def run_benchmarks(
     }
 
 
+SERIES_METRICS = {
+    "offline_enrichment_indicators_per_second": (
+        "offline_enrichment",
+        "indicators_per_second",
+    ),
+    "scheduler_with_history_indicators_per_second": (
+        "scheduler_with_history",
+        "indicators_per_second",
+    ),
+    "case_linking_indicators_per_second": (
+        "case_linking",
+        "indicators_per_second",
+    ),
+    "replay_p50_ms": ("replay", "p50_ms"),
+    "replay_p95_ms": ("replay", "p95_ms"),
+    "graph_query_ms": ("graph", "elapsed_ms"),
+    "pivot_path_query_ms": ("graph", "pivot_path_elapsed_ms"),
+    "database_growth_bytes": ("storage", "growth_bytes"),
+    "database_growth_bytes_per_indicator": ("storage", "growth_bytes_per_indicator"),
+}
+
+
+def run_benchmark_series(
+    repeats: int = 3,
+    warmup_runs: int = 1,
+    **parameters: Any,
+) -> dict[str, Any]:
+    """Warm up once, then summarize independent runs of the same workload."""
+    if repeats < 1:
+        raise ValueError("repeats must be positive")
+    if warmup_runs < 0:
+        raise ValueError("warmup_runs must be non-negative")
+
+    for _ in range(warmup_runs):
+        run_benchmarks(**parameters)
+    samples = [run_benchmarks(**parameters) for _ in range(repeats)]
+    workload_digests = {sample["workload_sha256"] for sample in samples}
+    if len(workload_digests) != 1:
+        raise RuntimeError("benchmark workload changed between repeated runs")
+    summary = {}
+    for name, path in SERIES_METRICS.items():
+        values = [sample[path[0]][path[1]] for sample in samples]
+        summary[name] = _distribution(values)
+    return {
+        "methodology": SERIES_METHODOLOGY,
+        "benchmark_methodology": METHODOLOGY,
+        "warmup_runs": warmup_runs,
+        "measured_runs": repeats,
+        "workload_sha256": samples[0]["workload_sha256"],
+        "environment": samples[0]["environment"],
+        "parameters": samples[0]["parameters"],
+        "summary": summary,
+        "samples": samples,
+    }
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--indicators", type=int, default=100)
@@ -366,10 +439,14 @@ def main(argv=None) -> int:
     parser.add_argument("--max-pending", type=int, default=32)
     parser.add_argument("--provider-delay-ms", type=float, default=1)
     parser.add_argument("--replay-samples", type=int, default=20)
+    parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--warmup-runs", type=int, default=1)
     parser.add_argument("--json-output", type=Path)
     args = parser.parse_args(argv)
     try:
-        report = run_benchmarks(
+        report = run_benchmark_series(
+            repeats=args.repeats,
+            warmup_runs=args.warmup_runs,
             indicators=args.indicators,
             lookup_workers=args.lookup_workers,
             scheduler_concurrency=args.scheduler_concurrency,
