@@ -13,9 +13,9 @@ columns for API and storage compatibility.
 Snapshot comparison is available. Indicator and investigation events now use
 per-scope SHA-256 chains, migration backfill, SQLite append-only guards, and
 explicit integrity verification. Normalized provider observations and their
-snapshot links also reject direct SQL updates and deletes. Event chains detect
-edits but are not anchored outside the database, so a privileged database
-operator could rewrite or truncate a whole chain.
+snapshot links and temporal graph relationships also reject direct SQL updates
+and deletes. Event chains detect edits but are not anchored outside the database,
+so a privileged database operator could rewrite or truncate a whole chain.
 
 The transformation proceeds in dependency order:
 

@@ -618,6 +618,18 @@ class HistoryStore:
                     """
                 )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (11)")
+            if 12 not in applied:
+                self.conn.executescript(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS indicator_relationships_no_update
+                    BEFORE UPDATE ON indicator_relationships
+                    BEGIN SELECT RAISE(ABORT, 'graph relationships are append-only'); END;
+                    CREATE TRIGGER IF NOT EXISTS indicator_relationships_no_delete
+                    BEFORE DELETE ON indicator_relationships
+                    BEGIN SELECT RAISE(ABORT, 'graph relationships are append-only'); END;
+                    """
+                )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (12)")
             self.conn.commit()
 
     def _ensure_graph_entity(

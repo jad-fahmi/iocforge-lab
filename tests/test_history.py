@@ -808,6 +808,33 @@ def test_relationship_rejects_unknown_explicit_entity_type(tmp_path):
         raise AssertionError("unsupported graph entity types must be rejected")
 
 
+def test_sqlite_rejects_graph_relationship_mutation(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    edge = store.add_relationship(
+        "evil.example",
+        "203.0.113.7",
+        "resolves_to",
+        evidence_source="passive_dns",
+        recorded_at="2026-01-01T00:00:00+00:00",
+        valid_from="2025-12-01T00:00:00+00:00",
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="graph relationships are append-only"):
+        store.conn.execute(
+            "UPDATE indicator_relationships SET valid_to = ? WHERE id = ?",
+            ("2026-02-01T00:00:00+00:00", edge["id"]),
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="graph relationships are append-only"):
+        store.conn.execute(
+            "DELETE FROM indicator_relationships WHERE id = ?", (edge["id"],)
+        )
+
+    retained = store.relationships("evil.example")
+    assert len(retained) == 1
+    assert retained[0]["valid_to"] is None
+    assert retained[0]["evidence_source"] == "passive_dns"
+
+
 def test_pivot_suggestions_rank_typed_nodes_with_provenance_and_time_bounds(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     store.add_relationship(
