@@ -21,7 +21,11 @@ aggregate before and after local-context adjustments. Local allowlists,
 private ranges, and known scanner tags reduce false positives, while a local
 blocklist establishes a minimum malicious score. Responses include evidence,
 counter-evidence, no-data sources, errors, reason codes, and a recommended
-action so analysts can inspect why a verdict was reached.
+action so analysts can inspect why a verdict was reached. The trace also lists
+providers that could not contribute because they were disabled, lacked required
+credentials, were omitted by the source filter, or were skipped as optional.
+These availability records do not affect the score and are preserved during
+history and offline bundle replay.
 
 Scores are decision support, not an automated containment authority. Conflicting
 sources should be reviewed alongside local telemetry.

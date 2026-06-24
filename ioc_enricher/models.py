@@ -81,6 +81,7 @@ class EnrichmentResult:
     errors: list = field(default_factory=list)
     reason_codes: list = field(default_factory=list)
     decision_trace: dict = field(default_factory=dict)
+    unavailable_providers: list[dict[str, Any]] = field(default_factory=list)
     recommended_action: str = "Review manually; insufficient evidence."
     source_context: Optional[dict] = None
     internal_context: dict = field(default_factory=dict)
@@ -114,6 +115,7 @@ class EnrichmentResult:
             "errors": self.errors,
             "reason_codes": self.reason_codes,
             "decision_trace": self.decision_trace,
+            "unavailable_providers": self.unavailable_providers,
             "recommended_action": self.recommended_action,
             "source_context": self.source_context,
             "internal_context": self.internal_context,

@@ -54,7 +54,11 @@ class Engine:
     ):
         self.config = config
         self.cache = cache
-        self.connectors = self._build(sources)
+        selected_sources = list(sources) if sources else None
+        self._selected_sources = (
+            set(selected_sources) if selected_sources is not None else None
+        )
+        self.connectors = self._build(selected_sources)
         self.scheduler = EnrichmentScheduler(
             settings=self.config.scheduler, providers=self.config.providers
         )
@@ -76,6 +80,7 @@ class Engine:
             ioc=ioc, ioc_type=ioc_type, source_context=source_context
         )
         result.internal_context = self.internal_context.evaluate(ioc, ioc_type)
+        result.unavailable_providers = self._unavailable_providers(ioc_type)
 
         active = [c for c in self.connectors if c.supports(ioc_type)]
         cached_results = {}
@@ -145,6 +150,49 @@ class Engine:
         if self.history is not None:
             self.history.record(result)
         return result
+
+    def _unavailable_providers(self, ioc_type):
+        unavailable = []
+        statuses = REGISTRY.status(self.config)
+        known_sources = {status.name for status in statuses}
+        for status in statuses:
+            if ioc_type not in status.supported_types:
+                continue
+            reason = None
+            if (
+                self._selected_sources is not None
+                and status.name not in self._selected_sources
+            ):
+                reason = "excluded_by_source_filter"
+                state = "not_selected"
+            elif not status.enabled:
+                reason = "disabled_in_configuration"
+                state = "disabled"
+            elif not status.available:
+                reason = "required_credentials_missing"
+                state = "unavailable"
+            elif self.scheduler.optional(status.name) and not self.scheduler.include_optional:
+                reason = "optional_sources_disabled_by_scheduler"
+                state = "skipped"
+            if reason is not None:
+                unavailable.append(
+                    {"source": status.name, "state": state, "reason": reason}
+                )
+        for connector in self.connectors:
+            if (
+                connector.name not in known_sources
+                and connector.supports(ioc_type)
+                and self.scheduler.optional(connector.name)
+                and not self.scheduler.include_optional
+            ):
+                unavailable.append(
+                    {
+                        "source": connector.name,
+                        "state": "skipped",
+                        "reason": "optional_sources_disabled_by_scheduler",
+                    }
+                )
+        return sorted(unavailable, key=lambda item: item["source"])
 
     def close(self, wait=True):
         """Release scheduler workers when an engine's lifetime ends."""

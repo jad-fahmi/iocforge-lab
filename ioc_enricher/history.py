@@ -1269,6 +1269,7 @@ class HistoryStore:
             ioc=original["ioc"],
             ioc_type=IocType(original["ioc_type"]),
             sources=sources,
+            unavailable_providers=original.get("unavailable_providers", []),
             internal_context=original.get("internal_context", {}),
         )
         score(replayed, settings=config, as_of=scored_at)

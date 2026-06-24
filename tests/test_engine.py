@@ -89,9 +89,46 @@ def test_engine_reports_optional_sources_skipped_by_policy():
     try:
         result = engine.enrich("evil.com")
         assert result.sources[0].error == "optional provider skipped by scheduler policy"
+        unavailable = result.decision_trace["unavailable_providers"]
+        assert {
+            "source": connector.name,
+            "state": "skipped",
+            "reason": "optional_sources_disabled_by_scheduler",
+        } in unavailable
         assert connector.calls == []
     finally:
         engine.close()
+
+
+def test_decision_trace_records_disabled_and_unselected_providers():
+    disabled = Engine(
+        Config(providers={"virustotal": {"enabled": False}}),
+        sources=["virustotal"],
+    )
+    try:
+        result = disabled.enrich("evil.com")
+        statuses = {item["source"]: item for item in result.unavailable_providers}
+        assert statuses["virustotal"] == {
+            "source": "virustotal",
+            "state": "disabled",
+            "reason": "disabled_in_configuration",
+        }
+        assert result.decision_trace["unavailable_providers"] == (
+            result.unavailable_providers
+        )
+    finally:
+        disabled.close()
+
+    selected = Engine(Config(), sources=["virustotal"])
+    try:
+        result = selected.enrich("evil.com")
+        statuses = {item["source"]: item for item in result.unavailable_providers}
+        assert statuses["otx"]["state"] == "not_selected"
+        assert statuses["otx"]["reason"] == "excluded_by_source_filter"
+        assert statuses["virustotal"]["state"] == "unavailable"
+        assert statuses["virustotal"]["reason"] == "required_credentials_missing"
+    finally:
+        selected.close()
 
 
 def test_enrich_many_dedupes_and_preserves_order():

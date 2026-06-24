@@ -154,6 +154,20 @@ def explain(result, settings=None, as_of=None):
 
     verdict = verdict_for(final, thresholds=thresholds)
     confidence = confidence_for(evidence, counter_evidence, errors, no_data)
+    decision_trace = {
+        "methodology_version": METHODOLOGY_VERSION,
+        "evaluated_at": evaluation_time.isoformat(),
+        "observations": observation_trace,
+        "weighted_signal": round(weighted_signal, 6),
+        "total_weight": round(total_weight, 6),
+        "base_score": base_score,
+        "context_adjustments": context_adjustments,
+        "final_score": final,
+        "thresholds": thresholds,
+    }
+    unavailable_providers = getattr(result, "unavailable_providers", []) or []
+    if unavailable_providers:
+        decision_trace["unavailable_providers"] = unavailable_providers
     return {
         "score": final,
         "verdict": verdict,
@@ -164,17 +178,7 @@ def explain(result, settings=None, as_of=None):
         "errors": errors,
         "reason_codes": sorted(set(reason_codes)),
         "recommended_action": recommended_action(verdict, confidence, internal),
-        "decision_trace": {
-            "methodology_version": METHODOLOGY_VERSION,
-            "evaluated_at": evaluation_time.isoformat(),
-            "observations": observation_trace,
-            "weighted_signal": round(weighted_signal, 6),
-            "total_weight": round(total_weight, 6),
-            "base_score": base_score,
-            "context_adjustments": context_adjustments,
-            "final_score": final,
-            "thresholds": thresholds,
-        },
+        "decision_trace": decision_trace,
     }
 
 

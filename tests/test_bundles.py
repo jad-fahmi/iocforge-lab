@@ -15,6 +15,13 @@ from ioc_enricher.scoring import score
 def _bundle_payload(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     result = EnrichmentResult(ioc="evil.example", ioc_type=IocType.DOMAIN)
+    result.unavailable_providers = [
+        {
+            "source": "virustotal",
+            "state": "unavailable",
+            "reason": "required_credentials_missing",
+        }
+    ]
     result.add(
         SourceResult(
             source="passive_dns",

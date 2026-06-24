@@ -364,6 +364,13 @@ def test_migration_backfills_observations_from_existing_snapshots(tmp_path):
 def test_replay_reproduces_historical_score_from_pinned_time_and_config(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.unavailable_providers = [
+        {
+            "source": "urlscan",
+            "state": "not_selected",
+            "reason": "excluded_by_source_filter",
+        }
+    ]
     result.add(
         SourceResult(
             source="virustotal",
@@ -397,6 +404,9 @@ def test_replay_reproduces_historical_score_from_pinned_time_and_config(tmp_path
     assert replay["replayed"]["decision_trace"]["observations"][0][
         "observation_id"
     ] == replay["observations"][0]["id"]
+    assert replay["replayed"]["decision_trace"]["unavailable_providers"] == (
+        result.unavailable_providers
+    )
 
 
 def test_replay_reports_legacy_snapshots_as_not_replayable(tmp_path):
