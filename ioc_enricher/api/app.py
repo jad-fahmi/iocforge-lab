@@ -532,7 +532,9 @@ def indicator_event_integrity(ioc: str) -> dict[str, Any]:
     store = _history_store()
     if store.indicator(ioc) is None:
         raise HTTPException(status_code=404, detail="indicator not found")
-    return store.verify_indicator_event_chain(ioc)
+    integrity = store.verify_indicator_event_chain(ioc)
+    integrity["evidence"] = store.verify_evidence_integrity(iocs=[ioc])
+    return integrity
 
 
 @api.post(
@@ -769,9 +771,14 @@ def investigation_events(
 @api.get("/investigations/{investigation_id}/integrity", tags=["investigations"])
 def investigation_event_integrity(investigation_id: int) -> dict[str, Any]:
     store = _history_store()
-    if store.investigation(investigation_id) is None:
+    investigation = store.investigation(investigation_id)
+    if investigation is None:
         raise HTTPException(status_code=404, detail="investigation not found")
-    return store.verify_investigation_event_chain(investigation_id)
+    integrity = store.verify_investigation_event_chain(investigation_id)
+    integrity["evidence"] = store.verify_evidence_integrity(
+        iocs=investigation["indicators"]
+    )
+    return integrity
 
 
 @api.get("/investigations/{investigation_id}/bundle", tags=["investigations"])

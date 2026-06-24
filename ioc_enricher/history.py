@@ -150,6 +150,24 @@ def _event_hash(
     return hashlib.sha256(payload).hexdigest()
 
 
+def _observation_identity(source: dict[str, Any]) -> dict[str, str]:
+    return {
+        "source": source["source"],
+        "ioc": source["ioc"],
+        "collected_at": source.get("collected_at", ""),
+        "raw_response_sha256": source["raw_response_sha256"],
+        "connector_version": source.get("connector_version", "unknown"),
+        "normalization_version": source.get("normalization_version", "1"),
+    }
+
+
+def _observation_key(source: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        _observation_identity(source), sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 class HistoryStore:
     """Append-only lookup history plus a current indicator index.
 
@@ -891,19 +909,7 @@ class HistoryStore:
         observation_json = json.dumps(
             source, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         )
-        identity = {
-            "source": source["source"],
-            "ioc": source["ioc"],
-            "collected_at": source.get("collected_at", ""),
-            "raw_response_sha256": raw_sha256,
-            "connector_version": source.get("connector_version", "unknown"),
-            "normalization_version": source.get("normalization_version", "1"),
-        }
-        observation_key = hashlib.sha256(
-            json.dumps(identity, sort_keys=True, separators=(",", ":")).encode(
-                "utf-8"
-            )
-        ).hexdigest()
+        observation_key = _observation_key(source)
         self.conn.execute(
             """
             INSERT OR IGNORE INTO evidence_observations(
@@ -964,6 +970,251 @@ class HistoryStore:
             for row in rows
         ]
 
+    def verify_evidence_integrity(
+        self,
+        iocs: list[str] | None = None,
+        enrichment_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Validate evidence hashes, identities, and snapshot-to-evidence links."""
+        issues: list[dict[str, Any]] = []
+        checked_observations = 0
+        checked_links = 0
+        requested_iocs = None if iocs is None else sorted(set(iocs))
+
+        with self._lock:
+            if enrichment_id is not None:
+                selected = self.conn.execute(
+                    "SELECT ioc FROM enrichments WHERE id = ?", (enrichment_id,)
+                ).fetchone()
+                if selected is None:
+                    return {
+                        "valid": False,
+                        "checked_observations": 0,
+                        "checked_snapshot_links": 0,
+                        "issues": [
+                            {
+                                "kind": "snapshot",
+                                "enrichment_id": enrichment_id,
+                                "problems": ["snapshot_not_found"],
+                            }
+                        ],
+                    }
+                if requested_iocs is None:
+                    requested_iocs = [selected["ioc"]]
+                elif selected["ioc"] not in requested_iocs:
+                    return {
+                        "valid": False,
+                        "checked_observations": 0,
+                        "checked_snapshot_links": 0,
+                        "issues": [
+                            {
+                                "kind": "snapshot",
+                                "enrichment_id": enrichment_id,
+                                "problems": ["snapshot_indicator_scope_mismatch"],
+                            }
+                        ],
+                    }
+
+            if requested_iocs == []:
+                return {
+                    "valid": True,
+                    "checked_observations": 0,
+                    "checked_snapshot_links": 0,
+                    "issues": [],
+                }
+
+            filters = []
+            parameters: list[Any] = []
+            if requested_iocs is not None:
+                placeholders = ",".join("?" for _ in requested_iocs)
+                filters.append(f"ioc IN ({placeholders})")
+                parameters.extend(requested_iocs)
+            if enrichment_id is not None:
+                filters.append(
+                    "id IN (SELECT observation_id FROM enrichment_observations "
+                    "WHERE enrichment_id = ?)"
+                )
+                parameters.append(enrichment_id)
+            where = f" WHERE {' AND '.join(filters)}" if filters else ""
+            observations = self.conn.execute(
+                "SELECT id, observation_key, source, ioc, ioc_type, collected_at, "
+                "observed_at, raw_response_sha256, connector_version, "
+                "normalization_version, observation_json FROM evidence_observations"
+                + where
+                + " ORDER BY id",
+                parameters,
+            ).fetchall()
+
+            for row in observations:
+                checked_observations += 1
+                problems: list[str] = []
+                try:
+                    payload = json.loads(row["observation_json"])
+                except (TypeError, json.JSONDecodeError):
+                    payload = None
+                    problems.append("observation_json_invalid")
+                if not isinstance(payload, dict):
+                    problems.append("observation_payload_not_object")
+                else:
+                    for field in (
+                        "source",
+                        "ioc",
+                        "ioc_type",
+                        "collected_at",
+                        "observed_at",
+                        "raw_response_sha256",
+                        "connector_version",
+                        "normalization_version",
+                    ):
+                        if payload.get(field) != row[field]:
+                            problems.append(f"column_mismatch:{field}")
+                    raw = payload.get("raw", {})
+                    if not isinstance(raw, dict):
+                        problems.append("raw_payload_not_object")
+                    else:
+                        canonical_raw = json.dumps(
+                            raw,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            ensure_ascii=False,
+                        ).encode("utf-8")
+                        actual_raw_hash = hashlib.sha256(canonical_raw).hexdigest()
+                        if actual_raw_hash != row["raw_response_sha256"]:
+                            problems.append("raw_response_hash_mismatch")
+                    try:
+                        if _observation_key(payload) != row["observation_key"]:
+                            problems.append("observation_key_mismatch")
+                    except (KeyError, TypeError, ValueError):
+                        problems.append("observation_identity_invalid")
+                if problems:
+                    issues.append(
+                        {
+                            "kind": "observation",
+                            "observation_id": row["id"],
+                            "problems": sorted(set(problems)),
+                        }
+                    )
+
+            snapshot_filters = []
+            snapshot_parameters: list[Any] = []
+            if requested_iocs is not None:
+                placeholders = ",".join("?" for _ in requested_iocs)
+                snapshot_filters.append(f"ioc IN ({placeholders})")
+                snapshot_parameters.extend(requested_iocs)
+            if enrichment_id is not None:
+                snapshot_filters.append("id = ?")
+                snapshot_parameters.append(enrichment_id)
+            snapshot_where = (
+                f" WHERE {' AND '.join(snapshot_filters)}" if snapshot_filters else ""
+            )
+            snapshots = self.conn.execute(
+                "SELECT id, ioc, looked_up_at, result_json FROM enrichments"
+                + snapshot_where
+                + " ORDER BY id",
+                snapshot_parameters,
+            ).fetchall()
+            for snapshot in snapshots:
+                try:
+                    snapshot_payload = json.loads(snapshot["result_json"])
+                except (TypeError, json.JSONDecodeError):
+                    issues.append(
+                        {
+                            "kind": "snapshot",
+                            "enrichment_id": snapshot["id"],
+                            "problems": ["snapshot_json_invalid"],
+                        }
+                    )
+                    continue
+                if not isinstance(snapshot_payload, dict):
+                    issues.append(
+                        {
+                            "kind": "snapshot",
+                            "enrichment_id": snapshot["id"],
+                            "problems": ["snapshot_payload_not_object"],
+                        }
+                    )
+                    continue
+                sources = snapshot_payload.get("sources", [])
+                if not isinstance(sources, list):
+                    issues.append(
+                        {
+                            "kind": "snapshot",
+                            "enrichment_id": snapshot["id"],
+                            "problems": ["snapshot_sources_invalid"],
+                        }
+                    )
+                    continue
+                links = self.conn.execute(
+                    "SELECT eo.ordinal, eo.observation_id, obs.observation_json, "
+                    "obs.ioc AS observation_ioc FROM enrichment_observations AS eo "
+                    "LEFT JOIN evidence_observations AS obs "
+                    "ON obs.id = eo.observation_id WHERE eo.enrichment_id = ? "
+                    "ORDER BY eo.ordinal",
+                    (snapshot["id"],),
+                ).fetchall()
+                checked_links += len(links)
+                links_by_ordinal = {row["ordinal"]: row for row in links}
+                for ordinal, source in enumerate(sources):
+                    link = links_by_ordinal.get(ordinal)
+                    problems = []
+                    if not isinstance(source, dict):
+                        problems.append("snapshot_source_not_object")
+                    if link is None:
+                        problems.append("evidence_link_missing")
+                    elif link["observation_json"] is None:
+                        problems.append("linked_observation_missing")
+                    elif link["observation_ioc"] != snapshot["ioc"]:
+                        problems.append("linked_observation_indicator_mismatch")
+                    elif isinstance(source, dict):
+                        try:
+                            evidence_payload = json.loads(link["observation_json"])
+                        except (TypeError, json.JSONDecodeError):
+                            evidence_payload = None
+                            problems.append("linked_observation_json_invalid")
+                        if isinstance(evidence_payload, dict):
+                            snapshot_source = dict(source)
+                            snapshot_source.pop("latency_ms", None)
+                            snapshot_source.pop("cache_hit", None)
+                            # Migrations add provenance defaults to old evidence
+                            # rows while leaving the original snapshot untouched.
+                            snapshot_source.setdefault(
+                                "collected_at", snapshot["looked_up_at"]
+                            )
+                            snapshot_source.setdefault(
+                                "raw_response_sha256",
+                                evidence_payload.get("raw_response_sha256"),
+                            )
+                            snapshot_source.setdefault("connector_version", "unknown")
+                            snapshot_source.setdefault("normalization_version", "1")
+                            if snapshot_source != evidence_payload:
+                                problems.append("snapshot_source_mismatch")
+                    if problems:
+                        issues.append(
+                            {
+                                "kind": "snapshot_link",
+                                "enrichment_id": snapshot["id"],
+                                "ordinal": ordinal,
+                                "problems": sorted(set(problems)),
+                            }
+                        )
+                for ordinal, _link in links_by_ordinal.items():
+                    if ordinal < 0 or ordinal >= len(sources):
+                        issues.append(
+                            {
+                                "kind": "snapshot_link",
+                                "enrichment_id": snapshot["id"],
+                                "ordinal": ordinal,
+                                "problems": ["snapshot_source_missing"],
+                            }
+                        )
+
+        return {
+            "valid": not issues,
+            "checked_observations": checked_observations,
+            "checked_snapshot_links": checked_links,
+            "issues": issues,
+        }
+
     def replay_enrichment(self, enrichment_id: int) -> dict[str, Any] | None:
         """Re-score a saved enrichment using its observations and pinned config."""
         with self._lock:
@@ -974,6 +1225,18 @@ class HistoryStore:
             return None
 
         original = json.loads(row["result_json"])
+        evidence_integrity = self.verify_evidence_integrity(
+            iocs=[original["ioc"]], enrichment_id=enrichment_id
+        )
+        if not evidence_integrity["valid"]:
+            return {
+                "enrichment_id": enrichment_id,
+                "replayable": False,
+                "reason": "evidence_integrity_failed",
+                "evidence_integrity": evidence_integrity,
+                "original": original,
+                "observations": self.observations_for_enrichment(enrichment_id),
+            }
         config = original.get("scoring_config")
         scored_at = original.get("scored_at")
         version = original.get("scoring_version")
@@ -991,6 +1254,7 @@ class HistoryStore:
                 "enrichment_id": enrichment_id,
                 "replayable": False,
                 "reason": reason,
+                "evidence_integrity": evidence_integrity,
                 "original": original,
                 "observations": observation_rows,
             }
@@ -1033,6 +1297,7 @@ class HistoryStore:
             "scoring_version": version,
             "scoring_config": config,
             "scored_at": scored_at,
+            "evidence_integrity": evidence_integrity,
             "original": {
                 key: original.get(key)
                 for key in decision_fields

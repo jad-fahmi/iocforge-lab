@@ -16,6 +16,9 @@ explicit integrity verification. Normalized provider observations and their
 snapshot links and temporal graph relationships also reject direct SQL updates
 and deletes. Event chains detect edits but are not anchored outside the database,
 so a privileged database operator could rewrite or truncate a whole chain.
+Indicator integrity checks recompute observation payload hashes and identity keys,
+then verify each saved snapshot source still matches its linked evidence. Replay
+refuses to score a snapshot when those evidence checks fail.
 
 The transformation proceeds in dependency order:
 

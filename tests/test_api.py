@@ -254,6 +254,8 @@ def test_investigation_integrity_endpoint_checks_event_chain(monkeypatch, tmp_pa
     assert response.status_code == 200
     assert response.json()["valid"] is True
     assert response.json()["checked_events"] == 2
+    assert response.json()["evidence"]["valid"] is True
+    assert response.json()["evidence"]["checked_observations"] == 0
 
 
 def test_investigation_bundle_api_exports_and_loads_offline(

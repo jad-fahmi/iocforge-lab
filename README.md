@@ -297,8 +297,8 @@ The versioned API includes:
 | `GET /api/v1/history/{baseline_id}/compare/{comparison_id}` | Compare evidence, scoring decisions, and time-bounded graph state |
 | `GET /api/v1/investigations/{id}/replay?as_of=...` | Reconstruct investigation state from event and evidence history at a selected time |
 | `GET /api/v1/investigations/{id}/compare?baseline_as_of=...&comparison_as_of=...` | Explain membership, decision, evidence, analyst-state, and graph changes across two times |
-| `GET /api/v1/indicators/{ioc}/integrity` | Verify the indicator analyst-event hash chain |
-| `GET /api/v1/investigations/{id}/integrity` | Verify the investigation-event hash chain |
+| `GET /api/v1/indicators/{ioc}/integrity` | Verify the indicator event chain, evidence hashes, and snapshot links |
+| `GET /api/v1/investigations/{id}/integrity` | Verify the investigation event chain and linked indicator evidence |
 | `GET /api/v1/investigations/{id}/bundle` | Download a self-contained `.iocforge` archive |
 | `POST /api/v1/investigations/bundles/inspect` | Load, validate, and replay an archive offline (`application/zip` body) |
 | `POST /api/v1/investigations/bundles/inspect?as_of=...&baseline_as_of=...&comparison_as_of=...` | Reconstruct or compare whole-case states using only the uploaded bundle |

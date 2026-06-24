@@ -197,6 +197,48 @@ def test_sqlite_rejects_evidence_and_snapshot_link_mutation(tmp_path):
     }
 
 
+def test_evidence_integrity_detects_tampering_and_blocks_replay(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.add(
+        SourceResult(
+            source="provider",
+            ioc="example.com",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            malicious=True,
+            raw={"answer": "203.0.113.7"},
+        )
+    )
+    score(result, as_of="2026-01-01T00:00:00+00:00")
+    enrichment_id = store.record(result, "2026-01-01T00:00:00+00:00")
+
+    valid = store.verify_evidence_integrity(iocs=["example.com"])
+    assert valid["valid"] is True
+    assert valid["checked_observations"] == 1
+    assert valid["checked_snapshot_links"] == 1
+
+    observation = store.observations_for_enrichment(enrichment_id)[0]
+    payload = observation["observation"]
+    payload["raw"]["answer"] = "198.51.100.42"
+    store.conn.execute("DROP TRIGGER evidence_observations_no_update")
+    store.conn.execute(
+        "UPDATE evidence_observations SET observation_json = ? WHERE id = ?",
+        (json.dumps(payload, sort_keys=True), observation["id"]),
+    )
+    store.conn.commit()
+
+    corrupted = store.verify_evidence_integrity(iocs=["example.com"])
+    assert corrupted["valid"] is False
+    assert any(
+        "raw_response_hash_mismatch" in item["problems"]
+        for item in corrupted["issues"]
+    )
+    replay = store.replay_enrichment(enrichment_id)
+    assert replay["replayable"] is False
+    assert replay["reason"] == "evidence_integrity_failed"
+
+
 def test_changed_provider_observation_gets_a_new_evidence_id(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     results = []
@@ -311,6 +353,7 @@ def test_migration_backfills_observations_from_existing_snapshots(tmp_path):
 
     assert evidence["collected_at"] == "2026-01-01T00:00:00+00:00"
     assert evidence["raw_response_sha256"] == hashlib.sha256(canonical_raw).hexdigest()
+    assert store.verify_evidence_integrity(iocs=["example.com"])["valid"] is True
     migrated_edge = store.relationships("old.example")[0]
     assert migrated_edge["valid_from"] == "2025-01-01T00:00:00+00:00"
     assert migrated_edge["evidence_observation_id"] is None
