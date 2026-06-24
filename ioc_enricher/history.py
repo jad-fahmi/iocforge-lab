@@ -648,6 +648,18 @@ class HistoryStore:
                     """
                 )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (12)")
+            if 13 not in applied:
+                self.conn.executescript(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS enrichments_no_update
+                    BEFORE UPDATE ON enrichments
+                    BEGIN SELECT RAISE(ABORT, 'enrichment snapshots are append-only'); END;
+                    CREATE TRIGGER IF NOT EXISTS enrichments_no_delete
+                    BEFORE DELETE ON enrichments
+                    BEGIN SELECT RAISE(ABORT, 'enrichment snapshots are append-only'); END;
+                    """
+                )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (13)")
             self.conn.commit()
 
     def _ensure_graph_entity(
@@ -817,9 +829,7 @@ class HistoryStore:
             enrichment_id = cursor.lastrowid
             if enrichment_id is None:
                 raise RuntimeError("failed to persist enrichment history")
-            trace_observations = payload.get("decision_trace", {}).get(
-                "observations", []
-            )
+            trace_observations = result.decision_trace.get("observations", [])
             for ordinal, source in enumerate(payload.get("sources", [])):
                 observation_id = self._store_observation(
                     source, enrichment_id, ordinal
@@ -877,10 +887,6 @@ class HistoryStore:
                         )
                 if ordinal < len(trace_observations):
                     trace_observations[ordinal]["observation_id"] = observation_id
-            self.conn.execute(
-                "UPDATE enrichments SET result_json = ? WHERE id = ?",
-                (json.dumps(payload, sort_keys=True), enrichment_id),
-            )
             self.conn.commit()
             return int(enrichment_id)
 
@@ -969,6 +975,25 @@ class HistoryStore:
             }
             for row in rows
         ]
+
+    def _with_observation_ids(
+        self, enrichment_id: int, result: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Add normalized evidence IDs to a returned decision trace."""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT observation_id, ordinal FROM enrichment_observations "
+                "WHERE enrichment_id = ? ORDER BY ordinal",
+                (enrichment_id,),
+            ).fetchall()
+        trace = result.get("decision_trace", {}).get("observations", [])
+        if not isinstance(trace, list):
+            return result
+        for row in rows:
+            ordinal = row["ordinal"]
+            if ordinal < len(trace) and isinstance(trace[ordinal], dict):
+                trace[ordinal]["observation_id"] = row["observation_id"]
+        return result
 
     def verify_evidence_integrity(
         self,
@@ -1154,6 +1179,29 @@ class HistoryStore:
                 ).fetchall()
                 checked_links += len(links)
                 links_by_ordinal = {row["ordinal"]: row for row in links}
+                decision_trace = snapshot_payload.get("decision_trace", {})
+                trace = (
+                    decision_trace.get("observations", [])
+                    if isinstance(decision_trace, dict)
+                    else []
+                )
+                if isinstance(trace, list):
+                    for ordinal, trace_item in enumerate(trace):
+                        link = links_by_ordinal.get(ordinal)
+                        if (
+                            isinstance(trace_item, dict)
+                            and "observation_id" in trace_item
+                            and link is not None
+                            and trace_item["observation_id"] != link["observation_id"]
+                        ):
+                            issues.append(
+                                {
+                                    "kind": "snapshot_link",
+                                    "enrichment_id": snapshot["id"],
+                                    "ordinal": ordinal,
+                                    "problems": ["decision_trace_observation_id_mismatch"],
+                                }
+                            )
                 for ordinal, source in enumerate(sources):
                     link = links_by_ordinal.get(ordinal)
                     problems = []
@@ -1224,7 +1272,9 @@ class HistoryStore:
         if row is None:
             return None
 
-        original = json.loads(row["result_json"])
+        original = self._with_observation_ids(
+            enrichment_id, json.loads(row["result_json"])
+        )
         evidence_integrity = self.verify_evidence_integrity(
             iocs=[original["ioc"]], enrichment_id=enrichment_id
         )
@@ -1822,8 +1872,12 @@ class HistoryStore:
             return None
         baseline_row = snapshots[baseline_id]
         comparison_row = snapshots[comparison_id]
-        baseline = json.loads(baseline_row["result_json"])
-        comparison = json.loads(comparison_row["result_json"])
+        baseline = self._with_observation_ids(
+            baseline_id, json.loads(baseline_row["result_json"])
+        )
+        comparison = self._with_observation_ids(
+            comparison_id, json.loads(comparison_row["result_json"])
+        )
         if baseline_row["ioc"] != comparison_row["ioc"]:
             raise ValueError("enrichment snapshots must refer to the same IOC")
         baseline_time = _normalize_timestamp(baseline_row["looked_up_at"])
@@ -2033,19 +2087,23 @@ class HistoryStore:
         params.extend([limit, offset])
         with self._lock:
             rows = self.conn.execute(query, params).fetchall()
-        return [
-            {
-                "id": row["id"],
-                "ioc": row["ioc"],
-                "ioc_type": row["ioc_type"],
-                "verdict": row["verdict"],
-                "score": row["score"],
-                "confidence": row["confidence"],
-                "looked_up_at": row["looked_up_at"],
-                "result": json.loads(row["result_json"]),
-            }
-            for row in rows
-        ]
+        items = []
+        for row in rows:
+            items.append(
+                {
+                    "id": row["id"],
+                    "ioc": row["ioc"],
+                    "ioc_type": row["ioc_type"],
+                    "verdict": row["verdict"],
+                    "score": row["score"],
+                    "confidence": row["confidence"],
+                    "looked_up_at": row["looked_up_at"],
+                    "result": self._with_observation_ids(
+                        row["id"], json.loads(row["result_json"])
+                    ),
+                }
+            )
+        return items
 
     def dashboard_summary(self, recent_limit: int = 10) -> dict[str, Any]:
         """Return compact persisted metrics for an analyst dashboard."""
@@ -2308,6 +2366,9 @@ class HistoryStore:
             ]
 
         for snapshot in snapshots:
+            snapshot["result"] = self._with_observation_ids(
+                snapshot["id"], snapshot["result"]
+            )
             snapshot["observations"] = self.observations_for_enrichment(snapshot["id"])
 
         edges: dict[int, dict[str, Any]] = {}

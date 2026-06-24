@@ -197,6 +197,44 @@ def test_sqlite_rejects_evidence_and_snapshot_link_mutation(tmp_path):
     }
 
 
+def test_enrichment_snapshots_are_append_only_and_link_ids_are_derived(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.add(
+        SourceResult(
+            source="provider",
+            ioc="example.com",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            raw={"answer": "203.0.113.7"},
+        )
+    )
+    score(result, as_of="2026-01-01T00:00:00+00:00")
+    enrichment_id = store.record(result, "2026-01-01T00:00:00+00:00")
+    evidence_id = store.observations_for_enrichment(enrichment_id)[0]["id"]
+    persisted = json.loads(
+        store.conn.execute(
+            "SELECT result_json FROM enrichments WHERE id = ?", (enrichment_id,)
+        ).fetchone()["result_json"]
+    )
+
+    assert "observation_id" not in persisted["decision_trace"]["observations"][0]
+    assert result.to_dict()["decision_trace"]["observations"][0][
+        "observation_id"
+    ] == evidence_id
+    listed = store.list_enrichments("example.com")[0]
+    assert listed["result"]["decision_trace"]["observations"][0][
+        "observation_id"
+    ] == evidence_id
+
+    with pytest.raises(sqlite3.IntegrityError, match="enrichment snapshots are append-only"):
+        store.conn.execute(
+            "UPDATE enrichments SET verdict = 'clean' WHERE id = ?", (enrichment_id,)
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="enrichment snapshots are append-only"):
+        store.conn.execute("DELETE FROM enrichments WHERE id = ?", (enrichment_id,))
+
+
 def test_evidence_integrity_detects_tampering_and_blocks_replay(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
