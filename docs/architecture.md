@@ -110,8 +110,9 @@ methodology version is supported. Both interfaces can compare two stored
 snapshots, including evidence-to-decision attribution and graph edges visible
 at each snapshot time. Replay reports legacy records with missing inputs as
 unavailable instead of silently applying current defaults. DNS,
-passive-DNS, certificate-transparency, and Shodan observations emit relationship
-candidates; Shodan IP observations can link validated ASNs and hostnames. The
+passive-DNS, certificate-transparency, RDAP, and Shodan observations emit
+relationship candidates. RDAP domain observations can link validated
+nameservers; Shodan IP observations can link validated ASNs and hostnames. The
 history store creates edges linked to their source observation and stores both
 provider validity and IOCForge recording times. API graph reads
 support bounded-depth traversal, an `as_of` filter, and explicit root type

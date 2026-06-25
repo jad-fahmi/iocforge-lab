@@ -1,6 +1,7 @@
 """RDAP enrichment for public IP addresses and domain registrations."""
 
 from ioc_enricher.connectors.base import Connector, log
+from ioc_enricher.ioc.detect import detect, normalize
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import SourceResult
 
@@ -51,6 +52,29 @@ class RDAP(Connector):
             "start_address": payload.get("startAddress"),
             "end_address": payload.get("endAddress"),
         }
+        related_entities = []
+        nameservers = payload.get("nameservers", [])
+        if ioc_type == IocType.DOMAIN and isinstance(nameservers, list):
+            for nameserver in nameservers:
+                if not isinstance(nameserver, dict):
+                    continue
+                hostname = nameserver.get("ldhName")
+                if not isinstance(hostname, str):
+                    continue
+                hostname = hostname.strip().rstrip(".")
+                if not hostname or detect(hostname) != IocType.DOMAIN:
+                    continue
+                related_entities.append(
+                    {
+                        "source_ioc": normalize(ioc, IocType.DOMAIN),
+                        "target_ioc": normalize(hostname, IocType.DOMAIN),
+                        "relationship_type": "nameserver",
+                        "source_entity_type": "domain",
+                        "target_entity_type": "hostname",
+                        "attributes": {"source_field": "nameservers"},
+                    }
+                )
+            raw["nameservers"] = nameservers
         return SourceResult(
             source=self.name,
             ioc=ioc,
@@ -59,4 +83,5 @@ class RDAP(Connector):
             raw={key: value for key, value in raw.items() if value is not None},
             tags=tags,
             observed_at=last_changed,
+            related_entities=related_entities,
         )

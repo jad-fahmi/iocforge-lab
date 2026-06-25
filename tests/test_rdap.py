@@ -13,6 +13,13 @@ def test_rdap_enriches_domain_without_api_key():
                 "objectClassName": "domain",
                 "handle": "EXAMPLE1",
                 "status": ["active"],
+                "nameservers": [
+                    {"ldhName": "NS1.Example.net."},
+                    {"ldhName": "xn--bcher-kva.example"},
+                    {"ldhName": "invalid hostname"},
+                    {"unicodeName": "bücher.example"},
+                    "malformed entry",
+                ],
                 "events": [
                     {"eventAction": "last changed", "eventDate": "2025-01-02T00:00:00Z"}
                 ],
@@ -26,6 +33,31 @@ def test_rdap_enriches_domain_without_api_key():
     assert result.malicious is None
     assert result.raw["handle"] == "EXAMPLE1"
     assert result.observed_at == "2025-01-02T00:00:00Z"
+    assert result.raw["nameservers"] == [
+        {"ldhName": "NS1.Example.net."},
+        {"ldhName": "xn--bcher-kva.example"},
+        {"ldhName": "invalid hostname"},
+        {"unicodeName": "bücher.example"},
+        "malformed entry",
+    ]
+    assert result.related_entities == [
+        {
+            "source_ioc": "example.com",
+            "target_ioc": "ns1.example.net",
+            "relationship_type": "nameserver",
+            "source_entity_type": "domain",
+            "target_entity_type": "hostname",
+            "attributes": {"source_field": "nameservers"},
+        },
+        {
+            "source_ioc": "example.com",
+            "target_ioc": "xn--bcher-kva.example",
+            "relationship_type": "nameserver",
+            "source_entity_type": "domain",
+            "target_entity_type": "hostname",
+            "attributes": {"source_field": "nameservers"},
+        },
+    ]
 
 
 @respx.mock
