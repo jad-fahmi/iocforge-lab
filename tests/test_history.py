@@ -1120,6 +1120,65 @@ def test_provider_relationships_link_to_observations_and_pivots(tmp_path):
         raise AssertionError("unobserved relationships must not cite evidence")
 
 
+def test_shodan_infrastructure_pivots_retain_observation_provenance(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="203.0.113.7", ioc_type=IocType.IPV4)
+    result.add(
+        SourceResult(
+            source="shodan",
+            ioc="203.0.113.7",
+            ioc_type=IocType.IPV4,
+            found=True,
+            raw={"asn": "AS64500", "hostnames": ["WWW.Example.com"]},
+            collected_at="2026-01-10T00:00:00+00:00",
+            related_entities=[
+                {
+                    "source_ioc": "203.0.113.7",
+                    "target_ioc": "AS64500",
+                    "relationship_type": "announced_by",
+                    "source_entity_type": "ip",
+                    "target_entity_type": "asn",
+                    "attributes": {"source_field": "asn"},
+                },
+                {
+                    "source_ioc": "203.0.113.7",
+                    "target_ioc": "www.example.com",
+                    "relationship_type": "observed_hostname",
+                    "source_entity_type": "ip",
+                    "target_entity_type": "hostname",
+                    "attributes": {"source_field": "hostnames"},
+                },
+            ],
+        )
+    )
+
+    enrichment_id = store.record(result)
+    edges = store.relationships("203.0.113.7")
+    observation_id = store.observations_for_enrichment(enrichment_id)[0]["id"]
+
+    assert {edge["relationship_type"] for edge in edges} == {
+        "announced_by",
+        "observed_hostname",
+    }
+    assert all(edge["evidence_source"] == "shodan" for edge in edges)
+    assert all(edge["evidence_observation_id"] == observation_id for edge in edges)
+    assert {edge["target_entity_type"] for edge in edges} == {"asn", "hostname"}
+    assert {edge["target_ioc"] for edge in edges} == {
+        "AS64500",
+        "www.example.com",
+    }
+    pivots = store.suggest_pivots("203.0.113.7")
+    assert {candidate["entity_type"] for candidate in pivots["candidates"]} == {
+        "asn",
+        "hostname",
+    }
+    assert all(
+        edge["evidence_observation_id"] == observation_id
+        for candidate in pivots["candidates"]
+        for edge in candidate["supporting_edges"]
+    )
+
+
 def test_bad_edge_metadata_does_not_drop_provider_observation(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)

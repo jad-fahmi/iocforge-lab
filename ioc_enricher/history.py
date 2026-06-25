@@ -32,7 +32,13 @@ GRAPH_ENTITY_TYPES = {
     "cve",
     "unknown",
 }
-HOSTNAME_RELATIONSHIPS = {"cname_to", "mail_exchange", "nameserver", "certificate_name"}
+HOSTNAME_RELATIONSHIPS = {
+    "cname_to",
+    "mail_exchange",
+    "nameserver",
+    "certificate_name",
+    "observed_hostname",
+}
 PIVOT_ENTITY_WEIGHTS = {
     "certificate": 1.0,
     "ip": 0.95,
