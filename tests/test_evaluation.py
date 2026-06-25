@@ -19,6 +19,11 @@ def test_provider_evaluation_metrics_are_reproducible_and_cover_failure_modes():
     alpha = first["providers"]["alpha"]
     beta = first["providers"]["beta"]
     assert alpha["coverage"] == 0.75
+    coverage_interval = alpha["coverage_interval_95"]
+    assert coverage_interval["method"] == "wilson_score"
+    assert coverage_interval["successes"] == 3
+    assert coverage_interval["trials"] == 4
+    assert coverage_interval["lower"] < alpha["coverage"] < coverage_interval["upper"]
     assert alpha["failure_rate"] == 0.25
     assert alpha["latency_ms"] == {
         "sample_count": 4,
@@ -28,10 +33,47 @@ def test_provider_evaluation_metrics_are_reproducible_and_cover_failure_modes():
     }
     assert alpha["classification"]["false_positive"] == 1
     assert alpha["classification"]["false_negative"] == 0
+    precision_interval = alpha["classification"]["wilson_intervals_95"]["precision"]
+    assert precision_interval["successes"] == 1
+    assert precision_interval["trials"] == 2
+    assert precision_interval["lower"] < 0.5 < precision_interval["upper"]
     assert beta["classification"]["false_negative"] == 1
     assert beta["freshness_age_seconds"]["future_timestamp_count"] == 1
     assert first["disagreement"]["rate"] == 0.5
     assert first["positive_overlap"][0]["jaccard"] == 0.0
+    assert "not be treated as production" in first["reliability_note"]
+
+
+def test_provider_evaluation_omits_unmeasurable_classification_intervals():
+    result = evaluate_fixture(
+        {
+            "schema_version": 1,
+            "providers": ["provider"],
+            "cases": [
+                {
+                    "id": "unknown-truth",
+                    "ioc": "unknown.example",
+                    "truth": {"malicious": None},
+                    "sources": [
+                        {
+                            "source": "provider",
+                            "found": True,
+                            "malicious": True,
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    metrics = result["providers"]["provider"]
+    assert metrics["coverage_interval_95"]["trials"] == 1
+    assert metrics["classification"]["labelled_count"] == 0
+    assert metrics["classification"]["wilson_intervals_95"] == {
+        "precision": None,
+        "recall": None,
+        "specificity": None,
+    }
 
 
 def test_cache_hits_are_excluded_from_provider_latency_samples():

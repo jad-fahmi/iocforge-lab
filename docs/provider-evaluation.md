@@ -21,6 +21,9 @@ optional `error`, `observed_at`, `latency_ms`, and `cache_hit`.
   as not attempted. An explicit error is attempted but not covered.
 - **Failure rate** is source results with a non-null error divided by attempted
   results.
+- **Coverage and failure-rate intervals** are two-sided 95% Wilson score
+  intervals over expected and attempted outcomes respectively. A zero denominator
+  produces no interval.
 - **Latency** includes attempted results with `latency_ms`; cache hits are
   excluded. Mean and nearest-rank p50/p95 are reported in milliseconds.
 - **Freshness** is `as_of - observed_at` for successful results with both
@@ -28,13 +31,18 @@ optional `error`, `observed_at`, `latency_ms`, and `cache_hit`.
 - **False positives, false negatives, precision, recall, F1, and balanced
   accuracy** use only cases with boolean ground truth and successful boolean
   provider verdicts. Balanced accuracy is omitted unless both truth classes
-  have measurable recall.
+  have measurable recall. The report includes 95% Wilson intervals for precision,
+  recall, and specificity when their denominators are non-zero.
 - **Disagreement** compares successful boolean verdicts pairwise for the same
   case. **Overlap** is Jaccard similarity between providers' sets of positively
   classified IOC values.
 
 The report includes a SHA-256 digest of canonicalized fixture JSON and a fixed
-methodology version. Re-running the same fixture produces the same report. The
+methodology version (`iocforge-provider-evaluation-v2`). Re-running the same
+fixture produces the same report. Wilson intervals assume independent binomial
+outcomes; repeated or correlated indicators and unrepresentative labels can make
+them overconfident. They expose sample size uncertainty, not provider accuracy
+outside the fixture. The
 example fixture is intentionally small and demonstrates a provider outage,
 rate-limit error, conflicting verdict, stale evidence, a future timestamp, and
 an incomplete result. Its numbers are not production reliability estimates.

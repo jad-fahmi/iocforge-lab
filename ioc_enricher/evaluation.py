@@ -9,8 +9,9 @@ from pathlib import Path
 from typing import Any
 
 EVALUATION_SCHEMA_VERSION = 1
-EVALUATION_METHODOLOGY = "iocforge-provider-evaluation-v1"
+EVALUATION_METHODOLOGY = "iocforge-provider-evaluation-v2"
 MAX_EVALUATION_FIXTURE_BYTES = 10 * 1024 * 1024
+WILSON_95_Z = 1.959963984540054
 
 
 def _canonical_json(value: Any) -> bytes:
@@ -37,6 +38,32 @@ def _timestamp(value: Any, field: str) -> datetime:
 
 def _ratio(numerator: int, denominator: int) -> float | None:
     return round(numerator / denominator, 4) if denominator else None
+
+
+def _wilson_interval(successes: int, trials: int) -> dict[str, Any] | None:
+    """Return the two-sided 95% Wilson score interval for one binomial rate."""
+    if trials <= 0:
+        return None
+    z_squared = WILSON_95_Z**2
+    observed = successes / trials
+    denominator = 1 + z_squared / trials
+    center = (observed + z_squared / (2 * trials)) / denominator
+    margin = (
+        WILSON_95_Z
+        * math.sqrt(
+            observed * (1 - observed) / trials
+            + z_squared / (4 * trials**2)
+        )
+        / denominator
+    )
+    return {
+        "confidence_level": 0.95,
+        "successes": successes,
+        "trials": trials,
+        "lower": round(max(0.0, center - margin), 4),
+        "upper": round(min(1.0, center + margin), 4),
+        "method": "wilson_score",
+    }
 
 
 def _mean(values: list[float]) -> float | None:
@@ -240,6 +267,18 @@ def evaluate_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
         precision = _ratio(true_positive, true_positive + false_positive)
         recall = _ratio(true_positive, true_positive + false_negative)
         negative_recall = _ratio(true_negative, true_negative + false_positive)
+        specificity = negative_recall
+        classification_intervals = {
+            "precision": _wilson_interval(
+                true_positive, true_positive + false_positive
+            ),
+            "recall": _wilson_interval(
+                true_positive, true_positive + false_negative
+            ),
+            "specificity": _wilson_interval(
+                true_negative, true_negative + false_positive
+            ),
+        }
         balanced_accuracy = (
             round((recall + negative_recall) / 2, 4)
             if recall is not None and negative_recall is not None
@@ -258,8 +297,12 @@ def evaluate_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
             "not_attempted_count": expected_count - attempted_count,
             "found_count": successful_count,
             "coverage": _ratio(successful_count, expected_count),
+            "coverage_interval_95": _wilson_interval(
+                successful_count, expected_count
+            ),
             "failure_count": failures,
             "failure_rate": _ratio(failures, attempted_count),
+            "failure_rate_interval_95": _wilson_interval(failures, attempted_count),
             "latency_ms": {
                 "sample_count": len(latency_samples),
                 "mean": _mean(latency_samples),
@@ -280,8 +323,10 @@ def evaluate_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
                 "false_negative": false_negative,
                 "precision": precision,
                 "recall": recall,
+                "specificity": specificity,
                 "f1": f1,
                 "balanced_accuracy": balanced_accuracy,
+                "wilson_intervals_95": classification_intervals,
             },
         }
 
@@ -335,8 +380,9 @@ def evaluate_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
         },
         "positive_overlap": overlap,
         "reliability_note": (
-            "Metrics describe only this labeled fixture. Balanced accuracy is "
-            "reported when both truth classes are measurable; do not treat small "
-            "samples as production reliability weights."
+            "Metrics and Wilson score intervals describe only this fixture. "
+            "Balanced accuracy is reported when both truth classes are measurable. "
+            "Small or unrepresentative samples must not be treated as production "
+            "reliability weights."
         ),
     }
