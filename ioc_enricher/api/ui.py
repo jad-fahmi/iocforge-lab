@@ -197,9 +197,14 @@ async function inspectCaseIndicator(investigationId, ioc, caseEvents) {
       renderList('Ranked pivots', pivots.candidates.map(candidate =>
         `${candidate.entity_type}: ${candidate.ioc} (score ${candidate.priority_score}; ${candidate.supporting_edges.length} supporting edge(s))`
       )),
-      renderList('Multi-hop pivot paths', pivotPaths.candidates.map(candidate =>
-        `${candidate.path.map(item=>`${item.entity_type}: ${item.ioc}`).join(' -> ')} (score ${candidate.priority_score}; ${candidate.hop_count} hop(s); ${candidate.hops.map(hop=>`${hop.evidence_source} observation ${hop.evidence_observation_id||'analyst'}`).join(' -> ')})`
-      )),
+      renderList('Multi-hop pivot paths', pivotPaths.candidates.flatMap(candidate => {
+        const describePath=(path,label)=>`${label}: ${path.path.map(item=>`${item.entity_type}: ${item.ioc}`).join(' -> ')} (score ${path.priority_score}; ${path.hop_count} hop(s); ${path.hops.map(hop=>`${hop.evidence_source} observation ${hop.evidence_observation_id||'analyst'}`).join(' -> ')})`;
+        return [
+          `${describePath(candidate,'Best path')} (${candidate.supporting_path_count} path(s) found)`,
+          ...(candidate.alternative_paths||[]).map((path,index)=>describePath(path,`Alternative ${index+1}`))
+        ];
+      })),
+      node('p', `Pivot path search expanded ${pivotPaths.budget.expansions} edge(s); truncated: ${pivotPaths.budget.truncated}; at most ${pivotPaths.budget.alternative_path_limit} alternatives per pivot.`, 'empty'),
       node('p', `Depth ${graph.max_depth}; ${graph.edges.length} edge(s); truncated: ${graph.truncated}.`, 'empty')
     );
 

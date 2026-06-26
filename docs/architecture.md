@@ -43,10 +43,11 @@ The transformation proceeds in dependency order:
 3. **Temporal graph and pivots:** typed entity nodes, direct pivot ranking, and
    bounded multi-hop pivot paths are available. Paths use the weakest edge
    confidence, endpoint type weight, and an explicit depth penalty; every hop
-   retains its evidence source, observation ID, and validity interval. Graph
-   traversal has a depth limit of five and a 500-edge budget; path ranking caps
-   expansions at 5,000. Continue expanding relationship sources and evaluating
-   the prioritization heuristic.
+   retains its evidence source, observation ID, and validity interval. Results
+   include up to three alternate edge-distinct routes to each pivot. Shared
+   providers or observations mean alternate routes are not independent
+   corroboration. Graph traversal has a depth limit of five and a 500-edge
+   budget; path ranking caps expansions at 5,000.
 4. **Investigation integrity and bundles:** per-indicator and per-investigation
    event chains can now be verified. A versioned `.iocforge` archive packages
    case metadata, linked snapshots and evidence, bounded graph state, and event

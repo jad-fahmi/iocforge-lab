@@ -1034,6 +1034,8 @@ def test_multihop_pivot_paths_retain_provenance_and_time_bounds(tmp_path):
     ]
     assert path["priority_basis"]["minimum_edge_confidence"] == 0.7
     assert path["priority_basis"]["hop_count"] == 5
+    assert path["supporting_path_count"] == 1
+    assert path["alternative_paths"] == []
     assert result["budget"]["truncated"] is False
     assert "expired.example" not in by_value
 
@@ -1041,6 +1043,71 @@ def test_multihop_pivot_paths_retain_provenance_and_time_bounds(tmp_path):
         "login.example", max_depth=4, as_of="2026-01-01T00:00:00+00:00"
     )
     assert payload_hash not in {item["ioc"] for item in shallower["candidates"]}
+
+
+def test_multihop_pivot_search_retains_ranked_alternative_routes(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    relationships = [
+        ("root.example", "192.0.2.1", "resolves_to", "domain", "ip", 0.9, "passive_dns"),
+        ("root.example", "192.0.2.2", "resolves_to", "domain", "ip", 0.8, "dns"),
+        (
+            "192.0.2.1",
+            "https://root.example/login",
+            "observed_url",
+            "ip",
+            "url",
+            0.9,
+            "urlscan",
+        ),
+        (
+            "192.0.2.2",
+            "https://root.example/login",
+            "observed_url",
+            "ip",
+            "url",
+            0.8,
+            "urlscan",
+        ),
+        (
+            "https://root.example/login",
+            "a" * 64,
+            "response_hash",
+            "url",
+            "file_hash",
+            0.9,
+            "urlscan",
+        ),
+    ]
+    for source, target, relationship, source_type, target_type, confidence, provider in relationships:
+        store.add_relationship(
+            source,
+            target,
+            relationship,
+            confidence=confidence,
+            evidence_source=provider,
+            recorded_at="2025-01-01T00:00:00+00:00",
+            valid_from="2025-01-01T00:00:00+00:00",
+            source_entity_type=source_type,
+            target_entity_type=target_type,
+        )
+
+    result = store.suggest_pivot_paths(
+        "root.example", max_depth=4, as_of="2026-01-01T00:00:00+00:00"
+    )
+    payload_hash = "a" * 64
+    candidate = next(item for item in result["candidates"] if item["ioc"] == payload_hash)
+
+    assert candidate["path"][1]["ioc"] == "192.0.2.1"
+    assert candidate["supporting_path_count"] == 2
+    assert len(candidate["alternative_paths"]) == 1
+    alternative = candidate["alternative_paths"][0]
+    assert alternative["path"][1]["ioc"] == "192.0.2.2"
+    assert [hop["evidence_source"] for hop in alternative["hops"]] == [
+        "dns",
+        "urlscan",
+        "urlscan",
+    ]
+    assert result["budget"]["alternative_path_limit"] == 3
 
 
 def test_multihop_pivot_search_obeys_expansion_budget(tmp_path):
@@ -1065,6 +1132,11 @@ def test_multihop_pivot_search_obeys_expansion_budget(tmp_path):
 
     assert result["budget"]["expansions"] == 5000
     assert result["budget"]["max_expansions"] == 5000
+    assert result["budget"]["alternative_path_limit"] == 3
+    assert all(
+        len(candidate["alternative_paths"]) <= 3
+        for candidate in result["candidates"]
+    )
     assert result["budget"]["truncated"] is True
 
 

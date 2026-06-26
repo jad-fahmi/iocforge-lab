@@ -40,6 +40,7 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
     assert "Back to previous pivot" in response.text
     assert "graph-node" in response.text
     assert "Multi-hop pivot paths" in response.text
+    assert "candidate.alternative_paths" in response.text
     assert "/pivot-paths?depth=4&limit=25" in response.text
     assert "/pivots?limit=25" in response.text
     assert "Source verdict and analyst override" in response.text
@@ -558,6 +559,8 @@ def test_relationship_endpoints_return_graph_data(monkeypatch, tmp_path):
         "ip",
         "certificate",
     ]
+    assert certificate_path["supporting_path_count"] == 1
+    assert certificate_path["alternative_paths"] == []
     assert paths.json()["budget"]["max_depth"] == 2
     invalid_time = client.get(
         "/api/v1/indicators/evil.example/graph", params={"as_of": "not-a-date"}

@@ -52,6 +52,7 @@ PIVOT_ENTITY_WEIGHTS = {
     "cve": 0.5,
 }
 MAX_PIVOT_PATH_EXPANSIONS = 5000
+MAX_PIVOT_ALTERNATIVE_PATHS = 3
 
 
 def _entity_type_for(
@@ -3177,6 +3178,9 @@ class HistoryStore:
             )
 
         ranked_by_entity: dict[int, dict[str, Any]] = {}
+        route_edge_keys: dict[int, set[tuple[int, ...]]] = defaultdict(set)
+        route_summaries: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        route_counts: dict[int, int] = defaultdict(int)
         expansions = 0
         budget_truncated = False
         if root is not None:
@@ -3210,6 +3214,7 @@ class HistoryStore:
                             confidence_floor * weight * depth_penalty, 4
                         )
                         path_key = tuple(next_nodes)
+                        edge_key = tuple(path_edge[2]["id"] for path_edge in next_edges)
                         previous = ranked_by_entity.get(neighbor)
                         candidate_key = (priority_score, -hops)
                         should_replace = previous is None
@@ -3222,47 +3227,78 @@ class HistoryStore:
                                 candidate_key == previous_key
                                 and path_key < tuple(previous["_path_entity_ids"])
                             )
-                        if should_replace:
-                            path_description = []
-                            for entity_id in next_nodes:
-                                path_node = nodes[entity_id]
-                                path_description.append(
-                                    {
-                                        "entity_id": entity_id,
-                                        "ioc": path_node["display_value"],
-                                        "entity_type": path_node["entity_type"],
-                                    }
-                                )
-                            hops_description = []
-                            for from_id, to_id, path_edge in next_edges:
-                                hops_description.append(
-                                    {
-                                        "from": nodes[from_id]["display_value"],
-                                        "to": nodes[to_id]["display_value"],
-                                        "traversal": (
-                                            "forward"
-                                            if path_edge["source_entity_id"] == from_id
-                                            else "reverse"
+                        path_description = [
+                            {
+                                "entity_id": entity_id,
+                                "ioc": nodes[entity_id]["display_value"],
+                                "entity_type": nodes[entity_id]["entity_type"],
+                            }
+                            for entity_id in next_nodes
+                        ]
+                        hops_description = []
+                        for from_id, to_id, path_edge in next_edges:
+                            hops_description.append(
+                                {
+                                    "from": nodes[from_id]["display_value"],
+                                    "to": nodes[to_id]["display_value"],
+                                    "traversal": (
+                                        "forward"
+                                        if path_edge["source_entity_id"] == from_id
+                                        else "reverse"
+                                    ),
+                                    "source_ioc": path_edge["source_ioc"],
+                                    "target_ioc": path_edge["target_ioc"],
+                                    "relationship_type": path_edge[
+                                        "relationship_type"
+                                    ],
+                                    "confidence": float(path_edge["confidence"]),
+                                    "evidence_source": path_edge["evidence_source"],
+                                    "evidence_observation_id": path_edge[
+                                        "evidence_observation_id"
+                                    ],
+                                    "created_at": path_edge["created_at"],
+                                    "valid_from": path_edge["valid_from"],
+                                    "valid_to": path_edge["valid_to"],
+                                    "attributes": path_edge["attributes"],
+                                }
+                            )
+                        if edge_key not in route_edge_keys[neighbor]:
+                            route_edge_keys[neighbor].add(edge_key)
+                            route_counts[neighbor] += 1
+                            route_summaries[neighbor].append(
+                                {
+                                    "priority_score": priority_score,
+                                    "hop_count": hops,
+                                    "priority_basis": {
+                                        "minimum_edge_confidence": confidence_floor,
+                                        "entity_type_weight": weight,
+                                        "hop_count": hops,
+                                        "depth_penalty": round(depth_penalty, 4),
+                                        "formula": (
+                                            "minimum_edge_confidence * "
+                                            "entity_type_weight / hop_count"
                                         ),
-                                        "source_ioc": path_edge["source_ioc"],
-                                        "target_ioc": path_edge["target_ioc"],
-                                        "relationship_type": path_edge[
-                                            "relationship_type"
-                                        ],
-                                        "confidence": float(path_edge["confidence"]),
-                                        "evidence_source": path_edge[
-                                            "evidence_source"
-                                        ],
-                                        "evidence_observation_id": path_edge[
-                                            "evidence_observation_id"
-                                        ],
-                                        "created_at": path_edge["created_at"],
-                                        "valid_from": path_edge["valid_from"],
-                                        "valid_to": path_edge["valid_to"],
-                                        "attributes": path_edge["attributes"],
-                                    }
+                                    },
+                                    "path": path_description,
+                                    "hops": hops_description,
+                                    "_path_entity_ids": path_key,
+                                    "_path_edge_ids": edge_key,
+                                }
+                            )
+                            route_summaries[neighbor].sort(
+                                key=lambda route: (
+                                    -route["priority_score"],
+                                    route["hop_count"],
+                                    route["_path_entity_ids"],
+                                    route["_path_edge_ids"],
                                 )
+                            )
+                            del route_summaries[neighbor][
+                                MAX_PIVOT_ALTERNATIVE_PATHS + 1 :
+                            ]
+                        if should_replace:
                             ranked_by_entity[neighbor] = {
+                                "_entity_id": neighbor,
                                 "ioc": pivot_node["display_value"],
                                 "entity_type": pivot_node["entity_type"],
                                 "canonical_value": pivot_node["canonical_value"],
@@ -3281,6 +3317,7 @@ class HistoryStore:
                                 "path": path_description,
                                 "hops": hops_description,
                                 "_path_entity_ids": path_key,
+                                "_path_edge_ids": edge_key,
                             }
                     if len(next_edges) < max_depth:
                         stack.append((neighbor, next_nodes, next_edges))
@@ -3298,7 +3335,24 @@ class HistoryStore:
             ),
         )[:limit]
         for candidate in ranked:
+            entity_id = candidate.pop("_entity_id")
+            candidate["supporting_path_count"] = route_counts[entity_id]
+            candidate["alternative_paths"] = [
+                {
+                    key: route[key]
+                    for key in (
+                        "priority_score",
+                        "hop_count",
+                        "priority_basis",
+                        "path",
+                        "hops",
+                    )
+                }
+                for route in route_summaries[entity_id]
+                if route["_path_edge_ids"] != candidate["_path_edge_ids"]
+            ][:MAX_PIVOT_ALTERNATIVE_PATHS]
             candidate.pop("_path_entity_ids")
+            candidate.pop("_path_edge_ids")
         return {
             "ioc": ioc,
             "as_of": at,
@@ -3308,6 +3362,7 @@ class HistoryStore:
                 "max_depth": max_depth,
                 "edge_limit": 500,
                 "max_expansions": MAX_PIVOT_PATH_EXPANSIONS,
+                "alternative_path_limit": MAX_PIVOT_ALTERNATIVE_PATHS,
                 "expansions": expansions,
                 "truncated": bool(
                     graph["truncated"] or budget_truncated
