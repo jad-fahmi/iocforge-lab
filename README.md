@@ -156,7 +156,8 @@ Providers can be disabled without deleting their credentials:
 Scheduler defaults retain current behavior: all providers are included, calls
 have a 10-second per-request timeout and up to two retries, and quotas apply
 only when configured. `max_concurrency` and `max_pending` bound work submitted
-through one engine. Provider priority sorts each lookup's dispatch order;
+through one engine. Provider priority orders eligible queued work across
+concurrent lookups, with FIFO ordering at the same priority;
 `optional: true` sources can be omitted by setting
 `scheduler.include_optional` to `false`. Per-provider quotas are enforced in
 memory for the lifetime of the engine. See [architecture notes](docs/architecture.md)

@@ -158,9 +158,11 @@ hide the live provider's result or outage.
 The scheduler bounds concurrent provider work and queued submissions across
 lookups made through the same engine. Provider policy is configured under each
 `providers.<name>` object; `requests_per_window` and `window_seconds` enforce an
-in-memory sliding-window quota. Priority is applied when each lookup is
-dispatched. Optional providers can be skipped with `scheduler.include_optional`
-while remaining visible in the result as not run. Retry limits use bounded
+in-memory sliding-window quota. A shared bounded queue orders ready work across
+concurrent lookups by provider priority and FIFO order within the same priority;
+provider concurrency limits are applied when workers select queued jobs.
+Optional providers can be skipped with `scheduler.include_optional` while
+remaining visible in the result as not run. Retry limits use bounded
 exponential backoff, honor numeric or HTTP-date `Retry-After` values, and cap
 waits with `max_retry_after_seconds`. HTTP attempts use the configured provider
 timeout; DNS resolver calls use that timeout as their lifetime bound.

@@ -2,9 +2,9 @@
 
 import math
 from collections import deque
-from concurrent.futures import Future, ThreadPoolExecutor
-from threading import BoundedSemaphore, Lock
-from time import monotonic, sleep
+from concurrent.futures import Future
+from threading import BoundedSemaphore, Condition, Thread
+from time import monotonic
 from typing import Any, Callable, Iterable
 
 
@@ -12,9 +12,9 @@ class EnrichmentScheduler:
     """Apply engine-local concurrency, quota, priority, and backpressure rules.
 
     Provider configuration supports ``priority`` (higher runs first),
-    ``optional`` (skipped when optional sources are disabled),
-    ``concurrency``, ``requests_per_window``, and ``window_seconds``. A bounded
-    executor queue makes concurrent API and batch requests share one limit.
+    ``optional`` (skipped when optional sources are disabled), ``concurrency``,
+    ``requests_per_window``, and ``window_seconds``. A bounded global queue
+    orders pending work across concurrent lookups by provider priority.
     """
 
     def __init__(self, settings=None, providers=None):
@@ -37,13 +37,25 @@ class EnrichmentScheduler:
         self.include_optional = settings.get("include_optional", True)
         if not isinstance(self.include_optional, bool):
             raise ValueError("scheduler.include_optional must be boolean")
-        self._executor = ThreadPoolExecutor(max_workers=self.max_concurrency)
         self._pending = BoundedSemaphore(self.max_pending)
-        self._provider_slots: dict[str, BoundedSemaphore] = {}
-        self._provider_locks: dict[str, Lock] = {}
+        self._condition = Condition()
+        self._queue: list[dict[str, Any]] = []
+        self._sequence = 0
+        self._active_by_provider: dict[str, int] = {}
+        self._provider_limits: dict[str, int] = {}
         self._starts: dict[str, deque[float]] = {}
-        self._state_lock = Lock()
+        self._rate_lock = Condition()
+        self._shutdown = False
+        self._workers = [
+            Thread(
+                target=self._worker,
+                name=f"iocforge-scheduler-{index + 1}",
+                daemon=True,
+            )
+            for index in range(self.max_concurrency)
+        ]
         self._validate_provider_policies()
+        self._workers_started = False
 
     def optional(self, source: str) -> bool:
         value = self.providers.get(source, {}).get("optional", False)
@@ -57,13 +69,13 @@ class EnrichmentScheduler:
         task: Callable[[Any], Any],
         include_optional: bool | None = None,
     ) -> dict[Any, Future[Any]]:
-        """Submit connectors in priority order, blocking callers when full."""
+        """Queue connectors; callers block when all in-flight capacity is used."""
         should_include_optional = (
             self.include_optional if include_optional is None else include_optional
         )
         if not isinstance(should_include_optional, bool):
             raise ValueError("include_optional must be boolean")
-        connectors = list(connectors)
+        futures: dict[Any, Future[Any]] = {}
         ordered = sorted(
             enumerate(connectors),
             key=lambda pair: (
@@ -72,38 +84,48 @@ class EnrichmentScheduler:
                 pair[0],
             ),
         )
-        futures: dict[Any, Future[Any]] = {}
         for _, connector in ordered:
-            if self.optional(connector.name) and not should_include_optional:
-                continue
             name = connector.name
-            provider_slot = self._provider_slot(name)
-            provider_slot.acquire()
-            try:
-                self._pending.acquire()
-            except BaseException:
-                provider_slot.release()
-                raise
-            try:
-                future = self._executor.submit(task, connector)
-            except BaseException:
-                self._pending.release()
-                provider_slot.release()
-                raise
-            def release(_future: Future[Any], slot=provider_slot) -> None:
-                self._release(slot)
-
-            future.add_done_callback(release)
+            optional = self.optional(name)
+            if optional and not should_include_optional:
+                continue
+            future: Future[Any] = Future()
+            self._pending.acquire()
+            with self._condition:
+                if self._shutdown:
+                    self._pending.release()
+                    raise RuntimeError("cannot schedule work after shutdown")
+                if not self._workers_started:
+                    for worker in self._workers:
+                        worker.start()
+                    self._workers_started = True
+                self._sequence += 1
+                self._queue.append(
+                    {
+                        "priority": self._priority(name),
+                        "optional": optional,
+                        "sequence": self._sequence,
+                        "connector": connector,
+                        "task": task,
+                        "future": future,
+                    }
+                )
+                self._condition.notify_all()
             futures[connector] = future
         return futures
 
     def shutdown(self, wait=True):
-        """Stop accepting scheduled work and optionally wait for active calls."""
-        self._executor.shutdown(wait=wait)
+        """Stop accepting work and optionally wait for queued tasks to finish."""
+        with self._condition:
+            self._shutdown = True
+            self._condition.notify_all()
+        if wait and self._workers_started:
+            for worker in self._workers:
+                worker.join()
 
-    def _release(self, provider_slot):
-        provider_slot.release()
-        self._pending.release()
+    def admit_request(self, source: str) -> None:
+        """Block until a provider request fits its configured sliding window."""
+        self._admit_rate(source)
 
     def _priority(self, source):
         value = self.providers.get(source, {}).get("priority", 0)
@@ -115,7 +137,10 @@ class EnrichmentScheduler:
         for source, policy in self.providers.items():
             self._priority(source)
             self.optional(source)
-            self._provider_slot(source)
+            self._provider_limits[source] = _positive_int(
+                policy.get("concurrency", self.max_concurrency),
+                f"providers.{source}.concurrency",
+            )
             count = policy.get("requests_per_window")
             if count is not None:
                 _positive_int(count, f"providers.{source}.requests_per_window")
@@ -130,22 +155,69 @@ class EnrichmentScheduler:
                         f"providers.{source}.window_seconds must be positive"
                     )
 
-    def admit_request(self, source: str) -> None:
-        """Block until a provider request fits its configured sliding window."""
-        self._admit_rate(source)
+    def _provider_limit(self, source):
+        return self._provider_limits.get(source, self.max_concurrency)
 
-    def _provider_slot(self, source):
-        with self._state_lock:
-            slot = self._provider_slots.get(source)
-            if slot is None:
-                default = self.max_concurrency
-                limit = _positive_int(
-                    self.providers.get(source, {}).get("concurrency", default),
-                    f"providers.{source}.concurrency",
-                )
-                slot = BoundedSemaphore(limit)
-                self._provider_slots[source] = slot
-            return slot
+    def _next_eligible(self):
+        eligible = [
+            (index, item)
+            for index, item in enumerate(self._queue)
+            if self._active_by_provider.get(item["connector"].name, 0)
+            < self._provider_limit(item["connector"].name)
+        ]
+        if not eligible:
+            return None
+        index, item = min(
+            eligible,
+            key=lambda pair: (
+                -pair[1]["priority"],
+                pair[1]["optional"],
+                pair[1]["sequence"],
+            ),
+        )
+        self._queue.pop(index)
+        return item
+
+    def _worker(self):
+        while True:
+            with self._condition:
+                item = None
+                while item is None:
+                    cancelled = [
+                        index
+                        for index, queued in enumerate(self._queue)
+                        if queued["future"].cancelled()
+                    ]
+                    for index in reversed(cancelled):
+                        self._queue.pop(index)
+                        self._pending.release()
+                    item = self._next_eligible()
+                    if item is not None:
+                        if not item["future"].set_running_or_notify_cancel():
+                            self._pending.release()
+                            item = None
+                            continue
+                        name = item["connector"].name
+                        self._active_by_provider[name] = (
+                            self._active_by_provider.get(name, 0) + 1
+                        )
+                        break
+                    if self._shutdown and not self._queue:
+                        return
+                    self._condition.wait()
+
+            try:
+                result = item["task"](item["connector"])
+            except BaseException as error:
+                item["future"].set_exception(error)
+            else:
+                item["future"].set_result(result)
+            finally:
+                with self._condition:
+                    name = item["connector"].name
+                    self._active_by_provider[name] -= 1
+                    self._pending.release()
+                    self._condition.notify_all()
 
     def _admit_rate(self, source):
         provider = self.providers.get(source, {})
@@ -161,11 +233,9 @@ class EnrichmentScheduler:
             or window <= 0
         ):
             raise ValueError(f"providers.{source}.window_seconds must be positive")
-        with self._state_lock:
-            lock = self._provider_locks.setdefault(source, Lock())
-            starts = self._starts.setdefault(source, deque())
         while True:
-            with lock:
+            with self._rate_lock:
+                starts = self._starts.setdefault(source, deque())
                 now = monotonic()
                 while starts and starts[0] <= now - window:
                     starts.popleft()
@@ -173,7 +243,7 @@ class EnrichmentScheduler:
                     starts.append(now)
                     return
                 wait = starts[0] + window - now
-            sleep(max(wait, 0.001))
+                self._rate_lock.wait(timeout=max(wait, 0.001))
 
 
 def _positive_int(value, setting):

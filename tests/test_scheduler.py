@@ -74,6 +74,40 @@ def test_scheduler_dispatches_by_priority_then_skips_disabled_optional_sources()
         scheduler.shutdown()
 
 
+def test_scheduler_prioritizes_queued_work_across_concurrent_lookups():
+    scheduler = EnrichmentScheduler(
+        settings={"max_concurrency": 1, "max_pending": 4},
+        providers={"blocker": {"priority": -1}, "low": {"priority": 0}, "high": {"priority": 10}},
+    )
+    entered = Event()
+    release = Event()
+    order = []
+    try:
+        running = scheduler.submit(
+            [NamedConnector("blocker")],
+            lambda _: (entered.set(), release.wait(timeout=2)),
+        )
+        assert entered.wait(timeout=1)
+        low = scheduler.submit(
+            [NamedConnector("low"), NamedConnector("low")],
+            lambda connector: order.append(connector.name),
+        )
+        high = scheduler.submit(
+            [NamedConnector("high")],
+            lambda connector: order.append(connector.name),
+        )
+
+        release.set()
+        _wait(running)
+        _wait(low)
+        _wait(high)
+
+        assert order == ["high", "low", "low"]
+    finally:
+        release.set()
+        scheduler.shutdown()
+
+
 def test_scheduler_enforces_sliding_window_provider_quota():
     scheduler = EnrichmentScheduler(
         settings={"max_concurrency": 2, "max_pending": 2},
