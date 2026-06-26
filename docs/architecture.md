@@ -113,10 +113,12 @@ unavailable instead of silently applying current defaults. DNS,
 passive-DNS, certificate-transparency, RDAP, URLScan, and Shodan observations
 emit relationship candidates. RDAP domain observations can link validated
 nameservers; URLScan links the search IOC to validated page URLs, hostnames, and
-IPs at each scan time, bounded to ten scans per lookup; Shodan IP observations
+IPs across at most ten search results, then fetches one full result to link up
+to 25 response hashes and 25 downloaded-file hashes; Shodan IP observations
 can link validated ASNs and hostnames. The history store creates edges linked
 to their source observation and stores both provider validity and IOCForge
-recording times. API graph reads
+recording times. A missing or deleted URLScan result leaves search metadata and
+page pivots intact. API graph reads
 support bounded-depth traversal, an `as_of` filter, and explicit root type
 selection for hostnames or other ambiguous values. Graph nodes classify
 domains, IP addresses, URLs, file hashes, ASNs, certificates, hostnames,

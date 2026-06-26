@@ -1,6 +1,7 @@
 """urlscan.io historical scan enrichment."""
 
 from datetime import datetime, timezone
+from uuid import UUID
 
 from ioc_enricher.connectors.base import Connector, log
 from ioc_enricher.ioc.detect import detect, normalize
@@ -8,7 +9,9 @@ from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import SourceResult
 
 BASE = "https://urlscan.io/api/v1/search/"
+RESULT_BASE = "https://urlscan.io/api/v1/result/"
 MAX_SEARCH_RESULTS = 10
+MAX_HASH_PIVOTS_PER_KIND = 25
 PAGE_RELATIONSHIPS = {
     "url": ("scan_observed_url", {IocType.URL}, "url"),
     "domain": ("scan_observed_hostname", {IocType.DOMAIN}, "hostname"),
@@ -36,7 +39,11 @@ class Urlscan(Connector):
             return self._empty(ioc, ioc_type, error=str(exc))
         if response.status_code != 200:
             return self._empty(ioc, ioc_type, error=f"http {response.status_code}")
-        return self._parse(ioc, ioc_type, response.json())
+        result = self._parse(ioc, ioc_type, response.json())
+        scan_id = result.raw.get("scan_id")
+        if result.found:
+            self._add_result_hashes(result, scan_id)
+        return result
 
     @staticmethod
     def _query(ioc, ioc_type):
@@ -148,6 +155,116 @@ class Urlscan(Connector):
             related_entities=related_entities,
         )
 
+    def _add_result_hashes(self, result: SourceResult, scan_id: object) -> None:
+        """Fetch one full scan result to add bounded file-hash pivots."""
+        result.raw["detail_result_limit"] = 1
+        if not result.found:
+            return
+        if not isinstance(scan_id, str):
+            result.raw["detail_result_status"] = "missing_scan_id"
+            return
+        try:
+            canonical_scan_id = str(UUID(scan_id))
+        except (AttributeError, TypeError, ValueError):
+            result.raw["detail_result_status"] = "invalid_scan_id"
+            return
+
+        try:
+            response = self.get(
+                f"{RESULT_BASE}{canonical_scan_id}/",
+                headers={"API-Key": self.api_key},
+            )
+        except Exception as error:
+            result.raw["detail_result_status"] = "request_error"
+            result.raw["detail_result_error"] = str(error)
+            return
+
+        result.raw["detail_result_http_status"] = response.status_code
+        if response.status_code != 200:
+            result.raw["detail_result_status"] = "unavailable"
+            return
+        try:
+            payload = response.json()
+        except ValueError:
+            result.raw["detail_result_status"] = "invalid_json"
+            return
+        if not isinstance(payload, dict):
+            result.raw["detail_result_status"] = "invalid_payload"
+            return
+
+        lists = payload.get("lists", {})
+        if not isinstance(lists, dict):
+            lists = {}
+        response_hashes = lists.get("hashes", [])
+        if not isinstance(response_hashes, list):
+            response_hashes = []
+
+        processors = payload.get("meta", {})
+        if not isinstance(processors, dict):
+            processors = {}
+        processors = processors.get("processors", {})
+        if not isinstance(processors, dict):
+            processors = {}
+        download = processors.get("download", {})
+        if not isinstance(download, dict):
+            download = {}
+        download_records = download.get("data", [])
+        if not isinstance(download_records, list):
+            download_records = []
+
+        valid_response_hashes = _valid_sha256_values(response_hashes)
+        valid_download_hashes = _valid_sha256_values(
+            [
+                record.get("sha256")
+                for record in download_records
+                if isinstance(record, dict)
+            ]
+        )
+        selected_response_hashes = valid_response_hashes[:MAX_HASH_PIVOTS_PER_KIND]
+        selected_download_hashes = valid_download_hashes[:MAX_HASH_PIVOTS_PER_KIND]
+        result.raw.update(
+            {
+                "detail_result_status": "ok",
+                "response_hashes": selected_response_hashes,
+                "response_hash_count": len(valid_response_hashes),
+                "response_hashes_truncated": len(valid_response_hashes)
+                > MAX_HASH_PIVOTS_PER_KIND,
+                "downloaded_file_hashes": selected_download_hashes,
+                "downloaded_file_count": len(download_records),
+                "downloaded_file_hash_count": len(valid_download_hashes),
+                "downloaded_file_hashes_truncated": len(valid_download_hashes)
+                > MAX_HASH_PIVOTS_PER_KIND,
+            }
+        )
+        for field, relationship_type, values in (
+            ("lists.hashes", "scan_response_sha256", selected_response_hashes),
+            (
+                "meta.processors.download.data[].sha256",
+                "scan_downloaded_file_sha256",
+                selected_download_hashes,
+            ),
+        ):
+            for value in values:
+                result.related_entities.append(
+                    {
+                        "source_ioc": normalize(result.ioc, result.ioc_type),
+                        "target_ioc": value,
+                        "relationship_type": relationship_type,
+                        "source_entity_type": {
+                            IocType.URL: "url",
+                            IocType.DOMAIN: "domain",
+                            IocType.IPV4: "ip",
+                            IocType.IPV6: "ip",
+                        }[result.ioc_type],
+                        "target_entity_type": "file_hash",
+                        "observed_at": result.observed_at,
+                        "attributes": {
+                            "scan_id": canonical_scan_id,
+                            "source_field": field,
+                        },
+                    }
+                )
+
 
 def _timestamp(value):
     if not isinstance(value, str) or not value:
@@ -159,3 +276,16 @@ def _timestamp(value):
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc).isoformat()
+
+
+def _valid_sha256_values(values):
+    selected = []
+    seen = set()
+    for value in values:
+        if not isinstance(value, str) or detect(value) != IocType.SHA256:
+            continue
+        normalized = normalize(value, IocType.SHA256)
+        if normalized not in seen:
+            selected.append(normalized)
+            seen.add(normalized)
+    return selected
