@@ -278,6 +278,7 @@ def test_evidence_integrity_detects_tampering_and_blocks_replay(tmp_path):
             found=True,
             malicious=True,
             raw={"answer": "203.0.113.7"},
+            collected_at="2026-01-01T00:00:00+00:00",
         )
     )
     score(result, as_of="2026-01-01T00:00:00+00:00")
@@ -307,6 +308,82 @@ def test_evidence_integrity_detects_tampering_and_blocks_replay(tmp_path):
     replay = store.replay_enrichment(enrichment_id)
     assert replay["replayable"] is False
     assert replay["reason"] == "evidence_integrity_failed"
+
+
+def test_replay_rejects_evidence_collected_after_its_snapshot(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.add(
+        SourceResult(
+            source="provider",
+            ioc="example.com",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            malicious=True,
+            raw={"classification": "malicious"},
+            collected_at="2026-01-02T00:00:00+00:00",
+        )
+    )
+    score(result, as_of="2026-01-01T00:00:00+00:00")
+    enrichment_id = store.record(result, "2026-01-01T00:00:00+00:00")
+
+    integrity = store.verify_evidence_integrity(
+        iocs=["example.com"], enrichment_id=enrichment_id
+    )
+    replay = store.replay_enrichment(enrichment_id)
+
+    assert integrity["valid"] is False
+    assert any(
+        "observation_collected_after_snapshot" in item["problems"]
+        for item in integrity["issues"]
+    )
+    assert replay["replayable"] is False
+    assert replay["reason"] == "evidence_integrity_failed"
+
+
+def test_evidence_integrity_rejects_malformed_provider_timestamps(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.add(
+        SourceResult(
+            source="provider",
+            ioc="example.com",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            raw={"observed_at": "yesterday, probably"},
+            observed_at="yesterday, probably",
+            collected_at="2026-01-01T00:00:00+00:00",
+        )
+    )
+    score(result, as_of="2026-01-01T00:00:00+00:00")
+    enrichment_id = store.record(result, "2026-01-01T00:00:00+00:00")
+
+    integrity = store.verify_evidence_integrity(
+        iocs=["example.com"], enrichment_id=enrichment_id
+    )
+    replay = store.replay_enrichment(enrichment_id)
+
+    assert integrity["valid"] is False
+    assert any(
+        "observed_at_invalid" in item["problems"]
+        for item in integrity["issues"]
+    )
+    assert replay["replayable"] is False
+
+
+@pytest.mark.parametrize("timestamp", ["", "not-a-timestamp"])
+def test_record_rejects_invalid_snapshot_timestamp_before_persisting(
+    tmp_path, timestamp
+):
+    store = HistoryStore(tmp_path / "history.db")
+
+    with pytest.raises(ValueError, match="timestamps must use ISO 8601 format"):
+        store.record(
+            EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN),
+            looked_up_at=timestamp,
+        )
+
+    assert store.list_enrichments("example.com") == []
 
 
 def test_changed_provider_observation_gets_a_new_evidence_id(tmp_path):
@@ -451,6 +528,7 @@ def test_replay_reproduces_historical_score_from_pinned_time_and_config(tmp_path
             score=0.8,
             raw={"last_seen": "2020-01-01T00:00:00+00:00"},
             observed_at="2020-01-01T00:00:00+00:00",
+            collected_at="2026-01-01T00:00:00+00:00",
         )
     )
     score(
@@ -640,6 +718,7 @@ def test_investigation_replay_reconstructs_membership_decisions_graph_and_overri
             malicious=True,
             score=0.9,
             observed_at=t1,
+            collected_at=t1,
             related_entities=[
                 {
                     "source_ioc": "evil.example",
@@ -666,6 +745,7 @@ def test_investigation_replay_reconstructs_membership_decisions_graph_and_overri
             malicious=False,
             score=0.0,
             observed_at=t2,
+            collected_at=t2,
             related_entities=[
                 {
                     "source_ioc": "evil.example",

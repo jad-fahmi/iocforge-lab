@@ -112,7 +112,7 @@ def _normalize_timestamp(value: str | None) -> str | None:
         return None
     try:
         timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as error:
+    except (AttributeError, TypeError, ValueError, OverflowError) as error:
         raise ValueError("timestamps must use ISO 8601 format") from error
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=timezone.utc)
@@ -827,7 +827,13 @@ class HistoryStore:
 
     def record(self, result: Any, looked_up_at: str | None = None) -> int:
         """Persist an immutable enrichment snapshot and update indicator times."""
-        timestamp = looked_up_at or datetime.now(timezone.utc).isoformat()
+        timestamp = _normalize_timestamp(
+            looked_up_at
+            if looked_up_at is not None
+            else datetime.now(timezone.utc).isoformat()
+        )
+        if timestamp is None:
+            raise ValueError("looked_up_at timestamp is required")
         payload = result.to_dict()
         with self._lock:
             self.conn.execute(
@@ -1136,6 +1142,17 @@ class HistoryStore:
                     ):
                         if payload.get(field) != row[field]:
                             problems.append(f"column_mismatch:{field}")
+                    for field in ("collected_at", "observed_at"):
+                        value = payload.get(field)
+                        if value is None and field == "observed_at":
+                            continue
+                        if not isinstance(value, str):
+                            problems.append(f"{field}_invalid")
+                            continue
+                        try:
+                            _timestamp_value(value)
+                        except (TypeError, ValueError, OverflowError):
+                            problems.append(f"{field}_invalid")
                     raw = payload.get("raw", {})
                     if not isinstance(raw, dict):
                         problems.append("raw_payload_not_object")
@@ -1218,7 +1235,8 @@ class HistoryStore:
                     continue
                 links = self.conn.execute(
                     "SELECT eo.ordinal, eo.observation_id, obs.observation_json, "
-                    "obs.ioc AS observation_ioc FROM enrichment_observations AS eo "
+                    "obs.ioc AS observation_ioc, obs.collected_at "
+                    "FROM enrichment_observations AS eo "
                     "LEFT JOIN evidence_observations AS obs "
                     "ON obs.id = eo.observation_id WHERE eo.enrichment_id = ? "
                     "ORDER BY eo.ordinal",
@@ -1261,6 +1279,13 @@ class HistoryStore:
                     elif link["observation_ioc"] != snapshot["ioc"]:
                         problems.append("linked_observation_indicator_mismatch")
                     elif isinstance(source, dict):
+                        try:
+                            snapshot_time = _timestamp_value(snapshot["looked_up_at"])
+                            collected_time = _timestamp_value(link["collected_at"])
+                            if collected_time > snapshot_time:
+                                problems.append("observation_collected_after_snapshot")
+                        except (TypeError, ValueError, OverflowError):
+                            problems.append("snapshot_or_observation_timestamp_invalid")
                         try:
                             evidence_payload = json.loads(link["observation_json"])
                         except (TypeError, json.JSONDecodeError):

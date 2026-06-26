@@ -110,8 +110,12 @@ SHA-256 value fingerprints the structured `raw` payload retained by the
 connector; because connectors currently normalize or
 filter upstream responses, it is not a hash of an unretained wire-level HTTP
 body. Schema migration backfills observation rows from existing enrichment
-snapshots. Scoring now pins the effective thresholds and weights, evaluation
-time, per-observation contribution, exclusions, and local-context adjustments.
+snapshots. Snapshot timestamps are canonicalized to UTC on write. Integrity
+verification checks evidence timestamp syntax and rejects replay when an
+observation was collected after its linked snapshot, preventing future evidence
+from leaking into a historical decision. Scoring now pins the effective
+thresholds and weights, evaluation time, per-observation contribution,
+exclusions, and local-context adjustments.
 The CLI and API can replay decisions when those inputs are present and the
 methodology version is supported. Both interfaces can compare two stored
 snapshots, including evidence-to-decision attribution and graph edges visible
