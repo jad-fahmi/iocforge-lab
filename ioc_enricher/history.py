@@ -38,6 +38,7 @@ HOSTNAME_RELATIONSHIPS = {
     "nameserver",
     "certificate_name",
     "observed_hostname",
+    "scan_observed_hostname",
 }
 PIVOT_ENTITY_WEIGHTS = {
     "certificate": 1.0,

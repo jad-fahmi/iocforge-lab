@@ -1,10 +1,19 @@
 """urlscan.io historical scan enrichment."""
 
+from datetime import datetime, timezone
+
 from ioc_enricher.connectors.base import Connector, log
+from ioc_enricher.ioc.detect import detect, normalize
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import SourceResult
 
 BASE = "https://urlscan.io/api/v1/search/"
+MAX_SEARCH_RESULTS = 10
+PAGE_RELATIONSHIPS = {
+    "url": ("scan_observed_url", {IocType.URL}, "url"),
+    "domain": ("scan_observed_hostname", {IocType.DOMAIN}, "hostname"),
+    "ip": ("scan_observed_ip", {IocType.IPV4, IocType.IPV6}, "ip"),
+}
 
 
 class Urlscan(Connector):
@@ -48,8 +57,29 @@ class Urlscan(Connector):
         page = latest.get("page", {})
         task = latest.get("task", {})
         stats = latest.get("stats", {})
+        if not isinstance(page, dict):
+            page = {}
+        if not isinstance(task, dict):
+            task = {}
+        if not isinstance(stats, dict):
+            stats = {}
+        scan_time = _timestamp(task.get("time"))
+        reported_total = payload.get("total", len(results))
+        if (
+            isinstance(reported_total, bool)
+            or not isinstance(reported_total, int)
+            or reported_total < 0
+        ):
+            reported_total = len(results)
+        used_results = min(len(results), MAX_SEARCH_RESULTS)
         raw = {
-            "scan_count": payload.get("total", len(results)),
+            "scan_count": reported_total,
+            "scan_results_returned": len(results),
+            "scan_results_used": used_results,
+            "scan_result_limit": MAX_SEARCH_RESULTS,
+            "scan_results_truncated": (
+                reported_total > used_results or len(results) > MAX_SEARCH_RESULTS
+            ),
             "scan_id": latest.get("_id"),
             "scan_time": task.get("time"),
             "page_url": page.get("url"),
@@ -62,6 +92,51 @@ class Urlscan(Connector):
         tags = [
             value for value in (page.get("country"), task.get("visibility")) if value
         ]
+        root_entity_type = {
+            IocType.URL: "url",
+            IocType.DOMAIN: "domain",
+            IocType.IPV4: "ip",
+            IocType.IPV6: "ip",
+        }[ioc_type]
+        root_value = normalize(ioc, ioc_type)
+        related_entities = []
+        for scan in results[:used_results]:
+            if not isinstance(scan, dict):
+                continue
+            scan_page = scan.get("page", {})
+            scan_task = scan.get("task", {})
+            if not isinstance(scan_page, dict):
+                scan_page = {}
+            if not isinstance(scan_task, dict):
+                scan_task = {}
+            related_at = _timestamp(scan_task.get("time"))
+            for field, (relationship_type, accepted_types, target_entity_type) in (
+                PAGE_RELATIONSHIPS.items()
+            ):
+                value = scan_page.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    continue
+                target_value = value.strip()
+                detected_type = detect(target_value)
+                if detected_type not in accepted_types:
+                    continue
+                canonical_target = normalize(target_value, detected_type)
+                if canonical_target == root_value:
+                    continue
+                related_entities.append(
+                    {
+                        "source_ioc": root_value,
+                        "target_ioc": canonical_target,
+                        "relationship_type": relationship_type,
+                        "source_entity_type": root_entity_type,
+                        "target_entity_type": target_entity_type,
+                        "observed_at": related_at,
+                        "attributes": {
+                            "scan_id": scan.get("_id"),
+                            "source_field": f"page.{field}",
+                        },
+                    }
+                )
         return SourceResult(
             source=self.name,
             ioc=ioc,
@@ -69,5 +144,18 @@ class Urlscan(Connector):
             found=True,
             raw={key: value for key, value in raw.items() if value is not None},
             tags=tags,
-            observed_at=task.get("time"),
+            observed_at=scan_time,
+            related_entities=related_entities,
         )
+
+
+def _timestamp(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat()
