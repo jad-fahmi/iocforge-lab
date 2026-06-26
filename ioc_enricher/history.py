@@ -176,6 +176,28 @@ def _observation_key(source: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _observation_content_key(source: dict[str, Any]) -> str:
+    """Return a content key used when stable provider identity collides.
+
+    The legacy observation key intentionally groups identical provider payloads
+    across repeated lookups. If normalization produces different evidence for
+    that same identity, a content key keeps both immutable observations instead
+    of silently linking the later snapshot to the first payload.
+    """
+    stable_source = {
+        key: value
+        for key, value in source.items()
+        if key not in {"latency_ms", "cache_hit"}
+    }
+    encoded = json.dumps(
+        stable_source,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return f"v2:{hashlib.sha256(encoded).hexdigest()}"
+
+
 class HistoryStore:
     """Append-only lookup history plus a current indicator index.
 
@@ -924,6 +946,13 @@ class HistoryStore:
             source, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         )
         observation_key = _observation_key(source)
+        existing = self.conn.execute(
+            "SELECT id, observation_json FROM evidence_observations "
+            "WHERE observation_key = ?",
+            (observation_key,),
+        ).fetchone()
+        if existing is not None and existing["observation_json"] != observation_json:
+            observation_key = _observation_content_key(source)
         self.conn.execute(
             """
             INSERT OR IGNORE INTO evidence_observations(
@@ -952,6 +981,12 @@ class HistoryStore:
         if row is None:
             raise RuntimeError("failed to persist source observation")
         observation_id = int(row["id"])
+        stored = self.conn.execute(
+            "SELECT observation_json FROM evidence_observations WHERE id = ?",
+            (observation_id,),
+        ).fetchone()
+        if stored is None or stored["observation_json"] != observation_json:
+            raise RuntimeError("observation key resolved to different evidence")
         self.conn.execute(
             """
             INSERT OR IGNORE INTO enrichment_observations(
@@ -1115,7 +1150,11 @@ class HistoryStore:
                         if actual_raw_hash != row["raw_response_sha256"]:
                             problems.append("raw_response_hash_mismatch")
                     try:
-                        if _observation_key(payload) != row["observation_key"]:
+                        valid_keys = {
+                            _observation_key(payload),
+                            _observation_content_key(payload),
+                        }
+                        if row["observation_key"] not in valid_keys:
                             problems.append("observation_key_mismatch")
                     except (KeyError, TypeError, ValueError):
                         problems.append("observation_identity_invalid")

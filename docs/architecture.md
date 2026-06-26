@@ -103,8 +103,11 @@ the indicator event history.
 
 The evidence foundation now stores provenance on each `SourceResult` and in a
 normalized `evidence_observations` table linked to enrichment snapshots by
-stable observation IDs. The SHA-256 value fingerprints the structured `raw`
-payload retained by the connector; because connectors currently normalize or
+stable observation IDs. Repeated identical provider observations share one
+stored payload, while a collision with different normalized content receives a
+content-derived key so both snapshots keep their own immutable evidence. The
+SHA-256 value fingerprints the structured `raw` payload retained by the
+connector; because connectors currently normalize or
 filter upstream responses, it is not a hash of an unretained wire-level HTTP
 body. Schema migration backfills observation rows from existing enrichment
 snapshots. Scoring now pins the effective thresholds and weights, evaluation

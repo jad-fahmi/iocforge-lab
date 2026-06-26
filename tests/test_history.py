@@ -157,6 +157,38 @@ def test_evidence_observations_have_stable_ids_and_are_immutable(tmp_path):
     assert still_original["observation"]["raw"] == {"answer": "203.0.113.7"}
 
 
+def test_normalization_collision_preserves_both_observation_payloads(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    normalized_results = []
+    for malicious in (True, False):
+        result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+        result.add(
+            SourceResult(
+                source="provider",
+                ioc="example.com",
+                ioc_type=IocType.DOMAIN,
+                found=True,
+                malicious=malicious,
+                raw={"classification": "provider response"},
+                collected_at="2026-01-01T00:00:00+00:00",
+            )
+        )
+        normalized_results.append(
+            store.record(result, looked_up_at="2026-01-01T00:00:00+00:00")
+        )
+
+    first = store.observations_for_enrichment(normalized_results[0])[0]
+    second = store.observations_for_enrichment(normalized_results[1])[0]
+    integrity = store.verify_evidence_integrity(["example.com"])
+
+    assert first["id"] != second["id"]
+    assert first["observation"]["malicious"] is True
+    assert second["observation"]["malicious"] is False
+    assert first["observation_key"] != second["observation_key"]
+    assert integrity["valid"] is True
+    assert integrity["checked_observations"] == 2
+
+
 def test_sqlite_rejects_evidence_and_snapshot_link_mutation(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
