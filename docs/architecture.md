@@ -78,11 +78,14 @@ temporary SQLite history, seeds two explicitly timestamped synthetic provider
 snapshots and temporal graph states, and exports a portable investigation
 bundle. T1 includes conflicting benign and stale malicious classifications and
 a provider outage; T2 refreshes those sources and adds malicious agreement and
-new infrastructure pivots. It prints the evidence and graph diff, both scoring
-traces, replay checks, and offline bundle-integrity report. It does not construct
-an engine, load provider credentials, or access the default history database. Its reserved
-`.example` domain and documentation IP ranges make it illustrative rather than
-an evaluation of provider accuracy or realistic campaign attribution.
+new infrastructure pivots. A bounded URLScan observation links the T2 domain
+to a page URL and a downloaded-file hash. The walkthrough prints ranked T1/T2
+paths, evidence and graph diffs, both scoring traces, replay checks, and an
+offline whole-investigation comparison of the exported bundle. It does not
+construct an engine, load provider credentials, or access the default history
+database. Its reserved `.example` domain and documentation IP ranges make it
+illustrative rather than an evaluation of provider accuracy or realistic
+campaign attribution.
 
 Offline bundle inspection compares each indicator's adjacent snapshots using
 the embedded observations and temporally filtered graph edges. It includes
@@ -114,12 +117,13 @@ unavailable instead of silently applying current defaults. DNS,
 passive-DNS, certificate-transparency, RDAP, URLScan, and Shodan observations
 emit relationship candidates. RDAP domain observations can link validated
 nameservers; URLScan links the search IOC to validated page URLs, hostnames, and
-IPs across at most ten search results, then fetches one full result to link up
-to 25 response hashes and 25 downloaded-file hashes; Shodan IP observations
-can link validated ASNs and hostnames. The history store creates edges linked
-to their source observation and stores both provider validity and IOCForge
-recording times. A missing or deleted URLScan result leaves search metadata and
-page pivots intact. API graph reads
+IPs across at most ten search results, then fetches one full result to link the
+validated primary page URL to up to 25 response hashes and 25 downloaded-file
+hashes (falling back to the search IOC if the page URL is unavailable); Shodan
+IP observations can link validated ASNs and hostnames. The history store creates
+edges linked to their source observation and stores both provider validity and
+IOCForge recording times. A missing or deleted URLScan result leaves search
+metadata and page pivots intact. API graph reads
 support bounded-depth traversal, an `as_of` filter, and explicit root type
 selection for hostnames or other ambiguous values. Graph nodes classify
 domains, IP addresses, URLs, file hashes, ASNs, certificates, hostnames,

@@ -17,6 +17,8 @@ from ioc_enricher.models import EnrichmentResult, SourceResult
 from ioc_enricher.scoring import score
 
 DEMO_IOC = "login-update.example"
+DEMO_URL = "https://login-update.example/secure"
+DEMO_PAYLOAD_SHA256 = "a" * 64
 
 
 def _timestamp(value: datetime) -> str:
@@ -178,6 +180,43 @@ def create_demo_bundle() -> tuple[bytes, dict[str, Any]]:
                         source_score=0.91,
                     ),
                     _source(
+                        "urlscan",
+                        t2_text,
+                        {
+                            "scan_id": "00000000-0000-4000-8000-000000000002",
+                            "page_url": DEMO_URL,
+                            "downloaded_file_hashes": [DEMO_PAYLOAD_SHA256],
+                            "downloaded_file_hash_count": 1,
+                            "detail_result_status": "ok",
+                        },
+                        related_entities=[
+                            {
+                                "source_ioc": DEMO_IOC,
+                                "target_ioc": DEMO_URL,
+                                "relationship_type": "scan_observed_url",
+                                "source_entity_type": "domain",
+                                "target_entity_type": "url",
+                                "valid_from": _timestamp(t2 - timedelta(minutes=5)),
+                                "attributes": {
+                                    "scan_id": "00000000-0000-4000-8000-000000000002",
+                                    "source_field": "page.url",
+                                },
+                            },
+                            {
+                                "source_ioc": DEMO_URL,
+                                "target_ioc": DEMO_PAYLOAD_SHA256,
+                                "relationship_type": "scan_downloaded_file_sha256",
+                                "source_entity_type": "url",
+                                "target_entity_type": "file_hash",
+                                "valid_from": _timestamp(t2 - timedelta(minutes=5)),
+                                "attributes": {
+                                    "scan_id": "00000000-0000-4000-8000-000000000002",
+                                    "source_field": "meta.processors.download.data[].sha256",
+                                },
+                            },
+                        ],
+                    ),
+                    _source(
                         "passive_dns",
                         t2_text,
                         {"records": [{"address": "198.51.100.27", "seen": "T2"}]},
@@ -228,7 +267,18 @@ def create_demo_bundle() -> tuple[bytes, dict[str, Any]]:
             if payload is None:
                 raise RuntimeError("demo investigation could not be exported")
             bundle = build_bundle(payload)
-            inspection = inspect_bundle(bundle)
+            inspection = inspect_bundle(
+                bundle,
+                as_of=t2_text,
+                baseline_as_of=t1_text,
+                comparison_as_of=t2_text,
+            )
+            t1_pivot_paths = store.suggest_pivot_paths(
+                DEMO_IOC, max_depth=5, as_of=t1_text
+            )
+            t2_pivot_paths = store.suggest_pivot_paths(
+                DEMO_IOC, max_depth=5, as_of=t2_text
+            )
 
             def snapshot_summary(enrichment_id: int) -> dict[str, Any]:
                 replay = store.replay_enrichment(enrichment_id)
@@ -268,6 +318,7 @@ def create_demo_bundle() -> tuple[bytes, dict[str, Any]]:
                     "t2": t2_text,
                 },
                 "snapshots": [snapshot_summary(t1_id), snapshot_summary(t2_id)],
+                "pivot_paths": {"t1": t1_pivot_paths, "t2": t2_pivot_paths},
                 "comparison": {
                     "verdict_changed": comparison["verdict_changed"],
                     "score_delta": comparison["score_delta"],

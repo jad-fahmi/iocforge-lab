@@ -160,7 +160,7 @@ def test_urlscan_returns_historical_scan_metadata_without_verdict_signal():
             },
         },
         {
-            "source_ioc": "https://example.com/a",
+            "source_ioc": "https://example.com/landing",
             "target_ioc": "a" * 64,
             "relationship_type": "scan_response_sha256",
             "source_entity_type": "url",
@@ -172,7 +172,7 @@ def test_urlscan_returns_historical_scan_metadata_without_verdict_signal():
             },
         },
         {
-            "source_ioc": "https://example.com/a",
+            "source_ioc": "https://example.com/landing",
             "target_ioc": "b" * 64,
             "relationship_type": "scan_downloaded_file_sha256",
             "source_entity_type": "url",
@@ -308,13 +308,18 @@ def test_urlscan_hash_edges_retain_observation_provenance(tmp_path):
 
     enrichment_id = store.record(enrichment, looked_up_at="2026-09-21T00:00:00Z")
     observations = store.observations_for_enrichment(enrichment_id)
-    edges = store.relationships("example.com")
+    graph = store.relationship_graph(
+        "example.com", max_depth=2, as_of="2026-09-22T00:00:00Z"
+    )
     hash_edge = next(
-        edge for edge in edges if edge["relationship_type"] == "scan_response_sha256"
+        edge
+        for edge in graph["edges"]
+        if edge["relationship_type"] == "scan_response_sha256"
     )
 
     assert len(observations) == 1
     assert hash_edge["target_ioc"] == response_hash
+    assert hash_edge["source_ioc"] == "https://example.com/path"
     assert hash_edge["target_entity_type"] == "file_hash"
     assert hash_edge["evidence_source"] == "urlscan"
     assert hash_edge["evidence_observation_id"] == observations[0]["id"]

@@ -236,6 +236,18 @@ class Urlscan(Connector):
                 > MAX_HASH_PIVOTS_PER_KIND,
             }
         )
+        page_url = result.raw.get("page_url")
+        if isinstance(page_url, str) and detect(page_url) == IocType.URL:
+            hash_source_ioc = normalize(page_url, IocType.URL)
+            hash_source_type = "url"
+        else:
+            hash_source_ioc = normalize(result.ioc, result.ioc_type)
+            hash_source_type = {
+                IocType.URL: "url",
+                IocType.DOMAIN: "domain",
+                IocType.IPV4: "ip",
+                IocType.IPV6: "ip",
+            }[result.ioc_type]
         for field, relationship_type, values in (
             ("lists.hashes", "scan_response_sha256", selected_response_hashes),
             (
@@ -247,15 +259,10 @@ class Urlscan(Connector):
             for value in values:
                 result.related_entities.append(
                     {
-                        "source_ioc": normalize(result.ioc, result.ioc_type),
+                        "source_ioc": hash_source_ioc,
                         "target_ioc": value,
                         "relationship_type": relationship_type,
-                        "source_entity_type": {
-                            IocType.URL: "url",
-                            IocType.DOMAIN: "domain",
-                            IocType.IPV4: "ip",
-                            IocType.IPV6: "ip",
-                        }[result.ioc_type],
+                        "source_entity_type": hash_source_type,
                         "target_entity_type": "file_hash",
                         "observed_at": result.observed_at,
                         "attributes": {
