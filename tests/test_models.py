@@ -3,7 +3,7 @@ import json
 
 import pytest
 from ioc_enricher.ioc.types import IocType
-from ioc_enricher.models import SourceResult
+from ioc_enricher.models import EnrichmentResult, SourceResult
 
 
 def test_source_observation_has_stable_raw_payload_fingerprint():
@@ -24,6 +24,12 @@ def test_source_observation_has_stable_raw_payload_fingerprint():
     assert len(left.raw_response_sha256) == 64
     assert left.collected_at
     assert left.to_dict()["ioc_type"] == "domain"
+
+
+def test_enrichment_serializes_current_ioc_normalization_version():
+    result = EnrichmentResult(ioc="xn--fa-hia.de", ioc_type=IocType.DOMAIN)
+
+    assert result.to_dict()["ioc_normalization_version"] == "2"
 
 
 def test_source_observation_fingerprint_changes_with_payload():

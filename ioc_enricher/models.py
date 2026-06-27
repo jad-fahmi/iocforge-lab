@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from ioc_enricher.ioc.detect import IOC_NORMALIZATION_VERSION
 from ioc_enricher.ioc.types import IocType
 
 
@@ -85,6 +86,7 @@ class EnrichmentResult:
     recommended_action: str = "Review manually; insufficient evidence."
     source_context: Optional[dict] = None
     internal_context: dict = field(default_factory=dict)
+    ioc_normalization_version: str = IOC_NORMALIZATION_VERSION
 
     def add(self, result: SourceResult):
         self.sources.append(result)
@@ -103,6 +105,7 @@ class EnrichmentResult:
         return {
             "ioc": self.ioc,
             "ioc_type": self.ioc_type.value,
+            "ioc_normalization_version": self.ioc_normalization_version,
             "verdict": self.verdict,
             "score": self.score,
             "confidence": self.confidence,

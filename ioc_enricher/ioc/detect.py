@@ -7,6 +7,8 @@ import idna
 from ioc_enricher.ioc.defang import refang
 from ioc_enricher.ioc.types import IocType
 
+IOC_NORMALIZATION_VERSION = "2"
+
 DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",

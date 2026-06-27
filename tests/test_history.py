@@ -116,7 +116,9 @@ def test_source_provenance_survives_snapshot_persistence(tmp_path):
 
     store.record(result, looked_up_at="2026-01-01T00:00:00+00:00")
     saved = store.list_enrichments("example.com")[0]["result"]["sources"][0]
+    snapshot = store.list_enrichments("example.com")[0]["result"]
 
+    assert snapshot["ioc_normalization_version"] == "2"
     assert saved["raw_response_sha256"] == source.raw_response_sha256
     assert len(saved["raw_response_sha256"]) == 64
     assert saved["connector_version"] == "2.1"

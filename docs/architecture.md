@@ -156,7 +156,10 @@ IOCForge has four layers:
 Indicator normalization uses IDNA 2008 with non-transitional UTS #46 mapping
 for Unicode domain names and URL hosts. This preserves distinctions such as
 `faß.de` versus `fass.de` while mapping Unicode separators and width variants
-consistently before evidence identity is calculated.
+consistently before evidence identity is calculated. Enrichment snapshots
+record the IOC normalization version separately from each provider's output
+normalization version. Snapshots predating this field are treated as version 1;
+replay carries that recorded version forward without rewriting historical IDs.
 
 `ConnectorRegistry` is the source of truth for installed providers. Each
 provider declares the IOC types it accepts and whether credentials are
