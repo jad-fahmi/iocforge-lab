@@ -13,7 +13,7 @@ class AbuseIPDB(Connector):
         if not self.api_key:
             return self._empty(ioc, ioc_type, error="missing api key")
 
-        headers = {"Authorization": self.api_key, "Accept": "application/json"}
+        headers = {"Key": self.api_key, "Accept": "application/json"}
         params = {"ipAddress": ioc, "maxAgeInDays": 90}
         try:
             resp = self.client.get(BASE + "/check", headers=headers, params=params)
