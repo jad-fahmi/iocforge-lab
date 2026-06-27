@@ -11,7 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ioc_enricher.history import _event_hash
+from ioc_enricher.history import (
+    _event_hash,
+    _observation_content_key,
+    _observation_key,
+)
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult, SourceResult
 from ioc_enricher.scoring import METHODOLOGY_VERSION, score
@@ -56,8 +60,11 @@ def _check_raw_hash(item: dict[str, Any]) -> None:
     observation = item.get("observation", {})
     if not isinstance(observation, dict):
         raise ValueError("bundle evidence observation is invalid")
+    raw_payload = observation.get("raw", {})
+    if not isinstance(raw_payload, dict):
+        raise ValueError("bundle evidence raw payload is invalid")
     raw = json.dumps(
-        observation.get("raw", {}),
+        raw_payload,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -66,6 +73,26 @@ def _check_raw_hash(item: dict[str, Any]) -> None:
     expected_raw_hash = hashlib.sha256(raw).hexdigest()
     if observation.get("raw_response_sha256") != expected_raw_hash:
         raise ValueError("raw observation hash does not match bundle evidence")
+
+
+def _check_observation_record(item: dict[str, Any]) -> None:
+    if (
+        type(item.get("id")) is not int
+        or not isinstance(item.get("observation_key"), str)
+        or not isinstance(item.get("observation"), dict)
+    ):
+        raise ValueError("bundle evidence observation is invalid")
+    _check_raw_hash(item)
+    observation = item["observation"]
+    try:
+        valid_keys = {
+            _observation_key(observation),
+            _observation_content_key(observation),
+        }
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("bundle evidence identity is invalid") from None
+    if item["observation_key"] not in valid_keys:
+        raise ValueError("bundle evidence identity key does not match observation")
 
 
 def build_bundle(payload: dict[str, Any]) -> bytes:
@@ -180,6 +207,7 @@ def read_bundle(source: bytes | bytearray | str | Path) -> dict[str, Any]:
             or _bundle_time(snapshot.get("looked_up_at")) is None
             or not isinstance(snapshot.get("result"), dict)
             or not isinstance(snapshot.get("observations", []), list)
+            or not isinstance(snapshot["result"].get("sources", []), list)
         ):
             raise ValueError("bundle snapshot metadata is invalid")
         if not isinstance(snapshot["result"].get("decision_trace", {}), dict):
@@ -198,15 +226,20 @@ def read_bundle(source: bytes | bytearray | str | Path) -> dict[str, Any]:
             not isinstance(item, dict) for item in trace_observations
         ):
             raise ValueError("bundle snapshot decision trace is invalid")
+        if any(
+            not isinstance(source, dict)
+            for source in snapshot_result.get("sources", [])
+        ):
+            raise ValueError("bundle snapshot sources are invalid")
         for item in snapshot.get("observations", []):
-            if (
-                not isinstance(item, dict)
-                or type(item.get("id")) is not int
-                or not isinstance(item.get("observation"), dict)
-            ):
+            if not isinstance(item, dict):
                 raise ValueError("bundle snapshot evidence is invalid")
+            _check_observation_record(item)
+            if type(item.get("ordinal")) is not int:
+                raise ValueError("bundle snapshot evidence ordinal is invalid")
 
     edge_ids = set()
+    graph_observation_ids = set()
     for edge in graph["edges"]:
         if (
             not isinstance(edge, dict)
@@ -235,25 +268,67 @@ def read_bundle(source: bytes | bytearray | str | Path) -> dict[str, Any]:
                 edge.get("valid_to") is not None
                 and _bundle_time(edge.get("valid_to")) is None
             )
+            or (
+                edge.get("evidence_observation_id") is not None
+                and type(edge.get("evidence_observation_id")) is not int
+            )
         ):
             raise ValueError("bundle graph edge is invalid")
         if edge["id"] in edge_ids:
             raise ValueError("bundle graph contains duplicate edge IDs")
         edge_ids.add(edge["id"])
+        if edge.get("evidence_observation_id") is not None:
+            graph_observation_ids.add(edge["evidence_observation_id"])
 
+    observations_by_id = {}
     for item in observations:
         if not isinstance(item, dict):
             raise ValueError("bundle observations must contain objects")
-        _check_raw_hash(item)
+        _check_observation_record(item)
+        if item["id"] in observations_by_id:
+            raise ValueError("bundle contains duplicate observation IDs")
+        ordinal = item.get("ordinal")
+        if ordinal is not None and type(ordinal) is not int:
+            raise ValueError("bundle observation ordinal is invalid")
+        observations_by_id[item["id"]] = item
+    if not graph_observation_ids.issubset(observations_by_id):
+        raise ValueError("bundle graph evidence reference is missing")
+
     for snapshot in payload.get("snapshots", []):
-        if not isinstance(snapshot, dict) or not isinstance(
-            snapshot.get("observations", []), list
-        ):
-            raise ValueError("bundle snapshot evidence is invalid")
-        for item in snapshot.get("observations", []):
-            if not isinstance(item, dict):
-                raise ValueError("bundle snapshot evidence is invalid")
-            _check_raw_hash(item)
+        sources = snapshot["result"].get("sources", [])
+        linked_observations = snapshot.get("observations", [])
+        if len(linked_observations) != len(sources):
+            continue
+        seen_ordinals = set()
+        for position, item in enumerate(linked_observations):
+            ordinal = item["ordinal"]
+            if (
+                ordinal != position
+                or ordinal >= len(sources)
+                or ordinal in seen_ordinals
+            ):
+                raise ValueError("bundle snapshot evidence ordering is invalid")
+            seen_ordinals.add(ordinal)
+            indexed = observations_by_id.get(item["id"])
+            if indexed is None or (
+                item["observation_key"] != indexed["observation_key"]
+                or item["observation"] != indexed["observation"]
+            ):
+                raise ValueError("bundle snapshot evidence does not match evidence index")
+            observation = item["observation"]
+            if observation.get("ioc") != snapshot["ioc"]:
+                raise ValueError("bundle snapshot evidence indicator does not match")
+            snapshot_source = dict(sources[ordinal])
+            snapshot_source.pop("latency_ms", None)
+            snapshot_source.pop("cache_hit", None)
+            snapshot_source.setdefault("collected_at", snapshot["looked_up_at"])
+            snapshot_source.setdefault(
+                "raw_response_sha256", observation.get("raw_response_sha256")
+            )
+            snapshot_source.setdefault("connector_version", "unknown")
+            snapshot_source.setdefault("normalization_version", "1")
+            if snapshot_source != observation:
+                raise ValueError("bundle snapshot source does not match linked evidence")
     return payload
 
 

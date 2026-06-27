@@ -1,3 +1,4 @@
+import copy
 import io
 import json
 import zipfile
@@ -6,7 +7,7 @@ from datetime import datetime, timezone
 import ioc_enricher.history as history_module
 import pytest
 from ioc_enricher.bundles import build_bundle, inspect_bundle
-from ioc_enricher.history import HistoryStore
+from ioc_enricher.history import HistoryStore, _observation_key
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult, SourceResult
 from ioc_enricher.scoring import score
@@ -214,12 +215,46 @@ def test_offline_bundle_replay_rejects_inconsistent_evidence_times(
     tmp_path, field, value, expected_reason
 ):
     payload = _bundle_payload(tmp_path)
-    payload["snapshots"][0]["observations"][0]["observation"][field] = value
+    snapshot = payload["snapshots"][0]
+    linked = snapshot["observations"][0]
+    indexed = next(item for item in payload["observations"] if item["id"] == linked["id"])
+    for evidence in (linked["observation"], indexed["observation"]):
+        evidence[field] = value
+    snapshot["result"]["sources"][0][field] = value
+    if field == "collected_at":
+        observation_key = _observation_key(linked["observation"])
+        linked["observation_key"] = observation_key
+        indexed["observation_key"] = observation_key
     report = inspect_bundle(build_bundle(payload), as_of="2026-01-02T00:00:00Z")
 
     assert report["replay"][0]["replayable"] is False
     assert report["replay"][0]["reason"] == expected_reason
     assert report["investigation_replay"]["replayable"] is False
+
+
+def test_bundle_rejects_snapshot_evidence_index_mismatch(tmp_path):
+    payload = _bundle_payload(tmp_path)
+    payload["observations"] = copy.deepcopy(payload["observations"])
+    payload["snapshots"][0]["observations"][0]["observation"]["malicious"] = False
+
+    with pytest.raises(ValueError, match="does not match evidence index"):
+        inspect_bundle(build_bundle(payload))
+
+
+def test_bundle_rejects_snapshot_source_evidence_mismatch(tmp_path):
+    payload = _bundle_payload(tmp_path)
+    payload["snapshots"][0]["result"]["sources"][0]["malicious"] = False
+
+    with pytest.raises(ValueError, match="source does not match linked evidence"):
+        inspect_bundle(build_bundle(payload))
+
+
+def test_bundle_rejects_graph_edges_with_missing_evidence_references(tmp_path):
+    payload = _bundle_payload(tmp_path)
+    payload["graph"]["edges"][0]["evidence_observation_id"] = 999
+
+    with pytest.raises(ValueError, match="graph evidence reference is missing"):
+        inspect_bundle(build_bundle(payload))
 
 
 def test_bundle_rejects_extra_archive_members(tmp_path):
