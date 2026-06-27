@@ -52,6 +52,24 @@ def test_unicode_domain_is_detected_and_normalized_to_idna():
     assert normalize(domain, IocType.DOMAIN) == "xn--bcher-kva.example"
 
 
+def test_idna_normalization_does_not_merge_sharp_s_with_ascii_ss():
+    unicode_domain = "faß.de"
+    ascii_domain = "fass.de"
+
+    assert detect(unicode_domain) == IocType.DOMAIN
+    assert normalize(unicode_domain, IocType.DOMAIN) == "xn--fa-hia.de"
+    assert normalize(unicode_domain, IocType.DOMAIN) != normalize(
+        ascii_domain, IocType.DOMAIN
+    )
+
+
+def test_uts46_maps_ideographic_dot_and_fullwidth_ascii():
+    domain = "ＥＸＡＭＰＬＥ。com"
+
+    assert detect(domain) == IocType.DOMAIN
+    assert normalize(domain, IocType.DOMAIN) == "example.com"
+
+
 def test_url_host_is_normalized_without_changing_case_sensitive_path():
     url = "HTTPS://BÜCHER.example/CaseSensitive?Key=Value"
 

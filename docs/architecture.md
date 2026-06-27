@@ -153,6 +153,11 @@ IOCForge has four layers:
 3. **Connectors** translate provider responses into a common `SourceResult`.
 4. **Presentation** exposes the result through the CLI and FastAPI endpoints.
 
+Indicator normalization uses IDNA 2008 with non-transitional UTS #46 mapping
+for Unicode domain names and URL hosts. This preserves distinctions such as
+`faß.de` versus `fass.de` while mapping Unicode separators and width variants
+consistently before evidence identity is calculated.
+
 `ConnectorRegistry` is the source of truth for installed providers. Each
 provider declares the IOC types it accepts and whether credentials are
 required. Configuration can disable any provider without removing its key.

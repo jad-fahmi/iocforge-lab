@@ -16,7 +16,7 @@ The intended workflow is to paste an alert or report, extract its indicators wit
 
 ## Overview
 
-IOCForge supports IPv4 and IPv6 addresses, domains, URLs, MD5/SHA-1/SHA-256/SHA-512 hashes, email addresses, CVEs, and ASNs. It refangs common defanged forms such as `evil[.]example` and `hxxp://`, and normalizes internationalized domain names to IDNA ASCII.
+IOCForge supports IPv4 and IPv6 addresses, domains, URLs, MD5/SHA-1/SHA-256/SHA-512 hashes, email addresses, CVEs, and ASNs. It refangs common defanged forms such as `evil[.]example` and `hxxp://`, and normalizes internationalized domain names with non-transitional UTS #46 mapping to IDNA 2008 ASCII. This keeps names such as `faß.de` distinct from `fass.de`.
 
 Indicators can be submitted individually, in batches, or extracted from analyst text. Results can be printed in a terminal, returned through the HTTP API, or retained as part of an investigation. SQLite caching makes repeated lookups cheaper; expired cached observations are labeled as stale when used after a provider failure.
 

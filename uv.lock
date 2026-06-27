@@ -397,6 +397,7 @@ source = { editable = "." }
 dependencies = [
     { name = "dnspython" },
     { name = "httpx" },
+    { name = "idna" },
 ]
 
 [package.optional-dependencies]
@@ -418,6 +419,7 @@ requires-dist = [
     { name = "dnspython", specifier = ">=2.6" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.110" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "idna", specifier = ">=3.6" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },

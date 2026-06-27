@@ -2,6 +2,8 @@ import ipaddress
 import re
 from urllib.parse import urlsplit, urlunsplit
 
+import idna
+
 from ioc_enricher.ioc.defang import refang
 from ioc_enricher.ioc.types import IocType
 
@@ -46,8 +48,8 @@ def _looks_like_domain(value):
 
 
 def _idna(value):
-    """Return a lowercase ASCII IDNA hostname, rejecting invalid labels."""
-    return value.encode("idna").decode("ascii").lower()
+    """Return a UTS #46 mapped IDNA 2008 hostname in lowercase ASCII."""
+    return idna.encode(value, uts46=True, std3_rules=True).decode("ascii").lower()
 
 
 def _try_hash(value):
@@ -105,8 +107,8 @@ def normalize(value, ioc_type):
     """canonicalize an ioc so equivalent inputs share one cache key.
 
     Domains and hashes are case-insensitive; Unicode hostnames are converted to
-    their IDNA ASCII form. URL paths and query strings remain untouched because
-    they can be case-sensitive.
+    their IDNA 2008 ASCII form using non-transitional UTS #46 mapping. URL paths
+    and query strings remain untouched because they can be case-sensitive.
     """
     if ioc_type in (IocType.IPV4, IocType.IPV6):
         return str(ipaddress.ip_address(value))
