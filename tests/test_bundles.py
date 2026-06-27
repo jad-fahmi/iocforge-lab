@@ -199,6 +199,29 @@ def test_bundle_raw_observation_hash_is_independently_checked(tmp_path):
         inspect_bundle(bundle)
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "expected_reason"),
+    [
+        (
+            "collected_at",
+            "2026-01-02T00:00:00+00:00",
+            "evidence_collected_after_snapshot",
+        ),
+        ("observed_at", "yesterday, probably", "evidence_timestamps_invalid"),
+    ],
+)
+def test_offline_bundle_replay_rejects_inconsistent_evidence_times(
+    tmp_path, field, value, expected_reason
+):
+    payload = _bundle_payload(tmp_path)
+    payload["snapshots"][0]["observations"][0]["observation"][field] = value
+    report = inspect_bundle(build_bundle(payload), as_of="2026-01-02T00:00:00Z")
+
+    assert report["replay"][0]["replayable"] is False
+    assert report["replay"][0]["reason"] == expected_reason
+    assert report["investigation_replay"]["replayable"] is False
+
+
 def test_bundle_rejects_extra_archive_members(tmp_path):
     bundle_bytes = build_bundle(_bundle_payload(tmp_path))
     with zipfile.ZipFile(io.BytesIO(bundle_bytes)) as archive:

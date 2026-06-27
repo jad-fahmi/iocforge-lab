@@ -327,6 +327,29 @@ def replay_bundle(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 }
             )
             continue
+        snapshot_time = _bundle_time(snapshot.get("looked_up_at"))
+        timestamp_reason = None
+        for item in observations:
+            observation = item.get("observation", {})
+            collected_at = _bundle_time(observation.get("collected_at"))
+            observed_at = observation.get("observed_at")
+            if collected_at is None or (
+                observed_at is not None and _bundle_time(observed_at) is None
+            ):
+                timestamp_reason = "evidence_timestamps_invalid"
+                break
+            if snapshot_time is None or collected_at > snapshot_time:
+                timestamp_reason = "evidence_collected_after_snapshot"
+                break
+        if timestamp_reason is not None:
+            results.append(
+                {
+                    "enrichment_id": snapshot["id"],
+                    "replayable": False,
+                    "reason": timestamp_reason,
+                }
+            )
+            continue
         sources = []
         for item in observations:
             source = dict(item["observation"])

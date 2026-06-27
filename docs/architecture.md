@@ -91,7 +91,9 @@ Offline bundle inspection compares each indicator's adjacent snapshots using
 the embedded observations and temporally filtered graph edges. It includes
 contributing decision-trace rows and relationship provenance in its diffs, so
 the workbench can show why the later decision or pivot set changed without
-reopening the originating database.
+reopening the originating database. Offline replay applies the same timestamp
+integrity rule as the history store: malformed evidence times and observations
+collected after their snapshot are reported as non-replayable.
 
 Analyst verdict overrides remain separate from the source-derived score and
 verdict, so historical replay continues to reproduce the provider evidence
