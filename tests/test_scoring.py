@@ -201,6 +201,77 @@ def test_decision_trace_records_weights_and_why_observations_were_ignored():
     assert trace[2]["ignored_reason"] == "provider_error"
 
 
+def test_extreme_provider_timestamp_is_reported_without_breaking_scoring():
+    result = _res(
+        [
+            SourceResult(
+                "virustotal",
+                "x",
+                IocType.IPV4,
+                found=True,
+                malicious=True,
+                score=0.8,
+                raw={"last_seen": 10**1000, "stats": {"malicious": 2}},
+            )
+        ]
+    )
+
+    score(result, as_of="2026-09-20T00:00:00+00:00")
+
+    trace = result.decision_trace["observations"][0]
+    assert result.score > 0
+    assert "vt_malicious_votes" in result.reason_codes
+    assert trace["observed_at"] is None
+    assert trace["freshness_factor"] == 1.0
+    assert trace["metadata_warnings"] == ["invalid_observation_timestamp"]
+
+
+def test_non_object_raw_payload_is_reported_without_breaking_scoring():
+    result = _res(
+        [
+            SourceResult(
+                "virustotal",
+                "x",
+                IocType.IPV4,
+                found=True,
+                malicious=True,
+                score=0.8,
+                raw=["malformed"],
+            )
+        ]
+    )
+
+    score(result, as_of="2026-09-20T00:00:00+00:00")
+
+    trace = result.decision_trace["observations"][0]
+    assert result.score > 0
+    assert trace["metadata_warnings"] == ["raw_payload_not_object"]
+    assert result.evidence[0]["summary"] == "analysis stats {}"
+
+
+def test_malformed_reason_metadata_is_reported_and_excluded():
+    result = _res(
+        [
+            SourceResult(
+                "virustotal",
+                "x",
+                IocType.IPV4,
+                found=True,
+                malicious=True,
+                score=0.8,
+                raw={"stats": ["malformed"]},
+            )
+        ]
+    )
+
+    score(result, as_of="2026-09-20T00:00:00+00:00")
+
+    trace = result.decision_trace["observations"][0]
+    assert result.score > 0
+    assert "vt_malicious_votes" not in result.reason_codes
+    assert trace["metadata_warnings"] == ["invalid_virustotal_stats"]
+
+
 def test_invalid_thresholds_are_rejected():
     r = _res([])
 

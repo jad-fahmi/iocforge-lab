@@ -1,5 +1,6 @@
 """Explainable aggregation of source results into an analyst verdict."""
 
+import math
 from datetime import datetime, timezone
 
 METHODOLOGY_VERSION = "2"
@@ -97,33 +98,35 @@ def explain(result, settings=None, as_of=None):
                     total_weight += adjusted_weight
                     included = True
 
-        observation_trace.append(
-            {
-                "source": source.source,
-                "collected_at": source.collected_at,
-                "observed_at": observed_at.isoformat() if observed_at else None,
-                "raw_response_sha256": source.raw_response_sha256,
-                "status": status,
-                "score": source.score,
-                "confidence": source.confidence,
-                "configured_weight": weight,
-                "freshness_factor": age_factor,
-                "applied_weight": adjusted_weight,
-                "included_in_aggregate": included,
-                "weighted_signal_contribution": round(numerator, 6),
-                "ignored_reason": (
-                    "provider_error"
-                    if status == "error"
-                    else "provider_returned_no_data"
-                    if status == "no_data"
-                    else "provider_has_no_verdict"
-                    if status == "unclassified"
-                    else "zero_effective_weight"
-                    if not included
-                    else None
-                ),
-            }
-        )
+        trace_item = {
+            "source": source.source,
+            "collected_at": source.collected_at,
+            "observed_at": observed_at.isoformat() if observed_at else None,
+            "raw_response_sha256": source.raw_response_sha256,
+            "status": status,
+            "score": source.score,
+            "confidence": source.confidence,
+            "configured_weight": weight,
+            "freshness_factor": age_factor,
+            "applied_weight": adjusted_weight,
+            "included_in_aggregate": included,
+            "weighted_signal_contribution": round(numerator, 6),
+            "ignored_reason": (
+                "provider_error"
+                if status == "error"
+                else "provider_returned_no_data"
+                if status == "no_data"
+                else "provider_has_no_verdict"
+                if status == "unclassified"
+                else "zero_effective_weight"
+                if not included
+                else None
+            ),
+        }
+        warnings = _metadata_warnings(source, observed_at)
+        if warnings:
+            trace_item["metadata_warnings"] = warnings
+        observation_trace.append(trace_item)
 
     internal = getattr(result, "internal_context", {}) or {}
     internal_reasons = internal.get("reasons", [])
@@ -244,14 +247,23 @@ def recommended_action(verdict, confidence, internal):
 
 
 def reason_codes_for(source, as_of=None):
-    raw = source.raw or {}
+    raw = _raw_dict(source)
     codes = []
     if source.source == "virustotal":
         stats = raw.get("stats", {})
-        if stats.get("malicious", 0) or stats.get("suspicious", 0):
+        if isinstance(stats, dict) and any(
+            _finite_number(stats.get(key))
+            and stats[key] > 0
+            for key in ("malicious", "suspicious")
+        ):
             codes.append("vt_malicious_votes")
-    if source.source == "abuseipdb" and raw.get("abuseConfidenceScore", 0) >= 75:
-        codes.append("abuseipdb_high_confidence")
+    if source.source == "abuseipdb":
+        abuse_score = raw.get("abuseConfidenceScore")
+        if (
+            _finite_number(abuse_score)
+            and abuse_score >= 75
+        ):
+            codes.append("abuseipdb_high_confidence")
     if source.source == "greynoise":
         if raw.get("classification") == "benign":
             codes.append("greynoise_benign")
@@ -267,26 +279,27 @@ def reason_codes_for(source, as_of=None):
 
 
 def _summary(source):
+    raw = _raw_dict(source)
     if source.source == "virustotal":
-        return f"analysis stats {source.raw.get('stats', {})}"
+        return f"analysis stats {raw.get('stats', {})}"
     if source.source == "abuseipdb":
-        return f"confidence {source.raw.get('abuseConfidenceScore', 0)}"
+        return f"confidence {raw.get('abuseConfidenceScore', 0)}"
     if source.source == "greynoise":
-        return f"classification {source.raw.get('classification', 'unknown')}"
+        return f"classification {raw.get('classification', 'unknown')}"
     if source.source == "otx":
-        return f"pulse count {source.raw.get('pulse_count', 0)}"
+        return f"pulse count {raw.get('pulse_count', 0)}"
     if source.source == "shodan":
-        return f"open ports {source.raw.get('ports', [])}"
+        return f"open ports {raw.get('ports', [])}"
     if source.source == "urlhaus":
-        return f"malware URL status {source.raw.get('url_status', 'unknown')}"
+        return f"malware URL status {raw.get('url_status', 'unknown')}"
     if source.source == "threatfox":
-        return f"matched {source.raw.get('ioc_count', 0)} curated malware IOC(s)"
+        return f"matched {raw.get('ioc_count', 0)} curated malware IOC(s)"
     if source.source == "malwarebazaar":
-        return f"confirmed malware sample {source.raw.get('file_name', 'unknown')}"
+        return f"confirmed malware sample {raw.get('file_name', 'unknown')}"
     if source.source == "hashlookup":
-        return f"known file metadata {source.raw.get('file_name', 'unknown')}"
+        return f"known file metadata {raw.get('file_name', 'unknown')}"
     if source.source == "urlscan":
-        return f"observed in {source.raw.get('scan_count', 0)} historical scan(s)"
+        return f"observed in {raw.get('scan_count', 0)} historical scan(s)"
     return "source reported data"
 
 
@@ -309,19 +322,70 @@ def _freshness_factor(source, as_of=None):
 
 def _observed_at(source):
     value = source.observed_at
-    raw = source.raw or {}
+    raw = _raw_dict(source)
     for key in ("observed_at", "last_seen", "last_observed", "last_analysis_date"):
         value = value or raw.get(key)
     if not value:
         return None
-    if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, timezone.utc)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if not _finite_number(value):
+            return None
+        try:
+            return datetime.fromtimestamp(value, timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
     if isinstance(value, str):
         try:
             return _as_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
         except ValueError:
             return None
     return None
+
+
+def _raw_dict(source):
+    raw = getattr(source, "raw", None)
+    return raw if isinstance(raw, dict) else {}
+
+
+def _observed_at_present(source):
+    value = getattr(source, "observed_at", None)
+    if value is not None and value != "":
+        return True
+    raw = _raw_dict(source)
+    return any(
+        raw.get(key) is not None and raw.get(key) != ""
+        for key in ("observed_at", "last_seen", "last_observed", "last_analysis_date")
+    )
+
+
+def _metadata_warnings(source, observed_at):
+    warnings = []
+    if not isinstance(source.raw, dict):
+        warnings.append("raw_payload_not_object")
+    raw = _raw_dict(source)
+    if _observed_at_present(source) and observed_at is None:
+        warnings.append("invalid_observation_timestamp")
+    if source.source == "virustotal" and "stats" in raw:
+        stats = raw["stats"]
+        if not isinstance(stats, dict) or any(
+            key in stats and not _finite_number(stats[key])
+            for key in ("malicious", "suspicious")
+        ):
+            warnings.append("invalid_virustotal_stats")
+    if source.source == "abuseipdb" and "abuseConfidenceScore" in raw:
+        abuse_score = raw["abuseConfidenceScore"]
+        if not _finite_number(abuse_score) or not 0 <= abuse_score <= 100:
+            warnings.append("invalid_abuseipdb_confidence_score")
+    return warnings
+
+
+def _finite_number(value):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def _as_utc(value):

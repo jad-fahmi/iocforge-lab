@@ -27,6 +27,13 @@ credentials, were omitted by the source filter, or were skipped as optional.
 These availability records do not affect the score and are preserved during
 history and offline bundle replay.
 
+Malformed optional provider metadata cannot crash aggregation. Invalid raw
+shapes, unparseable observation times, and malformed provider reason fields are
+omitted from freshness or reason-code extraction and listed as
+`metadata_warnings` on the affected observation trace. An unusable timestamp
+uses the existing no-usable-time freshness factor; the normalized top-level
+provider verdict and score remain visible in the trace.
+
 Scores are decision support, not an automated containment authority. Conflicting
 sources should be reviewed alongside local telemetry.
 
