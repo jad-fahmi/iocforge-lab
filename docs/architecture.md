@@ -160,6 +160,8 @@ consistently before evidence identity is calculated. Enrichment snapshots
 record the IOC normalization version separately from each provider's output
 normalization version. Snapshots predating this field are treated as version 1;
 replay carries that recorded version forward without rewriting historical IDs.
+Batch enrichment deduplicates on this normalized IOC identity and preserves the
+first supplied spelling and source context for each identity.
 
 `ConnectorRegistry` is the source of truth for installed providers. Each
 provider declares the IOC types it accepts and whether credentials are

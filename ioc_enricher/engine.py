@@ -209,24 +209,30 @@ class Engine:
         self.close()
 
     def enrich_many(self, iocs, workers=4, progress=None):
-        # dedupe but keep first-seen order
-        seen: dict[str, Any] = {}
-        contexts: dict[str, Any] = {}
+        # Deduplicate by the same identity used for provider lookups, keeping
+        # the first spelling and context supplied for each normalized IOC.
+        unique: dict[str, tuple[str, Any]] = {}
         for item in iocs:
             if isinstance(item, tuple):
                 ioc, source_context = item
             else:
                 ioc, source_context = item, None
-            seen.setdefault(ioc, None)
-            contexts.setdefault(ioc, source_context)
+            refanged_ioc = refang(ioc.strip())
+            ioc_type = detect(refanged_ioc)
+            identity = normalize(refanged_ioc, ioc_type)
+            unique.setdefault(identity, (ioc, source_context))
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(self.enrich, i, contexts.get(i)): i for i in seen}
+            futures = {
+                identity: pool.submit(self.enrich, ioc, source_context)
+                for identity, (ioc, source_context) in unique.items()
+            }
             done = 0
-            for f in futures:
-                seen[futures[f]] = f.result()
+            results = []
+            for identity, future in futures.items():
+                results.append(future.result())
                 done += 1
                 if progress:
-                    progress(done, len(futures), futures[f])
+                    progress(done, len(futures), unique[identity][0])
 
-        return list(seen.values())
+        return results

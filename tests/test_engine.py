@@ -139,6 +139,20 @@ def test_enrich_many_dedupes_and_preserves_order():
     assert sorted(conn.calls) == ["evil.com", "good.com"]
 
 
+def test_enrich_many_dedupes_by_normalized_unicode_and_refanged_identity():
+    conn = RecordingConnector(api_key="x")
+    results = _engine([conn]).enrich_many(
+        ["EVIL.com", "evil[.]com", "faß.de", "XN--FA-HIA.DE", "fass.de"]
+    )
+
+    assert [result.ioc for result in results] == [
+        "evil.com",
+        "xn--fa-hia.de",
+        "fass.de",
+    ]
+    assert conn.calls == ["evil.com", "xn--fa-hia.de", "fass.de"]
+
+
 def test_enrich_with_real_cache_and_multiple_connectors(tmp_path):
     """regression test: the engine runs connectors concurrently via a
     thread pool, so a shared cache must not crash across threads."""
