@@ -8,8 +8,16 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any
 
+from ioc_enricher.ioc.defang import refang
+from ioc_enricher.ioc.detect import (
+    IOC_NORMALIZATION_VERSION,
+    detect,
+    normalize,
+)
+from ioc_enricher.ioc.types import IocType
+
 EVALUATION_SCHEMA_VERSION = 1
-EVALUATION_METHODOLOGY = "iocforge-provider-evaluation-v2"
+EVALUATION_METHODOLOGY = "iocforge-provider-evaluation-v3"
 MAX_EVALUATION_FIXTURE_BYTES = 10 * 1024 * 1024
 WILSON_95_Z = 1.959963984540054
 
@@ -68,6 +76,18 @@ def _wilson_interval(successes: int, trials: int) -> dict[str, Any] | None:
 
 def _mean(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 3) if values else None
+
+
+def _canonical_ioc(value: str) -> str:
+    """Use IOCForge identity rules when grouping positive IOC overlap."""
+    value = refang(value.strip())
+    ioc_type = detect(value)
+    if ioc_type == IocType.UNKNOWN:
+        return value
+    try:
+        return normalize(value, ioc_type)
+    except (UnicodeError, ValueError):
+        return value
 
 
 def _percentile(values: list[float], percentile: float) -> float | None:
@@ -185,6 +205,9 @@ def evaluate_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
     and successful boolean provider verdicts. Pair overlap uses positive IOC sets.
     """
     providers, cases = _validate_fixture(fixture)
+    canonical_iocs = {
+        case["id"]: _canonical_ioc(case["ioc"]) for case in cases
+    }
     outcomes_by_case = {
         case["id"]: {outcome["source"]: outcome for outcome in case.get("sources", [])}
         for case in cases
@@ -256,7 +279,7 @@ def evaluate_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
                 and outcome.get("error") is None
                 and outcome.get("malicious") is True
             ):
-                positive_iocs[provider].add(case["ioc"])
+                positive_iocs[provider].add(canonical_iocs[case["id"]])
             if (
                 outcome["found"]
                 and outcome.get("error") is None
@@ -368,6 +391,7 @@ def evaluate_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
     return {
         "methodology": EVALUATION_METHODOLOGY,
         "schema_version": EVALUATION_SCHEMA_VERSION,
+        "ioc_normalization_version": IOC_NORMALIZATION_VERSION,
         "dataset_name": fixture.get("name", "unnamed"),
         "dataset_sha256": hashlib.sha256(_canonical_json(fixture)).hexdigest(),
         "case_count": len(cases),

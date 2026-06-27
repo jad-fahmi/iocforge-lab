@@ -86,6 +86,44 @@ def test_cache_hits_are_excluded_from_provider_latency_samples():
     assert result["providers"]["beta"]["latency_ms"]["sample_count"] == 3
 
 
+def test_positive_overlap_uses_canonical_indicator_identity():
+    result = evaluate_fixture(
+        {
+            "schema_version": 1,
+            "providers": ["alpha", "beta"],
+            "cases": [
+                {
+                    "id": "unicode-domain",
+                    "ioc": "faß.de",
+                    "sources": [
+                        {"source": "alpha", "found": True, "malicious": True}
+                    ],
+                },
+                {
+                    "id": "idna-domain",
+                    "ioc": "XN--FA-HIA.DE",
+                    "sources": [
+                        {"source": "beta", "found": True, "malicious": True}
+                    ],
+                },
+                {
+                    "id": "different-ascii-domain",
+                    "ioc": "fass.de",
+                    "sources": [
+                        {"source": "beta", "found": True, "malicious": True}
+                    ],
+                },
+            ],
+        }
+    )
+
+    overlap = result["positive_overlap"][0]
+    assert result["ioc_normalization_version"] == "2"
+    assert overlap["intersection_count"] == 1
+    assert overlap["union_count"] == 2
+    assert overlap["jaccard"] == 0.5
+
+
 @pytest.mark.parametrize(
     "mutate",
     [

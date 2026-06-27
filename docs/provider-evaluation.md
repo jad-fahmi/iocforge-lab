@@ -35,10 +35,13 @@ optional `error`, `observed_at`, `latency_ms`, and `cache_hit`.
   recall, and specificity when their denominators are non-zero.
 - **Disagreement** compares successful boolean verdicts pairwise for the same
   case. **Overlap** is Jaccard similarity between providers' sets of positively
-  classified IOC values.
+classified IOC values. IOC values are canonicalized with the same refanging,
+type detection, and normalization rules used by enrichment before set overlap
+is calculated. The report records the IOC normalization version alongside the
+fixture digest.
 
 The report includes a SHA-256 digest of canonicalized fixture JSON and a fixed
-methodology version (`iocforge-provider-evaluation-v2`). Re-running the same
+methodology version (`iocforge-provider-evaluation-v3`). Re-running the same
 fixture produces the same report. Wilson intervals assume independent binomial
 outcomes; repeated or correlated indicators and unrepresentative labels can make
 them overconfident. They expose sample size uncertainty, not provider accuracy

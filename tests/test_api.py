@@ -313,7 +313,7 @@ def test_provider_evaluation_api_runs_an_offline_fixture():
     response = TestClient(api_module.app).post("/api/v1/evaluation/run", json=fixture)
 
     assert response.status_code == 200
-    assert response.json()["methodology"] == "iocforge-provider-evaluation-v2"
+    assert response.json()["methodology"] == "iocforge-provider-evaluation-v3"
     assert response.json()["providers"]["alpha"]["coverage"] == 0.75
 
 
