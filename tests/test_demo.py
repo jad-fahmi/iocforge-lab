@@ -61,6 +61,28 @@ def test_t1_t2_demo_writes_self_contained_offline_case(tmp_path, capsys):
     assert comparison["score_delta"] > 0
     assert comparison["replay"]["baseline_matches"] is True
     assert comparison["replay"]["comparison_matches"] is True
+    added_evidence = comparison["evidence_added"]
+    score_contributors = {
+        item["observation"]["source"]: item["decision_contribution"]
+        for item in added_evidence
+        if item["decision_contribution"]["included_in_aggregate"]
+    }
+    assert set(score_contributors) == {"virustotal", "otx", "threatfox", "urlhaus"}
+    assert all(
+        contribution["weighted_signal_contribution"] > 0
+        for contribution in score_contributors.values()
+    )
+    for item in added_evidence:
+        contribution = item["decision_contribution"]
+        assert contribution["observation_id"] == item["id"]
+        assert contribution["source"] == item["observation"]["source"]
+    virustotal_change = next(
+        item
+        for item in comparison["provider_changes"]
+        if item["source"] == "virustotal"
+    )
+    assert virustotal_change["baseline"][0]["observation"]["malicious"] is False
+    assert virustotal_change["comparison"][0]["observation"]["malicious"] is True
 
     added_targets = {
         edge["target_ioc"] for edge in comparison["graph"]["added_edges"]
