@@ -33,6 +33,13 @@ def test_provider_evaluation_metrics_are_reproducible_and_cover_failure_modes():
     }
     assert alpha["classification"]["false_positive"] == 1
     assert alpha["classification"]["false_negative"] == 0
+    assert alpha["classification"]["reliability_weight_candidate"] == {
+        "method": "clamped_youden_j_v1",
+        "value": 0.5,
+        "labelled_count": 3,
+        "positive_count": 1,
+        "negative_count": 2,
+    }
     precision_interval = alpha["classification"]["wilson_intervals_95"]["precision"]
     assert precision_interval["successes"] == 1
     assert precision_interval["trials"] == 2
@@ -74,6 +81,37 @@ def test_provider_evaluation_omits_unmeasurable_classification_intervals():
         "recall": None,
         "specificity": None,
     }
+    assert metrics["classification"]["reliability_weight_candidate"]["value"] is None
+
+
+def test_reliability_weight_candidate_clamps_inverted_predictions_to_zero():
+    fixture = {
+        "schema_version": 1,
+        "providers": ["provider"],
+        "cases": [
+            {
+                "id": f"case-{index}",
+                "ioc": f"case-{index}.example",
+                "truth": {"malicious": index < 2},
+                "sources": [
+                    {
+                        "source": "provider",
+                        "found": True,
+                        "malicious": index >= 2,
+                    }
+                ],
+            }
+            for index in range(4)
+        ],
+    }
+
+    result = evaluate_fixture(fixture)
+
+    candidate = result["providers"]["provider"]["classification"][
+        "reliability_weight_candidate"
+    ]
+    assert candidate["value"] == 0.0
+    assert candidate["labelled_count"] == 4
 
 
 def test_cache_hits_are_excluded_from_provider_latency_samples():

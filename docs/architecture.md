@@ -61,7 +61,9 @@ The transformation proceeds in dependency order:
    available offline without provider access or the originating history database.
 5. **Provider evaluation and scheduling:** a versioned fixture evaluator
    measures coverage, failure, latency, freshness, disagreement, overlap, and
-   labeled classification errors. The engine now uses a bounded single-process
+   labeled classification errors, with a Youden's J weight candidate for
+   operator review; evaluation never changes scoring weights automatically. The
+   engine now uses a bounded single-process
    scheduler with per-provider concurrency and sliding-window quotas, priority
    ordering, optional-source control, and configurable request retries/timeouts.
    Repeated evaluations can inform later policy tuning; fixture scores do not

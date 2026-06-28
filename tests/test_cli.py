@@ -196,7 +196,7 @@ def test_cli_evaluates_offline_fixture(capsys):
     assert cli.main(["--evaluate-fixture", str(fixture_path)]) == 0
 
     output = capsys.readouterr().out
-    assert '"methodology": "iocforge-provider-evaluation-v3"' in output
+    assert '"methodology": "iocforge-provider-evaluation-v4"' in output
     assert '"balanced_accuracy": 0.75' in output
 
 

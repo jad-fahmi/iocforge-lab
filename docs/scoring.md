@@ -47,3 +47,10 @@ must satisfy `0 <= suspicious <= malicious <= 1`. Every result carries the
 recalculate a saved decision from its stored observations and configuration.
 Replay marks a record unavailable when it lacks pinned scoring inputs or uses
 an unsupported methodology version; it does not substitute current settings.
+
+The default provider weights are starting priors, not empirical accuracy
+estimates. The offline provider evaluator reports a clamped Youden's J weight
+candidate from successful labeled verdicts, along with the labeled sample
+counts. Review that candidate with coverage, failure rate, and the reported
+confidence intervals using representative local labels before changing
+`scoring.weights`; evaluation never changes scoring configuration automatically.

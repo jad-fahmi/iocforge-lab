@@ -17,7 +17,7 @@ from ioc_enricher.ioc.detect import (
 from ioc_enricher.ioc.types import IocType
 
 EVALUATION_SCHEMA_VERSION = 1
-EVALUATION_METHODOLOGY = "iocforge-provider-evaluation-v3"
+EVALUATION_METHODOLOGY = "iocforge-provider-evaluation-v4"
 MAX_EVALUATION_FIXTURE_BYTES = 10 * 1024 * 1024
 WILSON_95_Z = 1.959963984540054
 
@@ -307,6 +307,11 @@ def evaluate_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
             if recall is not None and negative_recall is not None
             else None
         )
+        reliability_weight_candidate = (
+            round(max(0.0, 2 * balanced_accuracy - 1), 4)
+            if balanced_accuracy is not None
+            else None
+        )
         f1 = (
             round(2 * precision * recall / (precision + recall), 4)
             if precision is not None
@@ -349,6 +354,13 @@ def evaluate_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
                 "specificity": specificity,
                 "f1": f1,
                 "balanced_accuracy": balanced_accuracy,
+                "reliability_weight_candidate": {
+                    "method": "clamped_youden_j_v1",
+                    "value": reliability_weight_candidate,
+                    "labelled_count": labelled_count,
+                    "positive_count": true_positive + false_negative,
+                    "negative_count": true_negative + false_positive,
+                },
                 "wilson_intervals_95": classification_intervals,
             },
         }

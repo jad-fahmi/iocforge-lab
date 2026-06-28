@@ -33,6 +33,11 @@ optional `error`, `observed_at`, `latency_ms`, and `cache_hit`.
   provider verdicts. Balanced accuracy is omitted unless both truth classes
   have measurable recall. The report includes 95% Wilson intervals for precision,
   recall, and specificity when their denominators are non-zero.
+- **Reliability weight candidate** is the clamped Youden's J statistic,
+  `max(0, 2 * balanced_accuracy - 1)`. It ranges from zero for chance-level or
+  inverted predictions to one for perfect predictions. The report includes
+  positive, negative, and total labeled sample counts. It is conditional on
+  successful classified outcomes; use coverage and failure rate alongside it.
 - **Disagreement** compares successful boolean verdicts pairwise for the same
   case. **Overlap** is Jaccard similarity between providers' sets of positively
 classified IOC values. IOC values are canonicalized with the same refanging,
@@ -41,7 +46,7 @@ is calculated. The report records the IOC normalization version alongside the
 fixture digest.
 
 The report includes a SHA-256 digest of canonicalized fixture JSON and a fixed
-methodology version (`iocforge-provider-evaluation-v3`). Re-running the same
+methodology version (`iocforge-provider-evaluation-v4`). Re-running the same
 fixture produces the same report. Wilson intervals assume independent binomial
 outcomes; repeated or correlated indicators and unrepresentative labels can make
 them overconfident. They expose sample size uncertainty, not provider accuracy
@@ -49,8 +54,11 @@ outside the fixture. The
 example fixture is intentionally small and demonstrates a provider outage,
 rate-limit error, conflicting verdict, stale evidence, a future timestamp, and
 an incomplete result. Its numbers are not production reliability estimates.
-IOCForge reports evidence for review but does not automatically turn a small
-fixture score into a provider weight.
+IOCForge reports the candidate for review but does not apply it to scoring
+weights. Existing default weights are operator priors, not measurements from
+this example fixture. Operators should use representative, locally labeled
+data and review the labeled sample counts and uncertainty before changing a
+weight.
 
 Every `SourceResult` now carries the engine-measured lookup duration. Results
 served from the cache set `cache_hit`, allowing the evaluator to keep local cache
