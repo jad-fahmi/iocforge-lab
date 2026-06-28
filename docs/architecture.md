@@ -47,11 +47,11 @@ The transformation proceeds in dependency order:
    include up to three alternate edge-distinct routes to each pivot. Shared
    providers or observations mean alternate routes are not independent
    corroboration. Graph traversal has a depth limit of five and a 500-edge
-   budget; path ranking caps expansions at 5,000. Investigation replay expands
-   all case indicators in one shared breadth-first traversal, avoiding repeated
-   queries through their common investigation node while retaining the same
-   depth and edge budgets. Single-root graph queries keep their established
-   confidence and truncation order.
+   budget; path ranking caps expansions at 5,000. Investigation replay and
+   bundle capture expand all case indicators in one shared breadth-first
+   traversal, avoiding repeated queries through their common investigation node
+   while retaining the same depth and edge budgets. Single-root graph queries
+   keep their established confidence and truncation order.
 4. **Investigation integrity and bundles:** per-indicator and per-investigation
    event chains can now be verified. A versioned `.iocforge` archive packages
    case metadata, linked snapshots and evidence, bounded graph state, and event

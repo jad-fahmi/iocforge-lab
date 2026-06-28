@@ -75,6 +75,55 @@ def test_investigation_bundle_replays_without_providers_and_includes_graph(tmp_p
     ]
 
 
+def test_large_investigation_bundle_keeps_all_members_and_bounds_graph(tmp_path):
+    store = HistoryStore(tmp_path / "large-bundle.db")
+    investigation = store.create_investigation("Large investigation")
+    iocs = [f"bundle-{index:04d}.example" for index in range(501)]
+    for ioc in iocs:
+        store.add_investigation_indicator(investigation["id"], ioc)
+
+    payload = store.investigation_bundle_payload(investigation["id"])
+    store.close()
+
+    assert payload is not None
+    assert payload["investigation"]["indicators"] == iocs
+    assert payload["graph"]["edge_limit"] == 500
+    assert len(payload["graph"]["edges"]) == 500
+    assert payload["graph"]["truncated"] is True
+
+
+def test_bundle_capture_traverses_shared_member_graph_together(tmp_path, monkeypatch):
+    store = HistoryStore(tmp_path / "shared-bundle.db")
+    investigation = store.create_investigation("Shared infrastructure")
+    iocs = [f"shared-{index:03d}.example" for index in range(100)]
+    for index, ioc in enumerate(iocs):
+        store.add_investigation_indicator(investigation["id"], ioc)
+        store.add_relationship(
+            ioc,
+            f"198.51.100.{index + 1}",
+            "resolves_to",
+            confidence=0.8,
+            evidence_source="bundle_fixture",
+        )
+
+    relationship_queries = 0
+    original_query = store._relationships_for_entities
+
+    def count_relationship_queries(*args, **kwargs):
+        nonlocal relationship_queries
+        relationship_queries += 1
+        return original_query(*args, **kwargs)
+
+    monkeypatch.setattr(store, "_relationships_for_entities", count_relationship_queries)
+    payload = store.investigation_bundle_payload(investigation["id"])
+    store.close()
+
+    assert payload is not None
+    assert len(payload["graph"]["edges"]) == 200
+    assert payload["graph"]["truncated"] is False
+    assert relationship_queries < len(iocs)
+
+
 def test_bundle_reconstructs_and_compares_investigation_offline(tmp_path, monkeypatch):
     class Clock(datetime):
         current = datetime(2026, 1, 1, tzinfo=timezone.utc)

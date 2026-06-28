@@ -2443,17 +2443,11 @@ class HistoryStore:
             )
             snapshot["observations"] = self.observations_for_enrichment(snapshot["id"])
 
-        edges: dict[int, dict[str, Any]] = {}
-        graph_truncated = False
-        for ioc in iocs:
-            remaining = 500 - len(edges)
-            if remaining <= 0:
-                graph_truncated = True
-                break
-            graph = self.relationship_graph(ioc, limit=remaining, max_depth=5)
-            edges.update({edge["id"]: edge for edge in graph["edges"]})
-            graph_truncated = graph_truncated or graph["truncated"]
-        graph_edges = [edges[key] for key in sorted(edges)]
+        graph_roots = [self._graph_root(ioc) for ioc in iocs]
+        graph = self._relationship_graph_for_roots(
+            graph_roots, limit=500, max_depth=5, as_of=None
+        )
+        graph_edges = graph["edges"]
         nodes = sorted(
             {
                 *iocs,
@@ -2501,7 +2495,7 @@ class HistoryStore:
                 "edges": graph_edges,
                 "max_depth": 5,
                 "edge_limit": 500,
-                "truncated": graph_truncated,
+                "truncated": graph["truncated"],
             },
         }
 
