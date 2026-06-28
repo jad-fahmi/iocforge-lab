@@ -16,7 +16,7 @@ class AbuseIPDB(Connector):
         headers = {"Key": self.api_key, "Accept": "application/json"}
         params = {"ipAddress": ioc, "maxAgeInDays": 90}
         try:
-            resp = self.client.get(BASE + "/check", headers=headers, params=params)
+            resp = self.get(BASE + "/check", headers=headers, params=params)
         except Exception as exc:
             log.warning("abuseipdb request failed: %s", exc)
             return self._empty(ioc, ioc_type, error=str(exc))

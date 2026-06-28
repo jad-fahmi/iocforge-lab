@@ -1,4 +1,5 @@
 import abc
+import time
 
 import httpx
 
@@ -28,6 +29,18 @@ class Connector(abc.ABC):
 
     def supports(self, ioc_type: IocType) -> bool:
         return ioc_type in self.supported
+
+    def get(self, url, max_retries=2, **kwargs):
+        """wrapper that backs off once on a 429."""
+        attempt = 0
+        while True:
+            resp = self.client.get(url, **kwargs)
+            if resp.status_code != 429 or attempt >= max_retries:
+                return resp
+            wait = float(resp.headers.get("Retry-After", 2))
+            log.warning("%s rate limited, sleeping %ss", self.name, wait)
+            time.sleep(min(wait, 30))
+            attempt += 1
 
     @abc.abstractmethod
     def enrich(self, ioc: str, ioc_type: IocType) -> SourceResult:

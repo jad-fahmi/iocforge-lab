@@ -41,7 +41,7 @@ class VirusTotal(Connector):
 
         headers = {"x-apikey": self.api_key}
         try:
-            resp = self.client.get(BASE + path, headers=headers)
+            resp = self.get(BASE + path, headers=headers)
         except Exception as exc:  # network error
             log.warning("vt request failed: %s", exc)
             return self._empty(ioc, ioc_type, error=str(exc))
