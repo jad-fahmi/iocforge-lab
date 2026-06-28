@@ -32,6 +32,24 @@ def test_benchmark_smoke_measures_persistence_graph_scheduler_and_replay():
     assert report["storage"]["growth_bytes_per_indicator"] > 0
 
 
+def test_investigation_replay_batches_large_root_sets_and_bounds_graph():
+    report = run_benchmarks(
+        indicators=1000,
+        lookup_workers=8,
+        scheduler_concurrency=8,
+        max_pending=32,
+        provider_delay_ms=0,
+        replay_samples=1,
+    )
+
+    replay = report["investigation_replay"]
+    assert replay["indicator_count"] == 1000
+    assert replay["replayable"] is True
+    assert replay["state_complete"] is True
+    assert replay["graph_edge_count"] == 500
+    assert replay["graph_truncated"] is True
+
+
 def test_benchmark_series_summarizes_reproducible_repeated_runs():
     report = run_benchmark_series(
         repeats=2,
