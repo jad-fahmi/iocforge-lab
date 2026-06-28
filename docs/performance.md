@@ -53,13 +53,21 @@ fixtures to study provider coverage and observed latency.
 reference run on the machine and Python version listed in the file. Its summary
 reports central tendency and run-to-run spread; each individual sample is
 retained so the reader can inspect outliers and confirm the workload digest.
-In this reference, scheduler-only enrichment reached a median 1,218.8
-indicators/second and persistence reached 92.2 indicators/second. The database
+In this reference, scheduler-only enrichment reached a median 1,418.8
+indicators/second and persistence reached 92.9 indicators/second. The database
 grew by 999,424 bytes (10.0 KB per indicator). Individual snapshot replay had
-a median p50 of 1.19 ms. Reconstructing the 100-indicator investigation took a
-median 5.51 seconds at 18.1 indicators/second and returned 202 graph edges; the
-bounded pivot-path query took 63.4 ms. The three-run spread is included in the
+a median p50 of 1.14 ms. Reconstructing the 100-indicator investigation took a
+median 184.2 ms at 543.0 indicators/second and returned 202 graph edges; the
+bounded pivot-path query took 57.6 ms. The three-run spread is included in the
 JSON report.
+
+A profile of the earlier investigation replay found over 20,000 per-entity
+relationship queries because each case indicator traversed the same shared
+investigation neighborhood. Case replay now traverses from all indicator roots
+together under one shared edge budget. On the same 100-indicator workload, this
+reduced median replay time from 5.51 seconds to 184 ms (about 30 times faster)
+while returning the same 202 edges with complete, untruncated state. Single-root
+graph calls retain their existing traversal order and truncation behavior.
 
 These local measurements are not a capacity guarantee. The difference between
 scheduler-only and persisted throughput helps identify paths to profile; it

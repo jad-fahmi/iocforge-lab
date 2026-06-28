@@ -1575,9 +1575,6 @@ class HistoryStore:
             }
 
         indicator_states: list[dict[str, Any]] = []
-        graph_nodes: dict[int, dict[str, Any]] = {}
-        graph_edges: dict[int, dict[str, Any]] = {}
-        graph_truncated = False
         event_integrity = {"investigation": case_integrity, "indicators": {}}
         state_complete = case_state_complete and metadata_complete
         for ioc, added_at in members.items():
@@ -1678,18 +1675,12 @@ class HistoryStore:
                     ),
                 }
             )
-            remaining = 500 - len(graph_edges)
-            if remaining <= 0:
-                graph_truncated = True
-                continue
-            graph = self.relationship_graph(
-                ioc, limit=remaining, max_depth=5, as_of=timestamp
-            )
-            graph_nodes.update(
-                {node["entity_id"]: node for node in graph["nodes"]}
-            )
-            graph_edges.update({edge["id"]: edge for edge in graph["edges"]})
-            graph_truncated = graph_truncated or bool(graph["truncated"])
+        graph = self._relationship_graph_for_roots(
+            [self._graph_root(ioc) for ioc in members],
+            limit=500,
+            max_depth=5,
+            as_of=timestamp,
+        )
 
         return {
             "investigation_id": investigation_id,
@@ -1707,11 +1698,11 @@ class HistoryStore:
             "indicators": indicator_states,
             "indicator_count": len(indicator_states),
             "graph": {
-                "nodes": [graph_nodes[key] for key in sorted(graph_nodes)],
-                "edges": [graph_edges[key] for key in sorted(graph_edges)],
+                "nodes": graph["nodes"],
+                "edges": graph["edges"],
                 "max_depth": 5,
                 "edge_limit": 500,
-                "truncated": graph_truncated,
+                "truncated": graph["truncated"],
                 "as_of": timestamp,
             },
             "event_integrity": event_integrity,
@@ -2913,48 +2904,7 @@ class HistoryStore:
             ).fetchall()
         return [_relationship_dict(row) for row in rows]
 
-    def _relationships_for_entity(
-        self, entity_id: int, limit: int, as_of: str | None
-    ) -> list[dict[str, Any]]:
-        at = _normalize_timestamp(as_of)
-        time_filter = (
-            " AND edge.created_at <= ? AND edge.valid_from <= ? "
-            "AND (edge.valid_to IS NULL OR edge.valid_to >= ?)"
-            if at
-            else ""
-        )
-        params: list[Any] = [entity_id, entity_id]
-        if at:
-            params.extend([at, at, at])
-        params.append(limit)
-        with self._lock:
-            rows = self.conn.execute(
-                f"""
-                SELECT edge.*, source_entity.entity_type AS source_entity_type,
-                       target_entity.entity_type AS target_entity_type
-                FROM indicator_relationships AS edge
-                LEFT JOIN graph_entities AS source_entity
-                  ON source_entity.id = edge.source_entity_id
-                LEFT JOIN graph_entities AS target_entity
-                  ON target_entity.id = edge.target_entity_id
-                WHERE (edge.source_entity_id = ? OR edge.target_entity_id = ?){time_filter}
-                ORDER BY edge.id DESC LIMIT ?
-                """,
-                params,
-            ).fetchall()
-        return [_relationship_dict(row) for row in rows]
-
-    def relationship_graph(
-        self,
-        ioc: str,
-        limit: int = 100,
-        max_depth: int = 1,
-        as_of: str | None = None,
-        entity_type: str | None = None,
-    ) -> dict[str, Any]:
-        limit = max(1, min(limit, 500))
-        max_depth = max(1, min(max_depth, 5))
-        at = _normalize_timestamp(as_of)
+    def _graph_root(self, ioc: str, entity_type: str | None = None) -> dict[str, Any]:
         root_type = _entity_type_for(ioc, explicit=entity_type)
         root_value = _canonical_entity_value(ioc, root_type)
         with self._lock:
@@ -2963,65 +2913,162 @@ class HistoryStore:
                 "AND canonical_value = ?",
                 (root_type, root_value),
             ).fetchone()
-        if root_row is None:
-            return {
-                "nodes": [
-                    {
-                        "entity_id": None,
-                        "id": ioc,
-                        "entity_type": root_type,
-                        "canonical_value": root_value,
-                        "display_value": ioc,
-                        "metadata": {},
-                    }
-                ],
-                "edges": [],
-                "max_depth": max_depth,
-                "as_of": at,
-                "truncated": False,
-            }
-        root_entity_id = int(root_row["id"])
+        return {
+            "entity_id": int(root_row["id"]) if root_row is not None else None,
+            "id": ioc,
+            "entity_type": root_type,
+            "canonical_value": root_value,
+            "display_value": ioc,
+            "metadata": {},
+        }
+
+    def _relationships_for_entities(
+        self, entity_ids: list[int], limit: int, as_of: str | None
+    ) -> list[dict[str, Any]]:
+        unique_ids = sorted(set(entity_ids))
+        if not unique_ids or limit < 1:
+            return []
+        at = _normalize_timestamp(as_of)
+        time_filter = (
+            " AND edge.created_at <= ? AND edge.valid_from <= ? "
+            "AND (edge.valid_to IS NULL OR edge.valid_to >= ?)"
+            if at
+            else ""
+        )
+        rows_by_id: dict[int, sqlite3.Row] = {}
+        # Keep each query below SQLite's traditional 999-parameter limit: the
+        # entity list is bound twice for the two endpoint columns.
+        chunk_size = 400
+        with self._lock:
+            for offset in range(0, len(unique_ids), chunk_size):
+                chunk = unique_ids[offset : offset + chunk_size]
+                placeholders = ",".join("?" for _ in chunk)
+                params: list[Any] = [*chunk, *chunk]
+                if at:
+                    params.extend([at, at, at])
+                params.append(limit)
+                rows = self.conn.execute(
+                    f"""
+                    SELECT edge.*, source_entity.entity_type AS source_entity_type,
+                           target_entity.entity_type AS target_entity_type
+                    FROM indicator_relationships AS edge
+                    LEFT JOIN graph_entities AS source_entity
+                      ON source_entity.id = edge.source_entity_id
+                    LEFT JOIN graph_entities AS target_entity
+                      ON target_entity.id = edge.target_entity_id
+                    WHERE (edge.source_entity_id IN ({placeholders})
+                           OR edge.target_entity_id IN ({placeholders})){time_filter}
+                    ORDER BY edge.id DESC LIMIT ?
+                    """,
+                    params,
+                ).fetchall()
+                rows_by_id.update({int(row["id"]): row for row in rows})
+        return [_relationship_dict(row) for row in rows_by_id.values()]
+
+    def _relationship_graph_for_roots(
+        self,
+        roots: list[dict[str, Any]],
+        limit: int,
+        max_depth: int,
+        as_of: str | None,
+    ) -> dict[str, Any]:
+        root_ids = {
+            root["entity_id"] for root in roots if root["entity_id"] is not None
+        }
         edges_by_id: dict[int, dict[str, Any]] = {}
-        visited = {root_entity_id}
-        frontier = [root_entity_id]
-        depth = 0
-        while frontier and depth < max_depth and len(edges_by_id) < limit:
-            next_frontier: dict[int, float] = {}
-            for current in frontier:
-                incident = self._relationships_for_entity(
-                    current,
-                    limit - len(edges_by_id),
-                    at,
+        if len(root_ids) == 1:
+            # Keep single-root graph ranking and truncation behavior unchanged.
+            root_id = next(iter(root_ids))
+            visited = {root_id}
+            single_frontier = [root_id]
+            depth = 0
+            while (
+                single_frontier
+                and depth < max_depth
+                and len(edges_by_id) < limit
+            ):
+                single_next_frontier: dict[int, float] = {}
+                for current in single_frontier:
+                    incident = self._relationships_for_entities(
+                        [current], limit - len(edges_by_id), as_of
+                    )
+                    incident.sort(
+                        key=lambda edge: (
+                            -float(edge["confidence"]),
+                            -int(edge["id"]),
+                        )
+                    )
+                    for edge in incident:
+                        edges_by_id.setdefault(edge["id"], edge)
+                        other = (
+                            edge["target_entity_id"]
+                            if edge["source_entity_id"] == current
+                            else edge["source_entity_id"]
+                        )
+                        if other is not None and other not in visited:
+                            visited.add(other)
+                            single_next_frontier[other] = max(
+                                single_next_frontier.get(other, 0.0),
+                                float(edge["confidence"]),
+                            )
+                        if len(edges_by_id) >= limit:
+                            break
+                    if len(edges_by_id) >= limit:
+                        break
+                single_frontier = sorted(
+                    single_next_frontier,
+                    key=lambda node: (-single_next_frontier[node], node),
+                )
+                depth += 1
+        else:
+            # Case replay traverses from every indicator together so shared
+            # investigation and observation neighborhoods are queried once.
+            visited = set(root_ids)
+            multi_frontier = {entity_id: 1.0 for entity_id in root_ids}
+            depth = 0
+            while (
+                multi_frontier
+                and depth < max_depth
+                and len(edges_by_id) < limit
+            ):
+                incident = self._relationships_for_entities(
+                    list(multi_frontier), limit - len(edges_by_id), as_of
                 )
                 incident.sort(
-                    key=lambda edge: (-float(edge["confidence"]), -int(edge["id"]))
+                    key=lambda edge: (
+                        -float(edge["confidence"]),
+                        -int(edge["id"]),
+                    )
                 )
+                multi_next_frontier: dict[int, float] = {}
                 for edge in incident:
                     edges_by_id.setdefault(edge["id"], edge)
-                    other = (
-                        edge["target_entity_id"]
-                        if edge["source_entity_id"] == current
-                        else edge["source_entity_id"]
-                    )
-                    if other is None:
-                        continue
-                    if other not in visited:
+                    endpoints = (edge["source_entity_id"], edge["target_entity_id"])
+                    for other in endpoints:
+                        if other is None or other in visited:
+                            continue
                         visited.add(other)
-                        next_frontier[other] = max(
-                            next_frontier.get(other, 0.0),
-                            float(edge["confidence"]),
+                        path_confidence = min(
+                            multi_frontier[current]
+                            for current in endpoints
+                            if current in multi_frontier
+                        )
+                        multi_next_frontier[other] = max(
+                            multi_next_frontier.get(other, 0.0),
+                            min(path_confidence, float(edge["confidence"])),
                         )
                     if len(edges_by_id) >= limit:
                         break
-                if len(edges_by_id) >= limit:
-                    break
-            frontier = sorted(
-                next_frontier,
-                key=lambda node: (-next_frontier[node], node),
-            )
-            depth += 1
+                multi_frontier = dict(
+                    sorted(
+                        multi_next_frontier.items(),
+                        key=lambda item: (-item[1], item[0]),
+                    )
+                )
+                depth += 1
+
         edges = sorted(edges_by_id.values(), key=lambda edge: edge["id"])
-        endpoint_ids = {
+        endpoint_ids = root_ids | {
             entity_id
             for edge in edges
             for entity_id in (edge["source_entity_id"], edge["target_entity_id"])
@@ -3034,14 +3081,18 @@ class HistoryStore:
         }
         with self._lock:
             entity_rows = []
-            if endpoint_ids:
-                placeholders = ",".join("?" for _ in endpoint_ids)
-                entity_rows = self.conn.execute(
-                    "SELECT * FROM graph_entities WHERE id IN ("
-                    + placeholders
-                    + ")",
-                    sorted(endpoint_ids),
-                ).fetchall()
+            sorted_endpoint_ids = sorted(endpoint_ids)
+            for offset in range(0, len(sorted_endpoint_ids), 400):
+                chunk = sorted_endpoint_ids[offset : offset + 400]
+                placeholders = ",".join("?" for _ in chunk)
+                entity_rows.extend(
+                    self.conn.execute(
+                        "SELECT * FROM graph_entities WHERE id IN ("
+                        + placeholders
+                        + ")",
+                        chunk,
+                    ).fetchall()
+                )
             evidence_rows = []
             if evidence_ids:
                 placeholders = ",".join("?" for _ in evidence_ids)
@@ -3072,15 +3123,14 @@ class HistoryStore:
             node["entity_id"] = node.pop("id")
             node["id"] = node["display_value"]
             node_by_id[node["entity_id"]] = node
+        observation_entity_ids = {
+            node["canonical_value"]: entity_id
+            for entity_id, node in node_by_id.items()
+            if node["entity_type"] == "provider_observation"
+        }
         for row in evidence_rows:
-            entity_id = next(
-                (
-                    item["entity_id"]
-                    for item in node_by_id.values()
-                    if item["entity_type"] == "provider_observation"
-                    and item["canonical_value"] == f"observation:{row['observation_key']}"
-                ),
-                None,
+            entity_id = observation_entity_ids.get(
+                f"observation:{row['observation_key']}"
             )
             if entity_id is not None:
                 node_by_id[entity_id]["linked_edge_evidence"] = {
@@ -3089,28 +3139,40 @@ class HistoryStore:
                     "collected_at": row["collected_at"],
                     "raw_response_sha256": row["raw_response_sha256"],
                 }
-        if root_entity_id not in node_by_id:
-            with self._lock:
-                root_node = self.conn.execute(
-                    "SELECT * FROM graph_entities WHERE id = ?", (root_entity_id,)
-                ).fetchone()
-            if root_node is not None:
-                node = dict(root_node)
-                node["metadata"] = json.loads(node.pop("metadata_json"))
-                node["entity_id"] = node.pop("id")
-                node["id"] = node["display_value"]
-                node_by_id[root_entity_id] = node
-        nodes = sorted(
-            node_by_id.values(),
-            key=lambda node: (node["id"], node["entity_type"], node["entity_id"] or 0),
+        nodes = list(node_by_id.values())
+        represented_roots = {
+            (node["entity_type"], node["canonical_value"]) for node in nodes
+        }
+        nodes.extend(
+            root
+            for root in roots
+            if root["entity_id"] is None
+            and (root["entity_type"], root["canonical_value"]) not in represented_roots
+        )
+        nodes.sort(
+            key=lambda node: (node["id"], node["entity_type"], node["entity_id"] or 0)
         )
         return {
             "nodes": nodes,
             "edges": edges,
             "max_depth": max_depth,
-            "as_of": at,
+            "as_of": as_of,
             "truncated": len(edges) >= limit,
         }
+
+    def relationship_graph(
+        self,
+        ioc: str,
+        limit: int = 100,
+        max_depth: int = 1,
+        as_of: str | None = None,
+        entity_type: str | None = None,
+    ) -> dict[str, Any]:
+        limit = max(1, min(limit, 500))
+        max_depth = max(1, min(max_depth, 5))
+        at = _normalize_timestamp(as_of)
+        root = self._graph_root(ioc, entity_type)
+        return self._relationship_graph_for_roots([root], limit, max_depth, at)
 
     def suggest_pivots(
         self,

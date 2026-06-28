@@ -19,9 +19,9 @@
   "samples": [
     {
       "case_linking": {
-        "elapsed_seconds": 0.748075,
+        "elapsed_seconds": 0.748039,
         "indicator_count": 100,
-        "indicators_per_second": 133.676
+        "indicators_per_second": 133.683
       },
       "environment": {
         "logical_cpus": 8,
@@ -29,8 +29,8 @@
         "python": "3.13.2"
       },
       "graph": {
-        "elapsed_ms": 0.945,
-        "pivot_path_elapsed_ms": 59.762,
+        "elapsed_ms": 0.927,
+        "pivot_path_elapsed_ms": 57.628,
         "pivot_path_expansions": 404,
         "pivot_path_truncated": false,
         "pivot_paths_returned": 100,
@@ -38,20 +38,20 @@
         "root": "bench-000000.example"
       },
       "investigation_replay": {
-        "as_of": "2026-09-25T01:27:48.982750+00:00",
-        "elapsed_ms": 5512.452,
-        "elapsed_seconds": 5.512452,
+        "as_of": "2026-09-25T01:42:07.577144+00:00",
+        "elapsed_ms": 188.501,
+        "elapsed_seconds": 0.188501,
         "graph_edge_count": 202,
         "graph_truncated": false,
         "indicator_count": 100,
-        "indicators_per_second": 18.141,
+        "indicators_per_second": 530.501,
         "replayable": true,
         "state_complete": true
       },
       "methodology": "iocforge-local-benchmark-v3",
       "offline_enrichment": {
-        "elapsed_seconds": 0.082048,
-        "indicators_per_second": 1218.797,
+        "elapsed_seconds": 0.064647,
+        "indicators_per_second": 1546.869,
         "results": 100,
         "scheduler": {
           "max_active_by_provider": {
@@ -75,15 +75,15 @@
         "scheduler_concurrency": 8
       },
       "replay": {
-        "mean_ms": 1.24,
-        "p50_ms": 1.185,
-        "p95_ms": 1.457,
+        "mean_ms": 1.191,
+        "p50_ms": 1.148,
+        "p95_ms": 1.395,
         "sample_count": 20,
         "total_samples": 20
       },
       "scheduler_with_history": {
-        "elapsed_seconds": 1.110112,
-        "indicators_per_second": 90.081,
+        "elapsed_seconds": 1.09963,
+        "indicators_per_second": 90.94,
         "results": 100,
         "scheduler": {
           "max_active_by_provider": {
@@ -117,9 +117,9 @@
     },
     {
       "case_linking": {
-        "elapsed_seconds": 0.754517,
+        "elapsed_seconds": 0.721732,
         "indicator_count": 100,
-        "indicators_per_second": 132.535
+        "indicators_per_second": 138.556
       },
       "environment": {
         "logical_cpus": 8,
@@ -127,8 +127,8 @@
         "python": "3.13.2"
       },
       "graph": {
-        "elapsed_ms": 1.467,
-        "pivot_path_elapsed_ms": 65.378,
+        "elapsed_ms": 0.962,
+        "pivot_path_elapsed_ms": 53.814,
         "pivot_path_expansions": 404,
         "pivot_path_truncated": false,
         "pivot_paths_returned": 100,
@@ -136,20 +136,20 @@
         "root": "bench-000000.example"
       },
       "investigation_replay": {
-        "as_of": "2026-09-25T01:27:56.913131+00:00",
-        "elapsed_ms": 5551.719,
-        "elapsed_seconds": 5.551719,
+        "as_of": "2026-09-25T01:42:10.135737+00:00",
+        "elapsed_ms": 184.019,
+        "elapsed_seconds": 0.184019,
         "graph_edge_count": 202,
         "graph_truncated": false,
         "indicator_count": 100,
-        "indicators_per_second": 18.012,
+        "indicators_per_second": 543.424,
         "replayable": true,
         "state_complete": true
       },
       "methodology": "iocforge-local-benchmark-v3",
       "offline_enrichment": {
-        "elapsed_seconds": 0.074204,
-        "indicators_per_second": 1347.638,
+        "elapsed_seconds": 0.070482,
+        "indicators_per_second": 1418.798,
         "results": 100,
         "scheduler": {
           "max_active_by_provider": {
@@ -173,15 +173,15 @@
         "scheduler_concurrency": 8
       },
       "replay": {
-        "mean_ms": 1.565,
-        "p50_ms": 1.46,
-        "p95_ms": 1.985,
+        "mean_ms": 1.198,
+        "p50_ms": 1.14,
+        "p95_ms": 1.589,
         "sample_count": 20,
         "total_samples": 20
       },
       "scheduler_with_history": {
-        "elapsed_seconds": 1.084748,
-        "indicators_per_second": 92.187,
+        "elapsed_seconds": 1.07601,
+        "indicators_per_second": 92.936,
         "results": 100,
         "scheduler": {
           "max_active_by_provider": {
@@ -215,9 +215,9 @@
     },
     {
       "case_linking": {
-        "elapsed_seconds": 0.791093,
+        "elapsed_seconds": 0.866794,
         "indicator_count": 100,
-        "indicators_per_second": 126.407
+        "indicators_per_second": 115.368
       },
       "environment": {
         "logical_cpus": 8,
@@ -225,8 +225,8 @@
         "python": "3.13.2"
       },
       "graph": {
-        "elapsed_ms": 1.094,
-        "pivot_path_elapsed_ms": 63.361,
+        "elapsed_ms": 1.288,
+        "pivot_path_elapsed_ms": 57.764,
         "pivot_path_expansions": 404,
         "pivot_path_truncated": false,
         "pivot_paths_returned": 100,
@@ -234,20 +234,20 @@
         "root": "bench-000000.example"
       },
       "investigation_replay": {
-        "as_of": "2026-09-25T01:28:04.929863+00:00",
-        "elapsed_ms": 5502.713,
-        "elapsed_seconds": 5.502713,
+        "as_of": "2026-09-25T01:42:12.805184+00:00",
+        "elapsed_ms": 184.154,
+        "elapsed_seconds": 0.184154,
         "graph_edge_count": 202,
         "graph_truncated": false,
         "indicator_count": 100,
-        "indicators_per_second": 18.173,
+        "indicators_per_second": 543.022,
         "replayable": true,
         "state_complete": true
       },
       "methodology": "iocforge-local-benchmark-v3",
       "offline_enrichment": {
-        "elapsed_seconds": 0.090115,
-        "indicators_per_second": 1109.688,
+        "elapsed_seconds": 0.072572,
+        "indicators_per_second": 1377.95,
         "results": 100,
         "scheduler": {
           "max_active_by_provider": {
@@ -271,15 +271,15 @@
         "scheduler_concurrency": 8
       },
       "replay": {
-        "mean_ms": 1.207,
-        "p50_ms": 1.152,
-        "p95_ms": 1.46,
+        "mean_ms": 1.204,
+        "p50_ms": 1.144,
+        "p95_ms": 1.569,
         "sample_count": 20,
         "total_samples": 20
       },
       "scheduler_with_history": {
-        "elapsed_seconds": 1.075871,
-        "indicators_per_second": 92.948,
+        "elapsed_seconds": 1.063766,
+        "indicators_per_second": 94.006,
         "results": 100,
         "scheduler": {
           "max_active_by_provider": {
@@ -314,14 +314,14 @@
   ],
   "summary": {
     "case_linking_indicators_per_second": {
-      "max": 133.676,
-      "mean": 130.873,
-      "median": 132.535,
-      "min": 126.407,
-      "p50": 132.535,
-      "p95": 133.676,
+      "max": 138.556,
+      "mean": 129.202,
+      "median": 133.683,
+      "min": 115.368,
+      "p50": 133.683,
+      "p95": 138.556,
       "sample_count": 3,
-      "stdev": 3.909
+      "stdev": 12.226
     },
     "database_growth_bytes": {
       "max": 999424,
@@ -344,84 +344,84 @@
       "stdev": 0.0
     },
     "graph_query_ms": {
-      "max": 1.467,
-      "mean": 1.169,
-      "median": 1.094,
-      "min": 0.945,
-      "p50": 1.094,
-      "p95": 1.467,
+      "max": 1.288,
+      "mean": 1.059,
+      "median": 0.962,
+      "min": 0.927,
+      "p50": 0.962,
+      "p95": 1.288,
       "sample_count": 3,
-      "stdev": 0.269
+      "stdev": 0.199
     },
     "investigation_replay_indicators_per_second": {
-      "max": 18.173,
-      "mean": 18.109,
-      "median": 18.141,
-      "min": 18.012,
-      "p50": 18.141,
-      "p95": 18.173,
+      "max": 543.424,
+      "mean": 538.982,
+      "median": 543.022,
+      "min": 530.501,
+      "p50": 543.022,
+      "p95": 543.424,
       "sample_count": 3,
-      "stdev": 0.085
+      "stdev": 7.348
     },
     "investigation_replay_ms": {
-      "max": 5551.719,
-      "mean": 5522.295,
-      "median": 5512.452,
-      "min": 5502.713,
-      "p50": 5512.452,
-      "p95": 5551.719,
+      "max": 188.501,
+      "mean": 185.558,
+      "median": 184.154,
+      "min": 184.019,
+      "p50": 184.154,
+      "p95": 188.501,
       "sample_count": 3,
-      "stdev": 25.943
+      "stdev": 2.55
     },
     "offline_enrichment_indicators_per_second": {
-      "max": 1347.638,
-      "mean": 1225.374,
-      "median": 1218.797,
-      "min": 1109.688,
-      "p50": 1218.797,
-      "p95": 1347.638,
+      "max": 1546.869,
+      "mean": 1447.872,
+      "median": 1418.798,
+      "min": 1377.95,
+      "p50": 1418.798,
+      "p95": 1546.869,
       "sample_count": 3,
-      "stdev": 119.111
+      "stdev": 88.133
     },
     "pivot_path_query_ms": {
-      "max": 65.378,
-      "mean": 62.834,
-      "median": 63.361,
-      "min": 59.762,
-      "p50": 63.361,
-      "p95": 65.378,
+      "max": 57.764,
+      "mean": 56.402,
+      "median": 57.628,
+      "min": 53.814,
+      "p50": 57.628,
+      "p95": 57.764,
       "sample_count": 3,
-      "stdev": 2.845
+      "stdev": 2.242
     },
     "replay_p50_ms": {
-      "max": 1.46,
-      "mean": 1.266,
-      "median": 1.185,
-      "min": 1.152,
-      "p50": 1.185,
-      "p95": 1.46,
+      "max": 1.148,
+      "mean": 1.144,
+      "median": 1.144,
+      "min": 1.14,
+      "p50": 1.144,
+      "p95": 1.148,
       "sample_count": 3,
-      "stdev": 0.169
+      "stdev": 0.004
     },
     "replay_p95_ms": {
-      "max": 1.985,
-      "mean": 1.634,
-      "median": 1.46,
-      "min": 1.457,
-      "p50": 1.46,
-      "p95": 1.985,
+      "max": 1.589,
+      "mean": 1.518,
+      "median": 1.569,
+      "min": 1.395,
+      "p50": 1.569,
+      "p95": 1.589,
       "sample_count": 3,
-      "stdev": 0.304
+      "stdev": 0.107
     },
     "scheduler_with_history_indicators_per_second": {
-      "max": 92.948,
-      "mean": 91.739,
-      "median": 92.187,
-      "min": 90.081,
-      "p50": 92.187,
-      "p95": 92.948,
+      "max": 94.006,
+      "mean": 92.627,
+      "median": 92.936,
+      "min": 90.94,
+      "p50": 92.936,
+      "p95": 94.006,
       "sample_count": 3,
-      "stdev": 1.485
+      "stdev": 1.556
     }
   },
   "warmup_runs": 1,

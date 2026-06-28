@@ -771,6 +771,13 @@ def test_investigation_replay_reconstructs_membership_decisions_graph_and_overri
         investigation["id"], "2026-01-02T00:00:00Z"
     )
     t2_state = store.replay_investigation(investigation["id"], t2)
+    expected_t2_graph_edges = {
+        edge["id"]
+        for ioc in ("evil.example", "new.example")
+        for edge in store.relationship_graph(
+            ioc, limit=500, max_depth=5, as_of=t2
+        )["edges"]
+    }
     comparison = store.compare_investigations(
         investigation["id"], "2026-01-02T00:00:00Z", t2
     )
@@ -798,6 +805,9 @@ def test_investigation_replay_reconstructs_membership_decisions_graph_and_overri
         edge["target_ioc"] for edge in t1_state["graph"]["edges"]
     }
     assert t2_state["indicator_count"] == 2
+    assert {edge["id"] for edge in t2_state["graph"]["edges"]} == (
+        expected_t2_graph_edges
+    )
     assert t2_state["investigation"]["description"] == "Updated at T2"
     assert t2_state["investigation"]["status"] == "closed"
     assert t2_state["indicators"][0]["latest_enrichment"]["source_verdict"] == "clean"
