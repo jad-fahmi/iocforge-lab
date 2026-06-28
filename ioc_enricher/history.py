@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ioc_enricher.ioc.defang import refang
 from ioc_enricher.ioc.detect import detect, normalize
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult, SourceResult
@@ -91,6 +92,7 @@ def _entity_type_for(
 
 
 def _canonical_entity_value(value: str, entity_type: str) -> str:
+    value = refang(value.strip())
     detected = detect(value)
     if entity_type in {"domain", "hostname"} and detected == IocType.DOMAIN:
         return normalize(value, detected)
@@ -104,7 +106,13 @@ def _canonical_entity_value(value: str, entity_type: str) -> str:
         return normalize(value, detected)
     if entity_type in {"email", "cve"} and detected != IocType.UNKNOWN:
         return normalize(value, detected)
-    return value.strip()
+    return value
+
+
+def _canonical_relationship_ioc(value: str) -> str:
+    """Canonicalize an edge endpoint before comparing or persisting identity."""
+    value = refang(value.strip())
+    return normalize(value, detect(value))
 
 
 def _normalize_timestamp(value: str | None) -> str | None:
@@ -2693,8 +2701,8 @@ class HistoryStore:
         source_entity_type: str | None = None,
         target_entity_type: str | None = None,
     ) -> dict[str, Any]:
-        source_ioc = source_ioc.strip()
-        target_ioc = target_ioc.strip()
+        source_ioc = _canonical_relationship_ioc(source_ioc)
+        target_ioc = _canonical_relationship_ioc(target_ioc)
         if source_ioc == target_ioc:
             raise ValueError("an indicator cannot relate to itself")
         if not source_ioc or not target_ioc:
@@ -2724,8 +2732,10 @@ class HistoryStore:
             candidates = [
                 item
                 for item in evidence.get("related_entities", [])
-                if item.get("source_ioc") == source_ioc
-                and item.get("target_ioc") == target_ioc
+                if isinstance(item.get("source_ioc"), str)
+                and _canonical_relationship_ioc(item["source_ioc"]) == source_ioc
+                and isinstance(item.get("target_ioc"), str)
+                and _canonical_relationship_ioc(item["target_ioc"]) == target_ioc
                 and item.get("relationship_type") == relationship_type
             ]
             support = next(

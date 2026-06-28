@@ -579,7 +579,7 @@ def test_relationship_api_accepts_matching_observation_provenance(monkeypatch, t
             found=True,
             related_entities=[
                 {
-                    "source_ioc": "example.com",
+                    "source_ioc": "EXAMPLE.COM",
                     "target_ioc": "203.0.113.7",
                     "relationship_type": "resolves_to",
                 }

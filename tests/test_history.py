@@ -997,6 +997,28 @@ def test_graph_traversal_keeps_same_value_entity_types_separate(tmp_path):
     }
 
 
+def test_relationship_rejects_endpoints_with_same_normalized_ioc_identity(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+
+    with pytest.raises(ValueError, match="cannot relate to itself"):
+        store.add_relationship("EVIL.example", "evil[.]example", "domain_related")
+
+
+def test_relationship_canonicalizes_defanged_ioc_endpoints(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+
+    edge = store.add_relationship(
+        "evil[.]example", "192.0.2.10", "resolves_to"
+    )
+    graph = store.relationship_graph("evil[.]example")
+
+    assert edge["source_ioc"] == "evil.example"
+    assert {node["id"] for node in graph["nodes"]} == {
+        "evil.example",
+        "192.0.2.10",
+    }
+
+
 def test_relationship_rejects_unknown_explicit_entity_type(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
 
