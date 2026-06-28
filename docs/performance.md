@@ -74,6 +74,13 @@ scheduler-only and persisted throughput helps identify paths to profile; it
 does not by itself justify weakening atomic persistence behavior. Rerun the
 harness on target hardware before choosing storage optimizations.
 
+A separate one-sample stress run with 1,000 indicators, zero simulated provider
+delay, and one replay sample completed investigation replay in 1.71 seconds
+(584 indicators/second). Replay retained all 1,000 indicators and complete
+state, while the graph returned its 500-edge budget and correctly marked the
+result truncated. This exercises multi-root replay beyond SQLite's traditional
+999-parameter limit; it is a local stress result, not a timing target.
+
 SQLite serializes writes through the history store's lock, which keeps snapshot,
 evidence, graph, and event updates consistent in one local transaction. The
 benchmark reports persisted throughput separately from scheduler-only
