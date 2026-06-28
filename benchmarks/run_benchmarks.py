@@ -27,8 +27,8 @@ from ioc_enricher.history import HistoryStore
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import SourceResult
 
-METHODOLOGY = "iocforge-local-benchmark-v2"
-SERIES_METHODOLOGY = "iocforge-benchmark-series-v1"
+METHODOLOGY = "iocforge-local-benchmark-v3"
+SERIES_METHODOLOGY = "iocforge-benchmark-series-v2"
 PROVIDERS = ("benchmark_primary", "benchmark_secondary")
 BASE_TIME = datetime(2024, 1, 1, tzinfo=timezone.utc)
 PIVOT_PATH = (
@@ -300,6 +300,22 @@ def run_benchmarks(
                 target_entity_type=target_type,
             )
 
+        investigation_replay_at = datetime.now(timezone.utc).isoformat()
+        investigation_replay_started = perf_counter()
+        investigation_replay = store.replay_investigation(
+            investigation_id, investigation_replay_at
+        )
+        investigation_replay_seconds = (
+            perf_counter() - investigation_replay_started
+        )
+        if (
+            investigation_replay is None
+            or not investigation_replay.get("replayable")
+            or not investigation_replay.get("state_complete")
+            or investigation_replay.get("indicator_count") != indicators
+        ):
+            raise RuntimeError("benchmark investigation did not replay completely")
+
         graph_started = perf_counter()
         pivots = store.suggest_pivots(iocs[0], limit=100)
         graph_query_ms = (perf_counter() - graph_started) * 1000
@@ -353,6 +369,19 @@ def run_benchmarks(
             **_timings(replay_ms),
             "total_samples": len(replay_ms),
         },
+        "investigation_replay": {
+            "as_of": investigation_replay_at,
+            "elapsed_seconds": round(investigation_replay_seconds, 6),
+            "elapsed_ms": round(investigation_replay_seconds * 1000, 3),
+            "indicators_per_second": round(
+                indicators / investigation_replay_seconds, 3
+            ),
+            "indicator_count": investigation_replay["indicator_count"],
+            "replayable": investigation_replay["replayable"],
+            "state_complete": investigation_replay["state_complete"],
+            "graph_edge_count": len(investigation_replay["graph"]["edges"]),
+            "graph_truncated": investigation_replay["graph"]["truncated"],
+        },
         "graph": {
             "root": iocs[0],
             "pivots_returned": pivot_count,
@@ -390,6 +419,11 @@ SERIES_METRICS = {
     ),
     "replay_p50_ms": ("replay", "p50_ms"),
     "replay_p95_ms": ("replay", "p95_ms"),
+    "investigation_replay_ms": ("investigation_replay", "elapsed_ms"),
+    "investigation_replay_indicators_per_second": (
+        "investigation_replay",
+        "indicators_per_second",
+    ),
     "graph_query_ms": ("graph", "elapsed_ms"),
     "pivot_path_query_ms": ("graph", "pivot_path_elapsed_ms"),
     "database_growth_bytes": ("storage", "growth_bytes"),

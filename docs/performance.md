@@ -14,6 +14,12 @@ three-edge multi-hop pivot path, row growth, and database growth above the
 initialized schema size. It prints a JSON report and never calls external
 providers or writes to the user's history database.
 
+Snapshot replay samples re-score individual enrichments. A separate
+investigation replay measurement reconstructs the generated case at a recorded
+`as_of` point and records indicator count, graph size, truncation, and replay
+completeness. The benchmark rejects incomplete investigation state or
+unreplayable snapshots; bounded graph truncation is reported separately.
+
 Adjust workload size, simulated provider delay, and worker limits when comparing
 scheduler behavior:
 
@@ -47,11 +53,13 @@ fixtures to study provider coverage and observed latency.
 reference run on the machine and Python version listed in the file. Its summary
 reports central tendency and run-to-run spread; each individual sample is
 retained so the reader can inspect outliers and confirm the workload digest.
-In this reference, scheduler-only enrichment reached a median 1,564.9
-indicators/second and persistence reached 98.3 indicators/second. The database
-grew by 991,232 bytes (9.9 KB per indicator); median replay p50 was 1.07 ms and
-the bounded pivot-path query took 55.5 ms. The three-run spread is included in
-the JSON report.
+In this reference, scheduler-only enrichment reached a median 1,218.8
+indicators/second and persistence reached 92.2 indicators/second. The database
+grew by 999,424 bytes (10.0 KB per indicator). Individual snapshot replay had
+a median p50 of 1.19 ms. Reconstructing the 100-indicator investigation took a
+median 5.51 seconds at 18.1 indicators/second and returned 202 graph edges; the
+bounded pivot-path query took 63.4 ms. The three-run spread is included in the
+JSON report.
 
 These local measurements are not a capacity guarantee. The difference between
 scheduler-only and persisted throughput helps identify paths to profile; it
