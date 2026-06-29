@@ -256,27 +256,29 @@ penalty; it is a transparent prioritization heuristic, not a probability.
 `--evaluate-fixture` measures providers from a labeled JSON fixture without
 making provider requests. See [provider evaluation methodology](docs/provider-evaluation.md).
 
-### Reproducible T1/T2 walkthrough
+### Reproducible T1/T2/T3 walkthrough
 
 Generate a complete synthetic investigation without contacting providers or
 opening IOCForge's normal history database:
 
 ```shell
-python -m ioc_enricher.demo --output demo/t1-t2.iocforge
+python -m ioc_enricher.demo --output demo/t1-t2-t3.iocforge
 ```
 
-The command writes a portable case bundle and prints a JSON walkthrough with
-the T1 and T2 verdicts, decision traces, evidence and graph changes, replay
-checks, and bundle integrity. At T1, a benign VirusTotal classification
-conflicts with a low-confidence, 120-day-old OTX result while URLhaus is
-unavailable; freshness weighting and the outage keep the decision at low risk.
-At T2, provider classifications refresh and agree, URLhaus recovers, and new
-passive-DNS and certificate relationships reveal another hostname. Timestamps
-are generated for each run; all provider observations and relationships are
-synthetic. Inspect the archive with
-`ioc-enrich --bundle-inspect demo/t1-t2.iocforge` or upload it
-in the workbench's **Inspect an .iocforge bundle** form to review the offline
-snapshot comparison, new evidence, graph changes, and replay checks.
+The command writes a portable case bundle and prints the T1, T2, and T3
+verdicts, decision traces, evidence and graph changes, replay checks, and bundle
+integrity. T1 has conflicting stale intelligence and a URLhaus outage, keeping
+the result at low risk. At T2, fresh provider classifications agree, URLhaus
+recovers, and passive DNS, certificate, URL, and file-hash evidence raises the
+verdict to malicious. At T3, VirusTotal reports benign, OTX is stale, ThreatFox
+still reports malicious, URLhaus is unavailable again, and passive DNS shows
+another infrastructure move. The verdict falls to suspicious. T2 relationships
+expire before T3, so the bundle can demonstrate both the historical graph and
+the changed current graph offline. Timestamps are generated for each run; all
+provider observations and relationships are synthetic. Inspect the archive with
+`ioc-enrich --bundle-inspect demo/t1-t2-t3.iocforge` or upload it in the
+workbench's **Inspect an .iocforge bundle** form to review both adjacent
+snapshot comparisons and the T1-to-T3 case replay.
 
 `--fail-on-malicious` returns a nonzero exit code when a malicious verdict is found. Use `-v` for operational logs and repeat it, or pass `--debug`, for connector-level debugging. Logs go to stderr so JSON, CSV, and report output remain machine-readable.
 
@@ -382,7 +384,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the request flow and comp
 
 ## Project status
 
-IOCForge is under active development. The current release line is `0.1.x`; API and workbench details may change as the investigation model develops. A provider-free T1/T2 walkthrough now exercises changing evidence, verdicts, graph state, historical replay, and offline bundle comparison. The next milestone is to deepen the scenario with realistic multi-stage case fixtures and adversarial timeline variations.
+IOCForge is under active development. The current release line is `0.1.x`; API and workbench details may change as the investigation model develops. A provider-free T1/T2/T3 walkthrough exercises conflicting and stale evidence, provider outages, changing infrastructure, historical replay, and offline comparison across both timeline stages. Continue expanding it with realistic multi-indicator campaign fixtures and more adversarial timeline variations.
 
 Issues and pull requests are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 

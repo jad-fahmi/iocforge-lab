@@ -83,14 +83,19 @@ The transformation proceeds in dependency order:
    replay. Continue expanding workload sizes and graph shapes on target hardware.
 
 The `python -m ioc_enricher.demo --output <path>` walkthrough creates its own
-temporary SQLite history, seeds two explicitly timestamped synthetic provider
-snapshots and temporal graph states, and exports a portable investigation
-bundle. T1 includes conflicting benign and stale malicious classifications and
-a provider outage; T2 refreshes those sources and adds malicious agreement and
-new infrastructure pivots. A bounded URLScan observation links the T2 domain
-to a page URL and a downloaded-file hash. The walkthrough prints ranked T1/T2
-paths, evidence and graph diffs, both scoring traces, replay checks, and an
-offline whole-investigation comparison of the exported bundle. It does not
+temporary SQLite history, seeds three explicitly timestamped synthetic
+provider snapshots and temporal graph states, and exports a portable
+investigation bundle. T1 includes conflicting benign and stale malicious
+classifications and a provider outage; T2 refreshes those sources and adds
+malicious agreement and new infrastructure pivots. A bounded URLScan
+observation links the T2 domain to a page URL and a downloaded-file hash. At T3,
+VirusTotal reports benign while fresh ThreatFox evidence remains malicious,
+OTX is stale, URLhaus is unavailable, and passive DNS shows another address.
+T2 relationships expire before T3, so the bundle demonstrates both historical
+graph reconstruction and the current graph. The walkthrough prints ranked
+T1/T2/T3 paths, evidence and graph diffs across both stages, all scoring traces,
+replay checks, and an offline whole-investigation comparison of the exported
+bundle. It does not
 construct an engine, load provider credentials, or access the default history
 database. Its reserved `.example` domain and documentation IP ranges make it
 illustrative rather than an evaluation of provider accuracy or realistic
