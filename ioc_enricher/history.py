@@ -1676,7 +1676,7 @@ class HistoryStore:
                 }
             )
         graph = self._relationship_graph_for_roots(
-            [self._graph_root(ioc) for ioc in members],
+            self._graph_roots(list(members)),
             limit=500,
             max_depth=5,
             as_of=timestamp,
@@ -2443,7 +2443,7 @@ class HistoryStore:
             )
             snapshot["observations"] = self.observations_for_enrichment(snapshot["id"])
 
-        graph_roots = [self._graph_root(ioc) for ioc in iocs]
+        graph_roots = self._graph_roots(iocs)
         graph = self._relationship_graph_for_roots(
             graph_roots, limit=500, max_depth=5, as_of=None
         )
@@ -2915,6 +2915,49 @@ class HistoryStore:
             "display_value": ioc,
             "metadata": {},
         }
+
+    def _graph_roots(self, iocs: list[str]) -> list[dict[str, Any]]:
+        roots: list[dict[str, Any]] = []
+        values_by_type: dict[str, set[str]] = {}
+        for ioc in iocs:
+            root_type = _entity_type_for(ioc)
+            root_value = _canonical_entity_value(ioc, root_type)
+            roots.append(
+                {
+                    "entity_id": None,
+                    "id": ioc,
+                    "entity_type": root_type,
+                    "canonical_value": root_value,
+                    "display_value": ioc,
+                    "metadata": {},
+                }
+            )
+            values_by_type.setdefault(root_type, set()).add(root_value)
+
+        entity_ids: dict[tuple[str, str], int] = {}
+        with self._lock:
+            for root_type, root_values in sorted(values_by_type.items()):
+                sorted_values = sorted(root_values)
+                for offset in range(0, len(sorted_values), 400):
+                    chunk = sorted_values[offset : offset + 400]
+                    placeholders = ",".join("?" for _ in chunk)
+                    rows = self.conn.execute(
+                        "SELECT id, entity_type, canonical_value FROM graph_entities "
+                        f"WHERE entity_type = ? AND canonical_value IN ({placeholders})",
+                        [root_type, *chunk],
+                    ).fetchall()
+                    entity_ids.update(
+                        {
+                            (row["entity_type"], row["canonical_value"]): int(row["id"])
+                            for row in rows
+                        }
+                    )
+
+        for root in roots:
+            root["entity_id"] = entity_ids.get(
+                (root["entity_type"], root["canonical_value"])
+            )
+        return roots
 
     def _relationships_for_entities(
         self, entity_ids: list[int], limit: int, as_of: str | None

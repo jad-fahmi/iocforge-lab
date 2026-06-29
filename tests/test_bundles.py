@@ -82,11 +82,21 @@ def test_large_investigation_bundle_keeps_all_members_and_bounds_graph(tmp_path)
     for ioc in iocs:
         store.add_investigation_indicator(investigation["id"], ioc)
 
+    statements = []
+    store.conn.set_trace_callback(statements.append)
     payload = store.investigation_bundle_payload(investigation["id"])
     store.close()
 
     assert payload is not None
     assert payload["investigation"]["indicators"] == iocs
+    root_lookup_prefix = (
+        "SELECT id, entity_type, canonical_value FROM graph_entities "
+        "WHERE entity_type"
+    )
+    assert sum(
+        statement.startswith(root_lookup_prefix)
+        for statement in statements
+    ) == 2
     assert payload["graph"]["edge_limit"] == 500
     assert len(payload["graph"]["edges"]) == 500
     assert payload["graph"]["truncated"] is True

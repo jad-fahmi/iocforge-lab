@@ -50,8 +50,9 @@ The transformation proceeds in dependency order:
    budget; path ranking caps expansions at 5,000. Investigation replay and
    bundle capture expand all case indicators in one shared breadth-first
    traversal, avoiding repeated queries through their common investigation node
-   while retaining the same depth and edge budgets. Single-root graph queries
-   keep their established confidence and truncation order.
+   while retaining the same depth and edge budgets. Root entity lookups are
+   batched in groups of 400 to stay below SQLite parameter limits. Single-root
+   graph queries keep their established confidence and truncation order.
 4. **Investigation integrity and bundles:** per-indicator and per-investigation
    event chains can now be verified. A versioned `.iocforge` archive packages
    case metadata, linked snapshots and evidence, bounded graph state, and event

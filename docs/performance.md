@@ -75,11 +75,15 @@ does not by itself justify weakening atomic persistence behavior. Rerun the
 harness on target hardware before choosing storage optimizations.
 
 A separate one-sample stress run with 1,000 indicators, zero simulated provider
-delay, and one replay sample completed investigation replay in 1.71 seconds
-(584 indicators/second). Replay retained all 1,000 indicators and complete
+delay, and one replay sample completed investigation replay in 1.62 seconds
+(619 indicators/second). Replay retained all 1,000 indicators and complete
 state, while the graph returned its 500-edge budget and correctly marked the
-result truncated. This exercises multi-root replay beyond SQLite's traditional
-999-parameter limit; it is a local stress result, not a timing target.
+result truncated. A cProfile run of the earlier implementation attributed
+0.52 seconds across 1,002 individual graph-root entity lookups. Root resolution
+now batches canonical values in groups of 400; a 501-member bundle test verifies
+that two root queries cover all members. This exercises multi-root replay beyond
+SQLite's traditional 999-parameter limit. These are local measurements, not a
+timing target.
 
 SQLite serializes writes through the history store's lock, which keeps snapshot,
 evidence, graph, and event updates consistent in one local transaction. The
