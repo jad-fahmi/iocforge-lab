@@ -1,4 +1,4 @@
-.PHONY: install dev test api lint
+.PHONY: install dev test api lint typecheck check
 
 install:
 	pip install -e .
@@ -13,4 +13,10 @@ api:
 	uvicorn ioc_enricher.api.app:app --reload
 
 lint:
-	python -m compileall ioc_enricher
+	ruff check .
+	python -m compileall -q ioc_enricher
+
+typecheck:
+	mypy
+
+check: lint typecheck test

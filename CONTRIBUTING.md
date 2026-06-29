@@ -9,12 +9,20 @@ python -m pip install -e ".[dev,api]"
 pre-commit install
 ```
 
-Before opening a pull request, run:
+Before opening a pull request, run the same checks used in CI. With GNU Make
+installed, run:
 
 ```shell
-ruff check .
-mypy
-pytest
+make check
+```
+
+This runs Ruff, Python compilation, mypy, and pytest. Otherwise, run:
+
+```shell
+python -m ruff check .
+python -m compileall -q ioc_enricher
+python -m mypy
+python -m pytest
 ```
 
 ## Connector contributions
