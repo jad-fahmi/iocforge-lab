@@ -76,7 +76,8 @@ The transformation proceeds in dependency order:
    decision traces, investigation/indicator timelines, typed graph edges and
    pivots, a bounded time-filterable node-link explorer, historical replay and
    comparison, whole-investigation as-of reconstruction, analyst override
-   review, event-chain status, and bundle export/offline inspection. The
+   review, event-chain status, bundle export/offline inspection, and labeled
+   provider evaluation with detection misses and weight candidates. The
    local benchmark runner measures repeated synthetic enrichment and scheduler
    throughput, SQLite history growth, case linking, graph pivots, and deterministic
    replay. Continue expanding workload sizes and graph shapes on target hardware.

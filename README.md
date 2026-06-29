@@ -115,6 +115,11 @@ uvicorn ioc_enricher.api.app:app --reload
 
 The API is available at `http://localhost:8000`. The container also serves the lightweight workbench at `/`.
 
+The workbench's **Provider evaluation** section accepts an offline labeled JSON
+fixture and displays coverage, failures, detection misses, classification
+metrics, and reliability-weight candidates. Evaluation does not contact
+providers or change scoring weights.
+
 ### Docker Compose
 
 ```shell

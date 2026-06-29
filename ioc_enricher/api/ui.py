@@ -7,6 +7,9 @@ ANALYST_UI = r"""<!doctype html>
 :root { color-scheme: dark; --bg:#0b1220; --panel:#121d31; --line:#273650; --ink:#e6edf7; --muted:#9db0ca; --blue:#64b5ff; --red:#ff8686; --amber:#ffd166; --green:#6ee7b7; }
 * { box-sizing:border-box } body { margin:0; font:15px system-ui,sans-serif; background:var(--bg); color:var(--ink) } header { padding:24px max(5vw,24px); border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:20px; align-items:center } h1 { margin:0; font-size:1.45rem } h2 { margin:0 0 16px; font-size:1.1rem } p { color:var(--muted) } nav { display:flex; gap:8px; flex-wrap:wrap } button, input, select { font:inherit; border-radius:7px; padding:9px 12px; border:1px solid var(--line) } button { color:var(--ink); background:#1a2b47; cursor:pointer } button:hover,button.active { background:#244d7e; border-color:var(--blue) } input, select { width:min(640px,100%); background:#091221; color:var(--ink) } main { max-width:1200px; margin:auto; padding:28px 5vw 60px } section[hidden] { display:none } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:20px } .card,.panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px } .metric { font-size:1.7rem; font-weight:700; color:var(--blue) } .label { color:var(--muted); font-size:.85rem; text-transform:uppercase; letter-spacing:.06em } .panel { margin-top:16px } .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center } table { width:100%; border-collapse:collapse } th,td { text-align:left; padding:9px; border-bottom:1px solid var(--line); vertical-align:top } th { color:var(--muted); font-size:.8rem } .status { padding:3px 8px; border-radius:12px; display:inline-block; background:#24364f } .malicious { color:var(--red) } .suspicious { color:var(--amber) } .clean { color:var(--green) } .error { color:var(--red); white-space:pre-wrap } .list { margin:0; padding-left:20px } .empty { color:var(--muted); padding:12px 0 } code { color:#b9d7ff; overflow-wrap:anywhere } pre { max-height:420px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:#091221; border-radius:7px; padding:12px } details { margin:8px 0 } .timeline-row { border-left:2px solid var(--line); margin:0 0 0 8px; padding:8px 14px } .timeline-row time { color:var(--muted); font-size:.82rem } .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center } a { color:var(--blue) } @media(max-width:600px) { header { align-items:flex-start; flex-direction:column } th:nth-child(4),td:nth-child(4) { display:none } }
 .graph-canvas { overflow:auto; max-height:680px; border:1px solid var(--line); border-radius:8px; background:#091221; margin:12px 0 }
+.evaluation-table-wrapper { overflow-x:auto }
+.evaluation-table { min-width:900px }
+.evaluation-table th:nth-child(4),.evaluation-table td:nth-child(4) { display:table-cell }
 .graph-canvas svg { display:block; max-width:none; min-width:720px; font:13px system-ui,sans-serif }
 .graph-edge { stroke:#59708e; stroke-width:1.6 }
 .graph-edge-label { fill:#b7c6d9; font-size:11px; paint-order:stroke; stroke:#091221; stroke-width:4px; stroke-linejoin:round }
@@ -16,9 +19,10 @@ ANALYST_UI = r"""<!doctype html>
 .graph-node .graph-value { fill:var(--ink); font-weight:600 }
 .graph-node .graph-type { fill:var(--muted); font-size:11px }
 </style></head><body>
-<header><div><h1>IOCForge Analyst Workbench</h1><p>Evidence-led indicator triage and investigation context.</p></div><nav aria-label="Workbench sections"><button class="active" data-view="dashboard">Dashboard</button><button data-view="search">IOC search</button><button data-view="history">History</button><button data-view="cases">Investigations</button></nav></header>
+<header><div><h1>IOCForge Analyst Workbench</h1><p>Evidence-led indicator triage and investigation context.</p></div><nav aria-label="Workbench sections"><button class="active" data-view="dashboard">Dashboard</button><button data-view="search">IOC search</button><button data-view="history">History</button><button data-view="cases">Investigations</button><button data-view="evaluation">Provider evaluation</button></nav></header>
 <main>
 <section id="dashboard"><h2>Operational dashboard</h2><div class="grid" id="metrics"></div><div class="panel"><h2>Provider health</h2><div id="providers"></div></div><div class="panel"><h2>Recent enrichment</h2><div id="recent"></div></div></section>
+<section id="evaluation" hidden><h2>Provider evaluation</h2><p>Evaluate an offline labeled fixture. This does not query providers or change scoring weights.</p><form id="evaluation-form" class="row"><label for="evaluation-file">Labeled fixture JSON</label><input id="evaluation-file" type="file" accept="application/json,.json" required><button>Run offline evaluation</button></form><div id="evaluation-result"></div></section>
 <section id="search" hidden><h2>IOC search</h2><form id="search-form" class="row"><input id="ioc" required placeholder="Domain, URL, IP, hash, email, CVE, ASN…" aria-label="Indicator of compromise"><button>Enrich indicator</button></form><div id="result"></div></section>
 <section id="history" hidden><h2>Enrichment history</h2><div id="history-data"></div><div id="history-detail"></div></section>
 <section id="cases" hidden><h2>Investigations</h2><form id="case-form" class="row"><input id="case-title" required maxlength="200" placeholder="Investigation title" aria-label="Investigation title"><input id="case-description" maxlength="2000" placeholder="Optional description" aria-label="Investigation description"><button>Create investigation</button></form><form id="bundle-form" class="row panel"><label for="bundle-file">Inspect an .iocforge bundle</label><input id="bundle-file" type="file" accept=".iocforge,application/zip" required><label for="bundle-as-of">Reconstruct at</label><input id="bundle-as-of" type="datetime-local" aria-label="Offline bundle replay time"><label for="bundle-baseline">Compare baseline</label><input id="bundle-baseline" type="datetime-local" aria-label="Offline bundle comparison baseline"><label for="bundle-comparison">with</label><input id="bundle-comparison" type="datetime-local" aria-label="Offline bundle comparison time"><button>Validate and replay offline</button></form><div id="bundle-result"></div><div id="case-data"></div><div id="case-detail"></div></section>
@@ -422,6 +426,47 @@ byId('bundle-form').addEventListener('submit',async event=>{
     );
     if(report.investigation_replay){const replay=report.investigation_replay;target.append(node('h3','Offline investigation reconstruction'),node('p',`As of ${replay.as_of}: state complete ${replay.state_complete}; replayable ${replay.replayable}; ${replay.indicator_count||0} member(s).`),renderList('Historical members',(replay.indicators||[]).map(item=>`${item.ioc}: ${item.latest_enrichment?.source_verdict||'no saved enrichment'}; analyst override ${item.analyst_state.verdict_override||'none'}`)),structuredPanel('Offline reconstructed state',replay));}
     if(report.investigation_comparison){const diff=report.investigation_comparison;target.append(node('h3','Offline investigation comparison'),node('p',`Replayable at both times: ${diff.replayable}; members added ${diff.membership.added.join(', ')||'none'}; removed ${diff.membership.removed.join(', ')||'none'}.`),renderList('Changed indicator decisions',diff.indicators.filter(item=>item.decision.verdict_changed||item.decision.score_delta!==0||item.evidence.added.length||item.analyst_state_changed).map(item=>`${item.ioc}: ${item.decision.baseline_verdict||'none'} -> ${item.decision.comparison_verdict||'none'}; score delta ${item.decision.score_delta??'unavailable'}; new evidence ${item.evidence.added.map(row=>`${row.observation?.source||'unknown'} observation ${row.id}`).join(', ')||'none'}`)),renderList('Newly valid graph relationships',diff.graph.added_edges.map(edge=>`${edge.source_ioc} --${edge.relationship_type}--> ${edge.target_ioc} | ${edge.evidence_source} observation ${edge.evidence_observation_id||'analyst'}`)),structuredPanel('Offline evidence, analyst-event, graph, and integrity diff',diff));}
+  }catch(error){renderError(target,error);}
+});
+function renderEvaluation(report) {
+  const target=byId('evaluation-result');clear(target);
+  const providers=Object.entries(report.providers||{});
+  const metricsTable=table(
+    ['Provider','Coverage','Failures','Detection misses','Classification','Weight candidate'],
+    providers.map(([name,metrics])=>{
+      const detection=metrics.detection||{},classification=metrics.classification||{};
+      const candidate=classification.reliability_weight_candidate||{};
+      return [
+        name,
+        `${metrics.found_count}/${metrics.expected_count} (${metrics.coverage??'n/a'})`,
+        `${metrics.failure_count} (${metrics.failure_rate??'n/a'})`,
+        `${detection.missed_malicious_count??0}/${detection.attempted_malicious_count??0} attempted (${detection.expected_malicious_count??0} expected)`,
+        `FP ${classification.false_positive??0} | FN ${classification.false_negative??0} | balanced accuracy ${classification.balanced_accuracy??'n/a'}`,
+        candidate.value===null||candidate.value===undefined?'not measurable':`${candidate.value} (n=${candidate.labelled_count})`
+      ];
+    })
+  );
+  metricsTable.className='evaluation-table';
+  const tableWrap=node('div',undefined,'evaluation-table-wrapper');
+  tableWrap.append(metricsTable);
+  target.append(
+    node('p',`${report.dataset_name||'Unnamed fixture'} | ${report.case_count} case(s) | ${report.methodology} | SHA-256 ${report.dataset_sha256}`),
+    tableWrap,
+    node('p','Weight candidates are point estimates for operator review. They do not change scoring configuration; consider labeled sample counts, confidence intervals, coverage, and failures.'),
+    structuredPanel('Full evaluation report, including confidence intervals and overlap',report)
+  );
+}
+byId('evaluation-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const target=byId('evaluation-result');clear(target);
+  const file=byId('evaluation-file').files[0];
+  if(!file){target.append(empty('Choose a labeled JSON fixture first.'));return;}
+  if(file.size>10*1024*1024){target.append(node('p','Fixture exceeds the 10 MB evaluation limit.','error'));return;}
+  target.append(empty('Evaluating saved outcomes without contacting providers...'));
+  try{
+    const fixture=JSON.parse(await file.text());
+    const report=await api('/evaluation/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(fixture)});
+    renderEvaluation(report);
   }catch(error){renderError(target,error);}
 });
 loadDashboard();

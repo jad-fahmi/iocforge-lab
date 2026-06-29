@@ -25,6 +25,11 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
 
     assert response.status_code == 200
     assert "IOCForge Analyst Workbench" in response.text
+    assert 'data-view="evaluation"' in response.text
+    assert "Labeled fixture JSON" in response.text
+    assert "/evaluation/run" in response.text
+    assert "Detection misses" in response.text
+    assert "Weight candidates are point estimates for operator review" in response.text
     assert "Evidence-backed relationships" in response.text
     assert "Create investigation" in response.text
     assert "Add to investigation" in response.text
@@ -315,6 +320,12 @@ def test_provider_evaluation_api_runs_an_offline_fixture():
     assert response.status_code == 200
     assert response.json()["methodology"] == "iocforge-provider-evaluation-v5"
     assert response.json()["providers"]["alpha"]["coverage"] == 0.75
+    assert response.json()["providers"]["alpha"]["detection"][
+        "expected_malicious_count"
+    ] == 2
+    assert response.json()["providers"]["alpha"]["classification"][
+        "reliability_weight_candidate"
+    ]["value"] == 0.5
 
 
 def test_dashboard_endpoint_exposes_provider_and_persisted_metrics(
