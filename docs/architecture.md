@@ -24,7 +24,8 @@ then verify each saved snapshot source still matches its linked evidence. Replay
 refuses to score a snapshot when those evidence checks fail.
 Investigation membership is reconstructed from append-only add events. The
 history store accepts an explicit membership timestamp for internal callers
-and fixtures; the HTTP API continues to assign the server's current time.
+and fixtures, but only in append order so historical event prefixes retain a
+valid hash chain. The HTTP API continues to assign the server's current time.
 Pivot-path ranking omits edges to investigation nodes because case membership
 is not threat-intelligence evidence. Those edges remain available in graph
 views and case replay.

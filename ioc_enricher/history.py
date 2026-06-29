@@ -2584,6 +2584,17 @@ class HistoryStore:
                 raise ValueError(
                     "indicator membership cannot precede investigation creation"
                 )
+            latest_event = self.conn.execute(
+                "SELECT created_at FROM investigation_events "
+                "WHERE investigation_id = ? ORDER BY id DESC LIMIT 1",
+                (investigation_id,),
+            ).fetchone()
+            if latest_event and _timestamp_value(timestamp) < _timestamp_value(
+                latest_event["created_at"]
+            ):
+                raise ValueError(
+                    "indicator membership cannot precede the latest investigation event"
+                )
             cursor = self.conn.execute(
                 "INSERT OR IGNORE INTO investigation_indicators(investigation_id, ioc, added_at) "
                 "VALUES (?, ?, ?)",

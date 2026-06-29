@@ -697,19 +697,27 @@ def test_investigation_membership_timestamp_is_bounded_and_utc_normalized(
             investigation_id, "too-early.example", added_at="2000-01-01T00:00:00Z"
         )
 
-    Clock.current = datetime(2099, 2, 5, tzinfo=timezone.utc)
-    store.update_investigation(investigation_id, description="Updated later")
     historical_timestamp = "2099-02-04T04:00:00+02:00"
     expected_timestamp = "2099-02-04T02:00:00+00:00"
     store.add_investigation_indicator(
         investigation_id, "backfilled.example", added_at=historical_timestamp
     )
 
+    Clock.current = datetime(2099, 2, 5, tzinfo=timezone.utc)
+    store.update_investigation(investigation_id, description="Updated later")
+    with pytest.raises(ValueError, match="cannot precede the latest investigation event"):
+        store.add_investigation_indicator(
+            investigation_id, "out-of-order.example", added_at=historical_timestamp
+        )
+
     events = store.investigation_events(investigation_id)
-    assert events[0]["created_at"] == expected_timestamp
+    assert events[1]["created_at"] == expected_timestamp
     assert store.investigation(investigation_id)["updated_at"] == Clock.current.isoformat()
     assert store.verify_investigation_event_chain(investigation_id)["valid"] is True
     assert "too-early.example" not in store.investigation(investigation_id)["indicators"]
+    replay = store.replay_investigation(investigation_id, expected_timestamp)
+    assert replay["replayable"] is True
+    assert replay["indicator_count"] == 1
     store.close()
 
 
