@@ -8,6 +8,7 @@ Key risks and controls:
 | Risk | Control |
 | --- | --- |
 | API-key disclosure | Keys are read locally from environment/config; status output never returns them. |
+| Unauthenticated API access | Docker Compose publishes the API on host loopback by default. The API has no built-in authentication; remote deployments need an authenticated access-control boundary. |
 | One provider outage | Timeouts, retries, and per-connector error isolation preserve partial results. |
 | Upstream rate limits | The connector base honors `Retry-After` and backs off transient failures. |
 | Corrupted local cache rows | Invalid JSON, timestamps, or provider-result shapes are evicted and treated as cache misses. |

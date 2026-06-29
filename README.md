@@ -121,7 +121,7 @@ The API is available at `http://localhost:8000`. The container also serves the l
 docker compose up --build
 ```
 
-The service listens on port 8000, runs as a non-root user, and stores enrichment history in the `iocforge-data` volume. Provider credentials can be placed in a local `.env` file; the file is not copied into the image.
+The service listens on `127.0.0.1:8000` on the host, runs as a non-root user, and stores enrichment history in the `iocforge-data` volume. The API has no built-in authentication, so keep the port on loopback unless a remote deployment adds an authenticated access-control boundary. Provider credentials can be placed in a local `.env` file; the file is not copied into the image.
 
 ## Configuration
 
