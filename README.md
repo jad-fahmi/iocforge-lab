@@ -270,10 +270,12 @@ verdicts, decision traces, evidence and graph changes, replay checks, and bundle
 integrity. T1 has conflicting stale intelligence and a URLhaus outage, keeping
 the result at low risk. At T2, fresh provider classifications agree, URLhaus
 recovers, and passive DNS, certificate, URL, and file-hash evidence raises the
-verdict to malicious. At T3, VirusTotal reports benign, OTX is stale, ThreatFox
-still reports malicious, URLhaus is unavailable again, and passive DNS shows
-another infrastructure move. The verdict falls to suspicious. T2 relationships
-expire before T3, so the bundle can demonstrate both the historical graph and
+verdict to malicious. The discovered URL and payload hash join the case at T2
+and receive their own provider observations. At T3, VirusTotal reports benign,
+OTX is stale, ThreatFox still reports malicious, URLhaus is unavailable again,
+and passive DNS shows another infrastructure move. The verdict falls to
+suspicious. T2 relationships expire before T3, so the bundle can demonstrate
+both the historical graph and
 the changed current graph offline. Timestamps are generated for each run; all
 provider observations and relationships are synthetic. Inspect the archive with
 `ioc-enrich --bundle-inspect demo/t1-t2-t3.iocforge` or upload it in the

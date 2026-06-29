@@ -2564,15 +2564,26 @@ class HistoryStore:
         return self.investigation(investigation_id)
 
     def add_investigation_indicator(
-        self, investigation_id: int, ioc: str
+        self, investigation_id: int, ioc: str, *, added_at: str | None = None
     ) -> dict[str, Any] | None:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = (
+            datetime.now(timezone.utc).isoformat()
+            if added_at is None
+            else _normalize_timestamp(added_at)
+        )
+        if timestamp is None:
+            raise ValueError("indicator membership timestamp is required")
         with self._lock:
             exists = self.conn.execute(
-                "SELECT id FROM investigations WHERE id = ?", (investigation_id,)
+                "SELECT id, created_at FROM investigations WHERE id = ?",
+                (investigation_id,),
             ).fetchone()
             if not exists:
                 return None
+            if _timestamp_value(timestamp) < _timestamp_value(exists["created_at"]):
+                raise ValueError(
+                    "indicator membership cannot precede investigation creation"
+                )
             cursor = self.conn.execute(
                 "INSERT OR IGNORE INTO investigation_indicators(investigation_id, ioc, added_at) "
                 "VALUES (?, ?, ?)",
@@ -2593,7 +2604,8 @@ class HistoryStore:
                     target_entity_type="investigation",
                 )
             self.conn.execute(
-                "UPDATE investigations SET updated_at = ? WHERE id = ?",
+                "UPDATE investigations SET updated_at = MAX(updated_at, ?) "
+                "WHERE id = ?",
                 (timestamp, investigation_id),
             )
             self.conn.commit()
@@ -3338,6 +3350,11 @@ class HistoryStore:
             source_id = edge["source_entity_id"]
             target_id = edge["target_entity_id"]
             if source_id is None or target_id is None:
+                continue
+            if (
+                nodes[source_id]["entity_type"] == "investigation"
+                or nodes[target_id]["entity_type"] == "investigation"
+            ):
                 continue
             adjacency[source_id].append((target_id, edge))
             adjacency[target_id].append((source_id, edge))

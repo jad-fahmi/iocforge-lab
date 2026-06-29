@@ -17,8 +17,10 @@ def test_t1_t2_t3_demo_writes_self_contained_offline_case(tmp_path, capsys):
         baseline_as_of=report["scenario"]["t1"],
         comparison_as_of=report["scenario"]["t3"],
     )
+    t1_inspected = inspect_bundle(bundle, as_of=report["scenario"]["t1"])
     t2_inspected = inspect_bundle(bundle, as_of=report["scenario"]["t2"])
     snapshots = report["snapshots"]
+    case_snapshots = report["case_indicator_snapshots"]
     comparison = report["comparison"]
 
     assert [item["verdict"] for item in snapshots] == [
@@ -49,6 +51,12 @@ def test_t1_t2_t3_demo_writes_self_contained_offline_case(tmp_path, capsys):
     ]
     assert "stale_observation" in snapshots[2]["reason_codes"]
     assert all(item["replay"]["matches_original"] for item in snapshots)
+    assert [item["ioc"] for item in case_snapshots] == [
+        DEMO_URL,
+        DEMO_PAYLOAD_SHA256,
+    ]
+    assert case_snapshots[1]["verdict"] == "malicious"
+    assert all(item["replay"]["matches_original"] for item in case_snapshots)
     t1_paths = report["pivot_paths"]["t1"]["candidates"]
     assert DEMO_PAYLOAD_SHA256 not in {item["ioc"] for item in t1_paths}
     t2_hash_path = next(
@@ -126,10 +134,18 @@ def test_t1_t2_t3_demo_writes_self_contained_offline_case(tmp_path, capsys):
     assert DEMO_URL in added_targets
     assert DEMO_PAYLOAD_SHA256 in added_targets
     assert "203.0.113.42" in removed_targets
-    assert inspected["snapshot_count"] == 3
+    assert inspected["snapshot_count"] == 5
     assert len(inspected["comparisons"]) == 2
     assert inspected["event_integrity"]["investigation"]["valid"] is True
     assert all(result["matches_original"] for result in inspected["replay"])
+    assert t1_inspected["investigation_replay"]["indicator_count"] == 1
+    assert t2_inspected["investigation_replay"]["indicator_count"] == 3
+    assert inspected["investigation_replay"]["indicator_count"] == 3
+    later_members = {
+        item["ioc"]: item for item in inspected["investigation_comparison"]["indicators"]
+    }
+    assert later_members[DEMO_URL]["membership"] == "added"
+    assert later_members[DEMO_PAYLOAD_SHA256]["membership"] == "added"
     t2_graph_targets = {
         edge["target_ioc"]
         for edge in t2_inspected["investigation_replay"]["graph"]["edges"]

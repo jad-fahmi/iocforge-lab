@@ -39,11 +39,13 @@ def _source(
     observed_at: str | None = None,
     freshness: dict[str, Any] | None = None,
     related_entities: list[dict[str, Any]] | None = None,
+    ioc: str = DEMO_IOC,
+    ioc_type: IocType = IocType.DOMAIN,
 ) -> SourceResult:
     return SourceResult(
         source=name,
-        ioc=DEMO_IOC,
-        ioc_type=IocType.DOMAIN,
+        ioc=ioc,
+        ioc_type=ioc_type,
         found=found,
         malicious=malicious,
         score=source_score,
@@ -90,7 +92,9 @@ def create_demo_bundle() -> tuple[bytes, dict[str, Any]]:
                 "disagreement, another outage, and an infrastructure move at T3.",
             )
             investigation_id = int(investigation["id"])
-            store.add_investigation_indicator(investigation_id, DEMO_IOC)
+            store.add_investigation_indicator(
+                investigation_id, DEMO_IOC, added_at=t1_text
+            )
 
             t1_result = EnrichmentResult(ioc=DEMO_IOC, ioc_type=IocType.DOMAIN)
             _add_sources(
@@ -268,6 +272,58 @@ def create_demo_bundle() -> tuple[bytes, dict[str, Any]]:
             score(t2_result, as_of=t2_text)
             t2_id = store.record(t2_result, looked_up_at=t2_text)
 
+            store.add_investigation_indicator(
+                investigation_id, DEMO_URL, added_at=t2_text
+            )
+            url_result = EnrichmentResult(ioc=DEMO_URL, ioc_type=IocType.URL)
+            _add_sources(
+                url_result,
+                [
+                    _source(
+                        "urlscan",
+                        t2_text,
+                        {
+                            "scan_id": "00000000-0000-4000-8000-000000000002",
+                            "page_url": DEMO_URL,
+                            "classification": "credential-phishing",
+                        },
+                        confidence=0.92,
+                        ioc=DEMO_URL,
+                        ioc_type=IocType.URL,
+                    )
+                ],
+            )
+            score(url_result, as_of=t2_text)
+            url_id = store.record(url_result, looked_up_at=t2_text)
+
+            store.add_investigation_indicator(
+                investigation_id, DEMO_PAYLOAD_SHA256, added_at=t2_text
+            )
+            hash_result = EnrichmentResult(
+                ioc=DEMO_PAYLOAD_SHA256, ioc_type=IocType.SHA256
+            )
+            _add_sources(
+                hash_result,
+                [
+                    _source(
+                        "malwarebazaar",
+                        t2_text,
+                        {
+                            "query_status": "FOUND",
+                            "file_name": "credential-update.exe",
+                            "signature": "trojan.generic",
+                        },
+                        malicious=True,
+                        source_score=0.98,
+                        confidence=0.96,
+                        ioc=DEMO_PAYLOAD_SHA256,
+                        ioc_type=IocType.SHA256,
+                    )
+                ],
+            )
+            score(hash_result, as_of=t2_text)
+            hash_id = store.record(hash_result, looked_up_at=t2_text)
+
             t3_result = EnrichmentResult(ioc=DEMO_IOC, ioc_type=IocType.DOMAIN)
             _add_sources(
                 t3_result,
@@ -357,7 +413,9 @@ def create_demo_bundle() -> tuple[bytes, dict[str, Any]]:
                 DEMO_IOC, max_depth=5, as_of=t3_text
             )
 
-            def snapshot_summary(enrichment_id: int) -> dict[str, Any]:
+            def snapshot_summary(
+                enrichment_id: int, ioc: str = DEMO_IOC
+            ) -> dict[str, Any]:
                 replay = store.replay_enrichment(enrichment_id)
                 if replay is None:
                     raise RuntimeError(
@@ -365,12 +423,13 @@ def create_demo_bundle() -> tuple[bytes, dict[str, Any]]:
                     )
                 history = next(
                     item
-                    for item in store.list_enrichments(DEMO_IOC)
+                    for item in store.list_enrichments(ioc)
                     if item["id"] == enrichment_id
                 )
                 result = history["result"]
                 return {
                     "enrichment_id": enrichment_id,
+                    "ioc": ioc,
                     "looked_up_at": history["looked_up_at"],
                     "verdict": result["verdict"],
                     "score": result["score"],
@@ -401,6 +460,10 @@ def create_demo_bundle() -> tuple[bytes, dict[str, Any]]:
                     snapshot_summary(t1_id),
                     snapshot_summary(t2_id),
                     snapshot_summary(t3_id),
+                ],
+                "case_indicator_snapshots": [
+                    snapshot_summary(url_id, DEMO_URL),
+                    snapshot_summary(hash_id, DEMO_PAYLOAD_SHA256),
                 ],
                 "pivot_paths": {
                     "t1": t1_pivot_paths,

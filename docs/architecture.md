@@ -22,6 +22,12 @@ could rewrite or truncate a whole chain.
 Indicator integrity checks recompute observation payload hashes and identity keys,
 then verify each saved snapshot source still matches its linked evidence. Replay
 refuses to score a snapshot when those evidence checks fail.
+Investigation membership is reconstructed from append-only add events. The
+history store accepts an explicit membership timestamp for internal callers
+and fixtures; the HTTP API continues to assign the server's current time.
+Pivot-path ranking omits edges to investigation nodes because case membership
+is not threat-intelligence evidence. Those edges remain available in graph
+views and case replay.
 
 The transformation proceeds in dependency order:
 
@@ -83,14 +89,16 @@ The transformation proceeds in dependency order:
    replay. Continue expanding workload sizes and graph shapes on target hardware.
 
 The `python -m ioc_enricher.demo --output <path>` walkthrough creates its own
-temporary SQLite history, seeds three explicitly timestamped synthetic
-provider snapshots and temporal graph states, and exports a portable
-investigation bundle. T1 includes conflicting benign and stale malicious
+temporary SQLite history, records five synthetic enrichment snapshots for
+three case indicators across T1/T2/T3, and exports a portable investigation
+bundle. T1 includes conflicting benign and stale malicious
 classifications and a provider outage; T2 refreshes those sources and adds
 malicious agreement and new infrastructure pivots. A bounded URLScan
-observation links the T2 domain to a page URL and a downloaded-file hash. At T3,
-VirusTotal reports benign while fresh ThreatFox evidence remains malicious,
-OTX is stale, URLhaus is unavailable, and passive DNS shows another address.
+observation links the T2 domain to a page URL and a downloaded-file hash. The
+URL and file hash join the case at T2 and each receives its own provider
+snapshot. At T3, VirusTotal reports benign while fresh ThreatFox evidence
+remains malicious, OTX is stale, URLhaus is unavailable, and passive DNS shows
+another address.
 T2 relationships expire before T3, so the bundle demonstrates both historical
 graph reconstruction and the current graph. The walkthrough prints ranked
 T1/T2/T3 paths, evidence and graph diffs across both stages, all scoring traces,

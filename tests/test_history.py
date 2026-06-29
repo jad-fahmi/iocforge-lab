@@ -677,6 +677,42 @@ def test_investigation_groups_indicators_and_preserves_events(tmp_path):
     ]
 
 
+def test_investigation_membership_timestamp_is_bounded_and_utc_normalized(
+    tmp_path, monkeypatch
+):
+    class Clock(datetime):
+        current = datetime(2099, 2, 3, tzinfo=timezone.utc)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current.astimezone(tz) if tz else cls.current.replace(tzinfo=None)
+
+    monkeypatch.setattr(history_module, "datetime", Clock)
+    store = HistoryStore(tmp_path / "history.db")
+    investigation = store.create_investigation("Timeline")
+    investigation_id = investigation["id"]
+
+    with pytest.raises(ValueError, match="cannot precede investigation creation"):
+        store.add_investigation_indicator(
+            investigation_id, "too-early.example", added_at="2000-01-01T00:00:00Z"
+        )
+
+    Clock.current = datetime(2099, 2, 5, tzinfo=timezone.utc)
+    store.update_investigation(investigation_id, description="Updated later")
+    historical_timestamp = "2099-02-04T04:00:00+02:00"
+    expected_timestamp = "2099-02-04T02:00:00+00:00"
+    store.add_investigation_indicator(
+        investigation_id, "backfilled.example", added_at=historical_timestamp
+    )
+
+    events = store.investigation_events(investigation_id)
+    assert events[0]["created_at"] == expected_timestamp
+    assert store.investigation(investigation_id)["updated_at"] == Clock.current.isoformat()
+    assert store.verify_investigation_event_chain(investigation_id)["valid"] is True
+    assert "too-early.example" not in store.investigation(investigation_id)["indicators"]
+    store.close()
+
+
 def test_investigation_lifecycle_update_is_audited(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     investigation = store.create_investigation("Credential phishing")
@@ -761,7 +797,9 @@ def test_investigation_replay_reconstructs_membership_decisions_graph_and_overri
     )
     score(t2_result, as_of=t2)
     store.record(t2_result, looked_up_at=t2)
-    store.add_investigation_indicator(investigation["id"], "new.example")
+    store.add_investigation_indicator(
+        investigation["id"], "new.example", added_at=t2
+    )
     store.update_investigation(
         investigation["id"], description="Updated at T2", status="closed"
     )
