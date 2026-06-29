@@ -114,6 +114,79 @@ def test_reliability_weight_candidate_clamps_inverted_predictions_to_zero():
     assert candidate["labelled_count"] == 4
 
 
+def test_detection_miss_rate_counts_successful_no_data_separately_from_classification():
+    fixture = {
+        "schema_version": 1,
+        "providers": ["provider"],
+        "cases": [
+            {
+                "id": "malicious-no-data",
+                "ioc": "no-data.example",
+                "truth": {"malicious": True},
+                "sources": [
+                    {"source": "provider", "found": False, "malicious": None}
+                ],
+            },
+            {
+                "id": "malicious-clean-verdict",
+                "ioc": "clean-verdict.example",
+                "truth": {"malicious": True},
+                "sources": [
+                    {"source": "provider", "found": True, "malicious": False}
+                ],
+            },
+            {
+                "id": "malicious-outage",
+                "ioc": "outage.example",
+                "truth": {"malicious": True},
+                "sources": [
+                    {
+                        "source": "provider",
+                        "found": False,
+                        "malicious": None,
+                        "error": "provider timeout",
+                    }
+                ],
+            },
+            {
+                "id": "malicious-not-attempted",
+                "ioc": "not-attempted.example",
+                "truth": {"malicious": True},
+                "sources": [],
+            },
+            {
+                "id": "benign-clean-verdict",
+                "ioc": "benign.example",
+                "truth": {"malicious": False},
+                "sources": [
+                    {"source": "provider", "found": True, "malicious": False}
+                ],
+            },
+        ],
+    }
+
+    result = evaluate_fixture(fixture)
+
+    metrics = result["providers"]["provider"]
+    assert metrics["detection"] == {
+        "expected_malicious_count": 4,
+        "attempted_malicious_count": 2,
+        "missed_malicious_count": 1,
+        "miss_rate": 0.5,
+        "miss_rate_interval_95": {
+            "method": "wilson_score",
+            "confidence_level": 0.95,
+            "successes": 1,
+            "trials": 2,
+            "lower": 0.0945,
+            "upper": 0.9055,
+        },
+    }
+    assert metrics["classification"]["false_negative"] == 1
+    assert metrics["failure_count"] == 1
+    assert metrics["not_attempted_count"] == 1
+
+
 def test_cache_hits_are_excluded_from_provider_latency_samples():
     fixture = load_fixture(FIXTURE_PATH)
     cached = copy.deepcopy(fixture)

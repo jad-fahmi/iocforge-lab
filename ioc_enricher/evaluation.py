@@ -17,7 +17,7 @@ from ioc_enricher.ioc.detect import (
 from ioc_enricher.ioc.types import IocType
 
 EVALUATION_SCHEMA_VERSION = 1
-EVALUATION_METHODOLOGY = "iocforge-provider-evaluation-v4"
+EVALUATION_METHODOLOGY = "iocforge-provider-evaluation-v5"
 MAX_EVALUATION_FIXTURE_BYTES = 10 * 1024 * 1024
 WILSON_95_Z = 1.959963984540054
 
@@ -226,18 +226,28 @@ def evaluate_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
         future_timestamps = 0
         true_positive = false_positive = true_negative = false_negative = 0
         labelled_count = 0
+        expected_malicious_count = 0
+        attempted_malicious_count = 0
+        missed_malicious_count = 0
 
         for case in cases:
             expected = case.get("expected_sources", providers)
             if provider not in expected:
                 continue
             expected_count += 1
+            truth = case.get("truth", {}).get("malicious")
+            if truth is True:
+                expected_malicious_count += 1
             outcome = outcomes_by_case[case["id"]].get(provider)
             if outcome is None:
                 continue
             attempted_count += 1
             if outcome.get("error") is not None:
                 failures += 1
+            elif truth is True:
+                attempted_malicious_count += 1
+                if not outcome["found"]:
+                    missed_malicious_count += 1
             if outcome["found"] and outcome.get("error") is None:
                 successful_count += 1
             if outcome.get("latency_ms") is not None and not outcome.get(
@@ -257,7 +267,6 @@ def evaluate_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
                 freshness_samples.append(age_seconds)
                 if age_seconds < 0:
                     future_timestamps += 1
-            truth = case.get("truth", {}).get("malicious")
             predicted = outcome.get("malicious")
             if (
                 outcome["found"]
@@ -331,6 +340,17 @@ def evaluate_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
             "failure_count": failures,
             "failure_rate": _ratio(failures, attempted_count),
             "failure_rate_interval_95": _wilson_interval(failures, attempted_count),
+            "detection": {
+                "expected_malicious_count": expected_malicious_count,
+                "attempted_malicious_count": attempted_malicious_count,
+                "missed_malicious_count": missed_malicious_count,
+                "miss_rate": _ratio(
+                    missed_malicious_count, attempted_malicious_count
+                ),
+                "miss_rate_interval_95": _wilson_interval(
+                    missed_malicious_count, attempted_malicious_count
+                ),
+            },
             "latency_ms": {
                 "sample_count": len(latency_samples),
                 "mean": _mean(latency_samples),

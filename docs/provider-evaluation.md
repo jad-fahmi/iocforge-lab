@@ -33,6 +33,15 @@ optional `error`, `observed_at`, `latency_ms`, and `cache_hit`.
   provider verdicts. Balanced accuracy is omitted unless both truth classes
   have measurable recall. The report includes 95% Wilson intervals for precision,
   recall, and specificity when their denominators are non-zero.
+- **Detection misses** are successful, expected provider attempts for labeled
+  malicious cases where the provider returned `found: false`. Their rate is
+  missed malicious cases divided by expected malicious cases with a non-error
+  provider response. The report includes the number expected, attempted, and
+  missed, plus a 95% Wilson interval. Provider errors and missing attempts are
+  excluded from this denominator and remain visible in failure and coverage
+  metrics. A detection miss is separate from a false negative verdict: a
+  successful `found: true, malicious: false` outcome is a classification false
+  negative but still counts as detection.
 - **Reliability weight candidate** is the clamped Youden's J statistic,
   `max(0, 2 * balanced_accuracy - 1)`. It ranges from zero for chance-level or
   inverted predictions to one for perfect predictions. The report includes
@@ -46,7 +55,7 @@ is calculated. The report records the IOC normalization version alongside the
 fixture digest.
 
 The report includes a SHA-256 digest of canonicalized fixture JSON and a fixed
-methodology version (`iocforge-provider-evaluation-v4`). Re-running the same
+methodology version (`iocforge-provider-evaluation-v5`). Re-running the same
 fixture produces the same report. Wilson intervals assume independent binomial
 outcomes; repeated or correlated indicators and unrepresentative labels can make
 them overconfident. They expose sample size uncertainty, not provider accuracy
