@@ -12,6 +12,9 @@ boundary; unlinked analyst-created relationships retain an explicit `analyst`
 source. Relationships carry validity intervals. A typed entity table
 now classifies graph endpoints while retaining the existing string endpoint
 columns for API and storage compatibility.
+Provider edge recording times cannot predate their linked observation's
+collection time, preventing historical replay from exposing later-acquired
+knowledge.
 Snapshot comparison is available. Indicator and investigation events now use
 per-scope SHA-256 chains, migration backfill, SQLite append-only guards, and
 explicit integrity verification. Normalized provider observations and their

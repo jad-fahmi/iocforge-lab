@@ -302,7 +302,9 @@ def read_bundle(source: bytes | bytearray | str | Path) -> dict[str, Any]:
                 raise ValueError("bundle provider graph edge has no evidence reference")
             continue
         evidence = observations_by_id[observation_id]["observation"]
-        if not _relationship_matches_observation(edge, evidence):
+        if not _relationship_matches_observation(
+            edge, evidence, enforce_collection_order=False
+        ):
             raise ValueError("bundle graph edge does not match linked evidence")
 
     for snapshot in payload.get("snapshots", []):
@@ -706,6 +708,39 @@ def replay_bundle_investigation(
     if len(graph_edges) > 500:
         graph_edges = dict(sorted(graph_edges.items())[:500])
         graph_truncated = True
+    observations_by_id = {
+        item["id"]: item["observation"]
+        for item in payload.get("observations", [])
+        if isinstance(item, dict)
+        and isinstance(item.get("id"), int)
+        and isinstance(item.get("observation"), dict)
+    }
+    graph_issues = []
+    for edge in graph_edges.values():
+        observation_id = edge.get("evidence_observation_id")
+        if observation_id is None:
+            if edge.get("evidence_source") != "analyst":
+                graph_issues.append(
+                    {
+                        "edge_id": edge.get("id"),
+                        "problems": ["provider_edge_evidence_missing"],
+                    }
+                )
+            continue
+        evidence = observations_by_id.get(observation_id)
+        if evidence is None:
+            problems = ["linked_observation_missing"]
+        elif not _relationship_matches_observation(edge, evidence):
+            problems = ["edge_does_not_match_linked_observation"]
+        else:
+            continue
+        graph_issues.append({"edge_id": edge.get("id"), "problems": problems})
+    graph_integrity: dict[str, Any] = {
+        "valid": not graph_issues,
+        "checked_edges": len(graph_edges),
+        "issues": graph_issues,
+    }
+    state_complete = state_complete and bool(graph_integrity["valid"])
     retained_entity_ids = {
         entity_id
         for edge in graph_edges.values()
@@ -739,7 +774,9 @@ def replay_bundle_investigation(
             "edge_limit": 500,
             "truncated": graph_truncated,
             "as_of": timestamp,
+            "integrity": graph_integrity,
         },
+        "graph_integrity": graph_integrity,
         "event_integrity": {
             "investigation": case_integrity,
             "indicators": indicator_integrity,

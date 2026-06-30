@@ -141,11 +141,22 @@ def _relationship_dict(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _relationship_matches_observation(
-    edge: dict[str, Any], evidence: dict[str, Any]
+    edge: dict[str, Any],
+    evidence: dict[str, Any],
+    *,
+    enforce_collection_order: bool = True,
 ) -> bool:
     """Check that a persisted provider edge is fully supported by its evidence."""
     if evidence.get("source") != edge.get("evidence_source"):
         return False
+    if enforce_collection_order:
+        try:
+            if _timestamp_value(edge["created_at"]) < _timestamp_value(
+                evidence["collected_at"]
+            ):
+                return False
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return False
     related_entities = evidence.get("related_entities", [])
     if not isinstance(related_entities, list):
         return False
@@ -2868,13 +2879,26 @@ class HistoryStore:
             )
         if evidence_observation_id is not None:
             observation = self.conn.execute(
-                "SELECT source, observation_json FROM evidence_observations WHERE id = ?",
+                "SELECT source, collected_at, observation_json "
+                "FROM evidence_observations WHERE id = ?",
                 (evidence_observation_id,),
             ).fetchone()
             if observation is None:
                 raise ValueError("evidence observation was not found")
             if observation["source"] != evidence_source:
                 raise ValueError("evidence source does not match the observation")
+            try:
+                observation_collected_at = _timestamp_value(
+                    observation["collected_at"]
+                )
+            except (TypeError, ValueError, OverflowError) as error:
+                raise ValueError(
+                    "evidence observation has an invalid collection timestamp"
+                ) from error
+            if _timestamp_value(timestamp) < observation_collected_at:
+                raise ValueError(
+                    "relationship cannot be recorded before its evidence was collected"
+                )
             evidence = json.loads(observation["observation_json"])
             candidates = [
                 item

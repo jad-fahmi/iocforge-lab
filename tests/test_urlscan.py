@@ -302,6 +302,7 @@ def test_urlscan_hash_edges_retain_observation_provenance(tmp_path):
         )
     )
     result = Urlscan(api_key="key").enrich("example.com", IocType.DOMAIN)
+    result.collected_at = "2026-09-21T00:00:00+00:00"
     enrichment = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
     enrichment.add(result)
     store = HistoryStore(tmp_path / "history.db")
@@ -382,6 +383,7 @@ def test_urlscan_backfilled_scans_do_not_appear_before_retrieval(tmp_path):
             ],
         },
     )
+    result.collected_at = "2026-01-25T00:00:00+00:00"
     enrichment = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
     enrichment.add(result)
     store = HistoryStore(tmp_path / "history.db")

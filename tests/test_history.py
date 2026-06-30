@@ -1145,6 +1145,51 @@ def test_relationship_store_requires_observation_for_provider_source(tmp_path):
     assert store.relationships("evil.example") == []
 
 
+def test_provider_relationship_cannot_predate_observation_collection(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
+    result.add(
+        SourceResult(
+            source="passive_dns",
+            ioc="example.com",
+            ioc_type=IocType.DOMAIN,
+            found=True,
+            collected_at="2026-02-02T00:00:00+00:00",
+            related_entities=[
+                {
+                    "source_ioc": "example.com",
+                    "target_ioc": "203.0.113.7",
+                    "relationship_type": "resolves_to",
+                    "valid_from": "2026-02-01T00:00:00+00:00",
+                }
+            ],
+        )
+    )
+    enrichment_id = store.record(result, "2026-02-02T00:00:00+00:00")
+    observation_id = store.observations_for_enrichment(enrichment_id)[0]["id"]
+    edge = store.relationships("example.com")[0]
+
+    with pytest.raises(ValueError, match="before its evidence was collected"):
+        store.add_relationship(
+            "example.com",
+            "203.0.113.7",
+            "resolves_to",
+            evidence_source="passive_dns",
+            evidence_observation_id=observation_id,
+            recorded_at="2026-02-01T12:00:00+00:00",
+        )
+
+    tampered_edge = {
+        **edge,
+        "created_at": "2026-02-01T12:00:00+00:00",
+    }
+    integrity = store.verify_relationship_integrity([tampered_edge])
+    assert integrity["valid"] is False
+    assert integrity["issues"][0]["problems"] == [
+        "edge_does_not_match_linked_observation"
+    ]
+
+
 def test_relationship_canonicalizes_defanged_ioc_endpoints(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
 
