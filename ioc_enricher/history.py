@@ -140,6 +140,72 @@ def _relationship_dict(row: sqlite3.Row) -> dict[str, Any]:
     return relationship
 
 
+def _relationship_matches_observation(
+    edge: dict[str, Any], evidence: dict[str, Any]
+) -> bool:
+    """Check that a persisted provider edge is fully supported by its evidence."""
+    if evidence.get("source") != edge.get("evidence_source"):
+        return False
+    related_entities = evidence.get("related_entities", [])
+    if not isinstance(related_entities, list):
+        return False
+    for related in related_entities:
+        if not isinstance(related, dict):
+            continue
+        try:
+            if (
+                _canonical_relationship_ioc(related.get("source_ioc", ""))
+                != _canonical_relationship_ioc(edge["source_ioc"])
+                or _canonical_relationship_ioc(related.get("target_ioc", ""))
+                != _canonical_relationship_ioc(edge["target_ioc"])
+                or related.get("relationship_type") != edge["relationship_type"]
+                or related.get("confidence", 1.0) != edge["confidence"]
+                or _normalize_timestamp(
+                    related.get("valid_from")
+                    or related.get("observed_at")
+                    or evidence.get("observed_at")
+                    or evidence.get("collected_at")
+                    or edge.get("created_at")
+                )
+                != _normalize_timestamp(edge.get("valid_from"))
+                or _normalize_timestamp(related.get("valid_to"))
+                != _normalize_timestamp(edge.get("valid_to"))
+                or related.get("attributes", {}) != edge.get("attributes", {})
+            ):
+                continue
+            for edge_type, related_type, value, endpoint in (
+                (
+                    edge["source_entity_type"],
+                    related.get("source_entity_type"),
+                    edge["source_ioc"],
+                    "source",
+                ),
+                (
+                    edge["target_entity_type"],
+                    related.get("target_entity_type"),
+                    edge["target_ioc"],
+                    "target",
+                ),
+            ):
+                if _entity_type_for(
+                    value,
+                    explicit=edge_type,
+                    relationship_type=edge["relationship_type"],
+                    endpoint=endpoint,
+                ) != _entity_type_for(
+                    value,
+                    explicit=related_type,
+                    relationship_type=edge["relationship_type"],
+                    endpoint=endpoint,
+                ):
+                    break
+            else:
+                return True
+        except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
+            continue
+    return False
+
+
 def _event_hash(
     table: str,
     scope_id: str,
@@ -1343,6 +1409,62 @@ class HistoryStore:
             "issues": issues,
         }
 
+    def verify_relationship_integrity(
+        self, edges: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Check graph edge provenance against immutable provider observations."""
+        observation_ids = sorted(
+            {
+                edge["evidence_observation_id"]
+                for edge in edges
+                if type(edge.get("evidence_observation_id")) is int
+            }
+        )
+        observations: dict[int, dict[str, Any] | None] = {}
+        if observation_ids:
+            placeholders = ",".join("?" for _ in observation_ids)
+            with self._lock:
+                rows = self.conn.execute(
+                    "SELECT id, observation_json FROM evidence_observations "
+                    f"WHERE id IN ({placeholders})",
+                    observation_ids,
+                ).fetchall()
+            for row in rows:
+                try:
+                    payload = json.loads(row["observation_json"])
+                except (TypeError, json.JSONDecodeError):
+                    payload = None
+                observations[int(row["id"])] = (
+                    payload if isinstance(payload, dict) else None
+                )
+
+        issues = []
+        for edge in edges:
+            observation_id = edge.get("evidence_observation_id")
+            if observation_id is None:
+                if edge.get("evidence_source") != "analyst":
+                    issues.append(
+                        {
+                            "edge_id": edge.get("id"),
+                            "problems": ["provider_edge_evidence_missing"],
+                        }
+                    )
+                continue
+            evidence = observations.get(observation_id)
+            if evidence is None:
+                problems = ["linked_observation_missing"]
+            elif not _relationship_matches_observation(edge, evidence):
+                problems = ["edge_does_not_match_linked_observation"]
+            else:
+                continue
+            issues.append({"edge_id": edge.get("id"), "problems": problems})
+
+        return {
+            "valid": not issues,
+            "checked_edges": len(edges),
+            "issues": issues,
+        }
+
     def replay_enrichment(self, enrichment_id: int) -> dict[str, Any] | None:
         """Re-score a saved enrichment using its observations and pinned config."""
         with self._lock:
@@ -1683,6 +1805,8 @@ class HistoryStore:
             max_depth=5,
             as_of=timestamp,
         )
+        graph_integrity = self.verify_relationship_integrity(graph["edges"])
+        state_complete = state_complete and graph_integrity["valid"]
 
         return {
             "investigation_id": investigation_id,
@@ -1706,8 +1830,10 @@ class HistoryStore:
                 "edge_limit": 500,
                 "truncated": graph["truncated"],
                 "as_of": timestamp,
+                "integrity": graph_integrity,
             },
             "event_integrity": event_integrity,
+            "graph_integrity": graph_integrity,
             "methodology": "investigation_event_prefix_and_snapshot_replay_v1",
         }
 

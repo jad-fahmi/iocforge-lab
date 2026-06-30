@@ -12,12 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from ioc_enricher.history import (
-    _canonical_relationship_ioc,
-    _entity_type_for,
     _event_hash,
-    _normalize_timestamp,
     _observation_content_key,
     _observation_key,
+    _relationship_matches_observation,
 )
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult, SourceResult
@@ -304,72 +302,7 @@ def read_bundle(source: bytes | bytearray | str | Path) -> dict[str, Any]:
                 raise ValueError("bundle provider graph edge has no evidence reference")
             continue
         evidence = observations_by_id[observation_id]["observation"]
-        if evidence.get("source") != edge["evidence_source"]:
-            raise ValueError("bundle graph source does not match linked evidence")
-        related_entities = evidence.get("related_entities", [])
-        if not isinstance(related_entities, list):
-            raise ValueError("bundle graph evidence relationships are invalid")
-        matching = []
-        for related in related_entities:
-            if not isinstance(related, dict):
-                continue
-            try:
-                endpoints_match = (
-                    _canonical_relationship_ioc(related.get("source_ioc", ""))
-                    == _canonical_relationship_ioc(edge["source_ioc"])
-                    and _canonical_relationship_ioc(related.get("target_ioc", ""))
-                    == _canonical_relationship_ioc(edge["target_ioc"])
-                )
-            except (AttributeError, TypeError, ValueError):
-                endpoints_match = False
-            if (
-                endpoints_match
-                and related.get("relationship_type") == edge["relationship_type"]
-                and related.get("confidence", 1.0) == edge["confidence"]
-            ):
-                matching.append(related)
-        if not any(
-            _normalize_timestamp(
-                related.get("valid_from")
-                or related.get("observed_at")
-                or evidence.get("observed_at")
-                or evidence.get("collected_at")
-                or edge["created_at"]
-            )
-            == _normalize_timestamp(edge["valid_from"])
-            and _normalize_timestamp(related.get("valid_to"))
-            == _normalize_timestamp(edge.get("valid_to"))
-            and related.get("attributes", {}) == edge.get("attributes", {})
-            and all(
-                _entity_type_for(
-                    value,
-                    explicit=edge_type,
-                    relationship_type=edge["relationship_type"],
-                    endpoint=endpoint,
-                )
-                == _entity_type_for(
-                    value,
-                    explicit=related_type,
-                    relationship_type=edge["relationship_type"],
-                    endpoint=endpoint,
-                )
-                for edge_type, related_type, value, endpoint in (
-                    (
-                        edge["source_entity_type"],
-                        related.get("source_entity_type"),
-                        edge["source_ioc"],
-                        "source",
-                    ),
-                    (
-                        edge["target_entity_type"],
-                        related.get("target_entity_type"),
-                        edge["target_ioc"],
-                        "target",
-                    ),
-                )
-            )
-            for related in matching
-        ):
+        if not _relationship_matches_observation(edge, evidence):
             raise ValueError("bundle graph edge does not match linked evidence")
 
     for snapshot in payload.get("snapshots", []):

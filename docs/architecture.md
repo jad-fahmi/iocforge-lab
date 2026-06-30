@@ -43,6 +43,8 @@ The transformation proceeds in dependency order:
    at a chosen time. Snapshot replay reproduces a saved score; investigation
    replay now rebuilds case metadata, membership, analyst state, latest eligible
    snapshots, and graph state from event/evidence prefixes at an `as_of` time.
+   Reconstructed provider edges are checked against their immutable observations;
+   altered or orphaned edges make replay state incomplete and non-replayable.
    Snapshot replay dispatches through the saved scoring-method version rather
    than assuming it matches the currently active method; retained implementations
    preserve reproducibility across scoring upgrades.

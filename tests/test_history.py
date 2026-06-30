@@ -1482,6 +1482,40 @@ def test_provider_relationships_link_to_observations_and_pivots(tmp_path):
         )
 
 
+def test_investigation_replay_rejects_tampered_graph_provenance(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    edge = _add_provider_relationship(
+        store,
+        "example.com",
+        "203.0.113.7",
+        "resolves_to",
+        evidence_source="passive_dns",
+        confidence=0.8,
+    )
+    investigation = store.create_investigation("Graph integrity")
+    store.add_investigation_indicator(investigation["id"], "example.com")
+    store.conn.execute("DROP TRIGGER indicator_relationships_no_update")
+    store.conn.execute(
+        "UPDATE indicator_relationships SET confidence = ? WHERE id = ?",
+        (0.2, edge["id"]),
+    )
+    store.conn.commit()
+
+    replay = store.replay_investigation(
+        investigation["id"], "2099-01-01T00:00:00+00:00"
+    )
+
+    assert replay["graph_integrity"]["valid"] is False
+    assert replay["graph_integrity"]["issues"] == [
+        {
+            "edge_id": edge["id"],
+            "problems": ["edge_does_not_match_linked_observation"],
+        }
+    ]
+    assert replay["state_complete"] is False
+    assert replay["replayable"] is False
+
+
 def test_shodan_infrastructure_pivots_retain_observation_provenance(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
     result = EnrichmentResult(ioc="203.0.113.7", ioc_type=IocType.IPV4)
