@@ -2580,46 +2580,52 @@ class HistoryStore:
             ).fetchone()
             if not exists:
                 return None
-            if _timestamp_value(timestamp) < _timestamp_value(exists["created_at"]):
-                raise ValueError(
-                    "indicator membership cannot precede investigation creation"
-                )
-            latest_event = self.conn.execute(
-                "SELECT created_at FROM investigation_events "
-                "WHERE investigation_id = ? ORDER BY id DESC LIMIT 1",
-                (investigation_id,),
+            member = self.conn.execute(
+                "SELECT 1 FROM investigation_indicators "
+                "WHERE investigation_id = ? AND ioc = ?",
+                (investigation_id, ioc),
             ).fetchone()
-            if latest_event and _timestamp_value(timestamp) < _timestamp_value(
-                latest_event["created_at"]
-            ):
-                raise ValueError(
-                    "indicator membership cannot precede the latest investigation event"
+            if not member:
+                if _timestamp_value(timestamp) < _timestamp_value(exists["created_at"]):
+                    raise ValueError(
+                        "indicator membership cannot precede investigation creation"
+                    )
+                latest_event = self.conn.execute(
+                    "SELECT created_at FROM investigation_events "
+                    "WHERE investigation_id = ? ORDER BY id DESC LIMIT 1",
+                    (investigation_id,),
+                ).fetchone()
+                if latest_event and _timestamp_value(timestamp) < _timestamp_value(
+                    latest_event["created_at"]
+                ):
+                    raise ValueError(
+                        "indicator membership cannot precede the latest investigation event"
+                    )
+                cursor = self.conn.execute(
+                    "INSERT OR IGNORE INTO investigation_indicators(investigation_id, ioc, added_at) "
+                    "VALUES (?, ?, ?)",
+                    (investigation_id, ioc, timestamp),
                 )
-            cursor = self.conn.execute(
-                "INSERT OR IGNORE INTO investigation_indicators(investigation_id, ioc, added_at) "
-                "VALUES (?, ?, ?)",
-                (investigation_id, ioc, timestamp),
-            )
-            if cursor.rowcount:
-                self._record_investigation_event(
-                    investigation_id, "indicator_added", {"ioc": ioc}, timestamp
-                )
-                self._insert_relationship(
-                    source_ioc=ioc,
-                    target_ioc=f"investigation:{investigation_id}",
-                    relationship_type="part_of_investigation",
-                    confidence=1.0,
-                    evidence_source="analyst",
-                    valid_from=timestamp,
-                    recorded_at=timestamp,
-                    target_entity_type="investigation",
-                )
-            self.conn.execute(
-                "UPDATE investigations SET updated_at = MAX(updated_at, ?) "
-                "WHERE id = ?",
-                (timestamp, investigation_id),
-            )
-            self.conn.commit()
+                if cursor.rowcount:
+                    self._record_investigation_event(
+                        investigation_id, "indicator_added", {"ioc": ioc}, timestamp
+                    )
+                    self._insert_relationship(
+                        source_ioc=ioc,
+                        target_ioc=f"investigation:{investigation_id}",
+                        relationship_type="part_of_investigation",
+                        confidence=1.0,
+                        evidence_source="analyst",
+                        valid_from=timestamp,
+                        recorded_at=timestamp,
+                        target_entity_type="investigation",
+                    )
+                    self.conn.execute(
+                        "UPDATE investigations SET updated_at = MAX(updated_at, ?) "
+                        "WHERE id = ?",
+                        (timestamp, investigation_id),
+                    )
+                    self.conn.commit()
         return self.investigation(investigation_id)
 
     def investigation_events(

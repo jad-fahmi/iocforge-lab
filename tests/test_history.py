@@ -709,9 +709,13 @@ def test_investigation_membership_timestamp_is_bounded_and_utc_normalized(
         store.add_investigation_indicator(
             investigation_id, "out-of-order.example", added_at=historical_timestamp
         )
+    store.add_investigation_indicator(
+        investigation_id, "backfilled.example", added_at="2000-01-01T00:00:00Z"
+    )
 
     events = store.investigation_events(investigation_id)
     assert events[1]["created_at"] == expected_timestamp
+    assert len(events) == 3
     assert store.investigation(investigation_id)["updated_at"] == Clock.current.isoformat()
     assert store.verify_investigation_event_chain(investigation_id)["valid"] is True
     assert "too-early.example" not in store.investigation(investigation_id)["indicators"]
