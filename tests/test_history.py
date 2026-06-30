@@ -1471,6 +1471,15 @@ def test_provider_relationships_link_to_observations_and_pivots(tmp_path):
         assert "does not support" in str(error)
     else:
         raise AssertionError("unobserved relationships must not cite evidence")
+    with pytest.raises(ValueError, match="does not support this relationship"):
+        store.add_relationship(
+            "example.com",
+            "203.0.113.7",
+            "resolves_to",
+            confidence=0.5,
+            evidence_source="passive_dns",
+            evidence_observation_id=observation_id,
+        )
 
 
 def test_shodan_infrastructure_pivots_retain_observation_provenance(tmp_path):

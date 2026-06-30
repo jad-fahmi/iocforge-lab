@@ -328,6 +328,14 @@ def test_bundle_rejects_graph_edges_with_missing_evidence_references(tmp_path):
         inspect_bundle(build_bundle(payload))
 
 
+def test_bundle_rejects_graph_edges_not_supported_by_linked_evidence(tmp_path):
+    payload = _bundle_payload(tmp_path)
+    payload["graph"]["edges"][0]["confidence"] = 0.25
+
+    with pytest.raises(ValueError, match="graph edge does not match linked evidence"):
+        inspect_bundle(build_bundle(payload))
+
+
 def test_bundle_rejects_extra_archive_members(tmp_path):
     bundle_bytes = build_bundle(_bundle_payload(tmp_path))
     with zipfile.ZipFile(io.BytesIO(bundle_bytes)) as archive:

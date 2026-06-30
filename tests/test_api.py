@@ -614,7 +614,8 @@ def test_relationship_api_accepts_matching_observation_provenance(monkeypatch, t
     engine.connectors = []
     monkeypatch.setattr(api_module, "get_engine", lambda: engine)
 
-    response = TestClient(api_module.app).post(
+    client = TestClient(api_module.app)
+    response = client.post(
         "/api/v1/relationships",
         json={
             "source_ioc": "example.com",
@@ -627,3 +628,15 @@ def test_relationship_api_accepts_matching_observation_provenance(monkeypatch, t
 
     assert response.status_code == 201
     assert response.json()["evidence_observation_id"] == observation_id
+    unsupported_confidence = client.post(
+        "/api/v1/relationships",
+        json={
+            "source_ioc": "example.com",
+            "target_ioc": "203.0.113.7",
+            "relationship_type": "resolves_to",
+            "confidence": 0.25,
+            "evidence_source": "passive_dns",
+            "evidence_observation_id": observation_id,
+        },
+    )
+    assert unsupported_confidence.status_code == 422

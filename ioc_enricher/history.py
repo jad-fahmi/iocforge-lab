@@ -2753,6 +2753,8 @@ class HistoryStore:
             candidates = [
                 item
                 for item in evidence.get("related_entities", [])
+                if isinstance(item, dict)
+                and item.get("confidence", 1.0) == confidence
                 if isinstance(item.get("source_ioc"), str)
                 and _canonical_relationship_ioc(item["source_ioc"]) == source_ioc
                 and isinstance(item.get("target_ioc"), str)

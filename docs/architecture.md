@@ -123,7 +123,9 @@ reopening the originating database. Offline replay applies the same timestamp
 integrity rule as the history store: malformed evidence times and observations
 collected after their snapshot are reported as non-replayable. Before replay,
 the bundle reader cross-checks snapshot sources, linked observation IDs, the
-global evidence index, and graph provenance references.
+global evidence index, and each provider graph edge's source, relationship,
+confidence, validity interval, attributes, and endpoint types against its
+linked observation.
 
 Analyst verdict overrides remain separate from the source-derived score and
 verdict, so historical replay continues to reproduce the provider evidence
