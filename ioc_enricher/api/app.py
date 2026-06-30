@@ -35,7 +35,10 @@ from ioc_enricher.output.markdown import render_investigation
 
 app = FastAPI(title="IOCForge API", version="0.1.0")
 api = APIRouter(prefix="/api/v1", tags=["enrichment"])
-rate_limiter = RateLimiter(limit=int(os.environ.get("IOC_API_RATE_LIMIT", "60")))
+rate_limiter = RateLimiter(
+    limit=int(os.environ.get("IOC_API_RATE_LIMIT", "60")),
+    max_clients=int(os.environ.get("IOC_API_RATE_LIMIT_CLIENTS", "10000")),
+)
 
 
 @app.middleware("http")

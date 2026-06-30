@@ -321,7 +321,7 @@ The versioned API includes:
 
 Investigation routes support creating and updating cases, changing lifecycle state, reviewing their timeline, and applying indicator verdict overrides. The API also provides STIX and MISP import/export routes under `/api/v1/interoperability/`.
 
-Versioned API routes use a per-peer rolling rate limit of 60 requests per minute by default. Configure `IOC_API_RATE_LIMIT` or set it to `0` to disable the in-process limit. If a reverse proxy terminates traffic in front of IOCForge, configure client-IP limits at the proxy as well.
+Versioned API routes use a per-peer rolling rate limit of 60 requests per minute by default. Configure `IOC_API_RATE_LIMIT` or set it to `0` to disable the in-process limit. The peer table is capped at 10,000 entries by default (`IOC_API_RATE_LIMIT_CLIENTS`); additional peers share a bounded overflow bucket. If a reverse proxy terminates traffic in front of IOCForge, configure client-IP limits at the proxy as well.
 
 ## Interoperability
 
