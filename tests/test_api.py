@@ -526,7 +526,7 @@ def test_relationship_endpoints_return_graph_data(monkeypatch, tmp_path):
     monkeypatch.setattr(api_module, "get_engine", lambda: engine)
     client = TestClient(api_module.app)
 
-    created = client.post(
+    unlinked_provider_edge = client.post(
         "/api/v1/relationships",
         json={
             "source_ioc": "evil.example",
@@ -536,8 +536,19 @@ def test_relationship_endpoints_return_graph_data(monkeypatch, tmp_path):
             "evidence_source": "dns",
         },
     )
+    created = client.post(
+        "/api/v1/relationships",
+        json={
+            "source_ioc": "evil.example",
+            "target_ioc": "203.0.113.7",
+            "relationship_type": "resolves_to",
+            "confidence": 0.8,
+            "evidence_source": "analyst",
+        },
+    )
     graph = client.get("/api/v1/indicators/evil.example/graph")
 
+    assert unlinked_provider_edge.status_code == 422
     assert created.status_code == 201
     assert graph.json()["edges"][0]["target_ioc"] == "203.0.113.7"
     assert graph.json()["max_depth"] == 1

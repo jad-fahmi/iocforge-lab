@@ -547,13 +547,22 @@ def indicator_event_integrity(ioc: str) -> dict[str, Any]:
     tags=["relationships"],
 )
 def create_relationship(request: RelationshipCreateRequest) -> dict[str, Any]:
+    evidence_source = request.evidence_source.strip() or "analyst"
+    if request.evidence_observation_id is None and evidence_source != "analyst":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "provider relationships require evidence_observation_id; "
+                "unlinked relationships must use evidence_source='analyst'"
+            ),
+        )
     try:
         return _history_store().add_relationship(
             request.source_ioc,
             request.target_ioc,
             request.relationship_type,
             request.confidence,
-            request.evidence_source,
+            evidence_source,
             request.evidence_observation_id,
             request.valid_from,
             request.valid_to,
