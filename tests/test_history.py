@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 import ioc_enricher.history as history_module
+import ioc_enricher.scoring as scoring_module
 import pytest
 from ioc_enricher.config import Config
 from ioc_enricher.engine import Engine
@@ -510,7 +511,9 @@ def test_migration_backfills_observations_from_existing_snapshots(tmp_path):
     assert migrated_edge["target_entity_type"] == "ip"
 
 
-def test_replay_reproduces_historical_score_from_pinned_time_and_config(tmp_path):
+def test_replay_reproduces_historical_score_from_pinned_time_and_config(
+    tmp_path, monkeypatch
+):
     store = HistoryStore(tmp_path / "history.db")
     result = EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN)
     result.unavailable_providers = [
@@ -543,6 +546,7 @@ def test_replay_reproduces_historical_score_from_pinned_time_and_config(tmp_path
     )
     enrichment_id = store.record(result, looked_up_at="2026-01-01T00:00:00+00:00")
 
+    monkeypatch.setattr(scoring_module, "METHODOLOGY_VERSION", "3")
     replay = store.replay_enrichment(enrichment_id)
 
     assert replay is not None

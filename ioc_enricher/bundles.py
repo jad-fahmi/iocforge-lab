@@ -18,7 +18,7 @@ from ioc_enricher.history import (
 )
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult, SourceResult
-from ioc_enricher.scoring import METHODOLOGY_VERSION, score
+from ioc_enricher.scoring import score_for_version, supports_scoring_version
 
 BUNDLE_FORMAT = "iocforge"
 BUNDLE_VERSION = 1
@@ -374,7 +374,7 @@ def replay_bundle(payload: dict[str, Any]) -> list[dict[str, Any]]:
         config = original.get("scoring_config")
         scored_at = original.get("scored_at")
         version = original.get("scoring_version")
-        if version != METHODOLOGY_VERSION:
+        if not supports_scoring_version(version):
             results.append(
                 {
                     "enrichment_id": snapshot["id"],
@@ -438,7 +438,7 @@ def replay_bundle(payload: dict[str, Any]) -> list[dict[str, Any]]:
             unavailable_providers=original.get("unavailable_providers", []),
             internal_context=original.get("internal_context", {}),
         )
-        score(replayed, settings=config, as_of=scored_at)
+        score_for_version(replayed, version, settings=config, as_of=scored_at)
         recalculated = replayed.to_dict()
         trace = recalculated["decision_trace"].get("observations", [])
         for ordinal, observation in enumerate(observations):

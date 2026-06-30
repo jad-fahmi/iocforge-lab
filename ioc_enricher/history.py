@@ -14,7 +14,7 @@ from ioc_enricher.ioc.defang import refang
 from ioc_enricher.ioc.detect import detect, normalize
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult, SourceResult
-from ioc_enricher.scoring import METHODOLOGY_VERSION, score
+from ioc_enricher.scoring import score_for_version, supports_scoring_version
 
 DEFAULT_HISTORY_DB = Path.home() / ".local" / "share" / "iocforge-lab" / "history.db"
 log = logging.getLogger(__name__)
@@ -1370,7 +1370,7 @@ class HistoryStore:
         config = original.get("scoring_config")
         scored_at = original.get("scored_at")
         version = original.get("scoring_version")
-        if version != METHODOLOGY_VERSION:
+        if not isinstance(version, str) or not supports_scoring_version(version):
             reason = "scoring_methodology_unavailable"
         elif not config or not scored_at:
             reason = "scoring_inputs_missing"
@@ -1388,6 +1388,8 @@ class HistoryStore:
                 "original": original,
                 "observations": observation_rows,
             }
+        assert isinstance(version, str)
+        assert isinstance(scored_at, str)
 
         sources = []
         for observation_row in observation_rows:
@@ -1403,7 +1405,7 @@ class HistoryStore:
             unavailable_providers=original.get("unavailable_providers", []),
             internal_context=original.get("internal_context", {}),
         )
-        score(replayed, settings=config, as_of=scored_at)
+        score_for_version(replayed, version, settings=config, as_of=scored_at)
         recalculated = replayed.to_dict()
         for ordinal, observation in enumerate(observation_rows):
             trace = recalculated["decision_trace"].get("observations", [])

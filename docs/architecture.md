@@ -41,6 +41,9 @@ The transformation proceeds in dependency order:
    at a chosen time. Snapshot replay reproduces a saved score; investigation
    replay now rebuilds case metadata, membership, analyst state, latest eligible
    snapshots, and graph state from event/evidence prefixes at an `as_of` time.
+   Snapshot replay dispatches through the saved scoring-method version rather
+   than assuming it matches the currently active method; retained implementations
+   preserve reproducibility across scoring upgrades.
    Investigation comparison now diffs two replay points across membership,
    metadata, source decisions, observations, analyst state, event history, and
    graph edges. Replay and comparison expose integrity status through the CLI,

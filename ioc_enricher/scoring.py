@@ -4,6 +4,7 @@ import math
 from datetime import datetime, timezone
 
 METHODOLOGY_VERSION = "2"
+_METHODOLOGY_V2_VERSION = "2"
 
 DEFAULT_WEIGHTS = {
     "virustotal": 1.0,
@@ -21,7 +22,7 @@ DEFAULT_WEIGHTS = {
 DEFAULT_THRESHOLDS = {"suspicious": 0.25, "malicious": 0.6}
 
 
-def score(result, settings=None, as_of=None):
+def _score_v2(result, settings=None, as_of=None):
     scored_at = _as_utc(as_of) if as_of is not None else datetime.now(timezone.utc)
     snapshot = settings_snapshot(settings)
     explanation = explain(result, settings=snapshot, as_of=scored_at)
@@ -35,10 +36,33 @@ def score(result, settings=None, as_of=None):
     result.reason_codes = explanation["reason_codes"]
     result.decision_trace = explanation["decision_trace"]
     result.recommended_action = explanation["recommended_action"]
-    result.scoring_version = METHODOLOGY_VERSION
+    result.scoring_version = _METHODOLOGY_V2_VERSION
     result.scoring_config = snapshot
     result.scored_at = scored_at.isoformat()
     return result.score, result.verdict
+
+
+_SCORING_METHODOLOGIES = {_METHODOLOGY_V2_VERSION: _score_v2}
+
+
+def supports_scoring_version(version: str | None) -> bool:
+    """Return whether this installation retains an implementation of a method."""
+    return version in _SCORING_METHODOLOGIES
+
+
+def score_for_version(result, version: str, settings=None, as_of=None):
+    """Replay with the pinned scoring implementation, independent of the active one."""
+    scorer = _SCORING_METHODOLOGIES.get(version)
+    if scorer is None:
+        raise ValueError(f"unsupported scoring methodology version: {version}")
+    return scorer(result, settings=settings, as_of=as_of)
+
+
+def score(result, settings=None, as_of=None):
+    """Score a live result with the active methodology version."""
+    return score_for_version(
+        result, METHODOLOGY_VERSION, settings=settings, as_of=as_of
+    )
 
 
 def explain(result, settings=None, as_of=None):
@@ -158,7 +182,7 @@ def explain(result, settings=None, as_of=None):
     verdict = verdict_for(final, thresholds=thresholds)
     confidence = confidence_for(evidence, counter_evidence, errors, no_data)
     decision_trace = {
-        "methodology_version": METHODOLOGY_VERSION,
+        "methodology_version": _METHODOLOGY_V2_VERSION,
         "evaluated_at": evaluation_time.isoformat(),
         "observations": observation_trace,
         "weighted_signal": round(weighted_signal, 6),

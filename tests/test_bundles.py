@@ -5,6 +5,7 @@ import zipfile
 from datetime import datetime, timezone
 
 import ioc_enricher.history as history_module
+import ioc_enricher.scoring as scoring_module
 import pytest
 from ioc_enricher.bundles import build_bundle, inspect_bundle
 from ioc_enricher.history import HistoryStore, _observation_key
@@ -257,6 +258,17 @@ def test_bundle_raw_observation_hash_is_independently_checked(tmp_path):
 
     with pytest.raises(ValueError, match="raw observation hash"):
         inspect_bundle(bundle)
+
+
+def test_offline_bundle_replay_uses_saved_scoring_version(tmp_path, monkeypatch):
+    payload = _bundle_payload(tmp_path)
+    monkeypatch.setattr(scoring_module, "METHODOLOGY_VERSION", "3")
+
+    report = inspect_bundle(build_bundle(payload))
+
+    assert report["replay"]
+    assert all(item["replayable"] for item in report["replay"])
+    assert all(item["matches_original"] for item in report["replay"])
 
 
 @pytest.mark.parametrize(

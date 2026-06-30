@@ -47,6 +47,11 @@ must satisfy `0 <= suspicious <= malicious <= 1`. Every result carries the
 recalculate a saved decision from its stored observations and configuration.
 Replay marks a record unavailable when it lacks pinned scoring inputs or uses
 an unsupported methodology version; it does not substitute current settings.
+Replay dispatches through retained version-specific scorer implementations, so
+advancing the active method does not change results recorded under an older
+supported version. Keep old scorer implementations when adding a new method;
+versions without a retained implementation remain inspectable but cannot be
+recalculated.
 
 The default provider weights are starting priors, not empirical accuracy
 estimates. The offline provider evaluator reports a clamped Youden's J weight
