@@ -295,7 +295,7 @@ def run_benchmarks(
                 target,
                 relationship,
                 confidence=0.9,
-                evidence_source="benchmark_fixture",
+                evidence_source="analyst",
                 source_entity_type=source_type,
                 target_entity_type=target_type,
             )

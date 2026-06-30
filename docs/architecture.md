@@ -6,8 +6,10 @@ The current system already has provider adapters, a concurrent single-process
 engine, a SQLite cache, append-only enrichment snapshots, analyst and
 investigation event logs, basic indicator relationships, and versioned scoring
 explanations. These pieces are the base for the investigation engine; the
-history database is not yet a complete temporal evidence store. Relationships
-carry validity intervals and link to provider observations. A typed entity table
+history database is not yet a complete temporal evidence store. Provider
+relationships link to a matching evidence observation at the history-store
+boundary; unlinked analyst-created relationships retain an explicit `analyst`
+source. Relationships carry validity intervals. A typed entity table
 now classifies graph endpoints while retaining the existing string endpoint
 columns for API and storage compatibility.
 Snapshot comparison is available. Indicator and investigation events now use

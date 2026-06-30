@@ -114,7 +114,7 @@ def test_bundle_capture_traverses_shared_member_graph_together(tmp_path, monkeyp
             f"198.51.100.{index + 1}",
             "resolves_to",
             confidence=0.8,
-            evidence_source="bundle_fixture",
+            evidence_source="analyst",
         )
 
     relationship_queries = 0

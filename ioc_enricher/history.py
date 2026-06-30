@@ -2735,6 +2735,11 @@ class HistoryStore:
         requested_valid_to = _normalize_timestamp(valid_to)
         evidence_source = evidence_source.strip() or "analyst"
         attributes = attributes or {}
+        if evidence_observation_id is None and evidence_source != "analyst":
+            raise ValueError(
+                "provider relationships require evidence_observation_id; "
+                "unlinked relationships must use evidence_source='analyst'"
+            )
         if evidence_observation_id is not None:
             observation = self.conn.execute(
                 "SELECT source, observation_json FROM evidence_observations WHERE id = ?",

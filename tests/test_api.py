@@ -563,7 +563,7 @@ def test_relationship_endpoints_return_graph_data(monkeypatch, tmp_path):
         "certificate:crtsh:7",
         "has_certificate",
         confidence=0.9,
-        evidence_source="crtsh",
+        evidence_source="analyst",
         source_entity_type="ip",
         target_entity_type="certificate",
     )

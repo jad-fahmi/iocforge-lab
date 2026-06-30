@@ -9,9 +9,71 @@ import pytest
 from ioc_enricher.config import Config
 from ioc_enricher.engine import Engine
 from ioc_enricher.history import HistoryStore
+from ioc_enricher.ioc.detect import detect
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult, SourceResult
 from ioc_enricher.scoring import score
+
+
+def _add_provider_relationship(
+    store,
+    source_ioc,
+    target_ioc,
+    relationship_type,
+    *,
+    evidence_source,
+    confidence=1.0,
+    recorded_at="2026-01-01T00:00:00+00:00",
+    valid_from=None,
+    valid_to=None,
+    source_entity_type=None,
+    target_entity_type=None,
+    attributes=None,
+):
+    ioc_type = detect(source_ioc)
+    related = {
+        "source_ioc": source_ioc,
+        "target_ioc": target_ioc,
+        "relationship_type": relationship_type,
+        "confidence": confidence,
+        "valid_from": valid_from or recorded_at,
+        "valid_to": valid_to,
+        "source_entity_type": source_entity_type,
+        "target_entity_type": target_entity_type,
+        "attributes": attributes or {},
+    }
+    result = EnrichmentResult(
+        ioc=source_ioc,
+        ioc_type=ioc_type,
+        sources=[
+            SourceResult(
+                source=evidence_source,
+                ioc=source_ioc,
+                ioc_type=ioc_type,
+                found=True,
+                raw={"relationship_fixture": relationship_type},
+                collected_at=recorded_at,
+                observed_at=valid_from or recorded_at,
+                related_entities=[related],
+            )
+        ],
+    )
+    enrichment_id = store.record(result, looked_up_at=recorded_at)
+    observation_id = store.observations_for_enrichment(enrichment_id)[0]["id"]
+    return store.add_relationship(
+        source_ioc,
+        target_ioc,
+        relationship_type,
+        confidence=confidence,
+        evidence_source=evidence_source,
+        evidence_observation_id=observation_id,
+        recorded_at=recorded_at,
+        valid_from=valid_from or recorded_at,
+        valid_to=valid_to,
+        source_entity_type=source_entity_type,
+        target_entity_type=target_entity_type,
+        attributes=attributes,
+    )
 
 
 def test_history_migrates_and_preserves_snapshots(tmp_path):
@@ -973,7 +1035,8 @@ def test_event_chain_migration_backfills_preexisting_events(tmp_path):
 
 def test_relationship_graph_returns_nodes_and_evidence(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
-    relationship = store.add_relationship(
+    relationship = _add_provider_relationship(
+        store,
         "evil.example",
         "203.0.113.7",
         "resolves_to",
@@ -1068,6 +1131,20 @@ def test_relationship_rejects_endpoints_with_same_normalized_ioc_identity(tmp_pa
         store.add_relationship("EVIL.example", "evil[.]example", "domain_related")
 
 
+def test_relationship_store_requires_observation_for_provider_source(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+
+    with pytest.raises(ValueError, match="require evidence_observation_id"):
+        store.add_relationship(
+            "evil.example",
+            "203.0.113.7",
+            "resolves_to",
+            evidence_source="passive_dns",
+        )
+
+    assert store.relationships("evil.example") == []
+
+
 def test_relationship_canonicalizes_defanged_ioc_endpoints(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
 
@@ -1101,7 +1178,8 @@ def test_relationship_rejects_unknown_explicit_entity_type(tmp_path):
 
 def test_sqlite_rejects_graph_relationship_mutation(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
-    edge = store.add_relationship(
+    edge = _add_provider_relationship(
+        store,
         "evil.example",
         "203.0.113.7",
         "resolves_to",
@@ -1128,7 +1206,8 @@ def test_sqlite_rejects_graph_relationship_mutation(tmp_path):
 
 def test_pivot_suggestions_rank_typed_nodes_with_provenance_and_time_bounds(tmp_path):
     store = HistoryStore(tmp_path / "history.db")
-    store.add_relationship(
+    _add_provider_relationship(
+        store,
         "evil.example",
         "203.0.113.7",
         "resolves_to",
@@ -1183,7 +1262,8 @@ def test_multihop_pivot_paths_retain_provenance_and_time_bounds(tmp_path):
         ("https://shared-login.example.net/login", "a" * 64, "downloads", "url", "file_hash", 0.85, "malwarebazaar"),
     ]
     for source, target, relationship, source_type, target_type, confidence, provider in chain:
-        store.add_relationship(
+        _add_provider_relationship(
+            store,
             source,
             target,
             relationship,
@@ -1279,7 +1359,8 @@ def test_multihop_pivot_search_retains_ranked_alternative_routes(tmp_path):
         ),
     ]
     for source, target, relationship, source_type, target_type, confidence, provider in relationships:
-        store.add_relationship(
+        _add_provider_relationship(
+            store,
             source,
             target,
             relationship,
