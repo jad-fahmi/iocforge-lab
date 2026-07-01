@@ -36,7 +36,19 @@ class Cache:
         ).fetchone()
         if not row:
             return None
-        return json.loads(row[0])
+        value, ts = row
+        if self.ttl and (time.time() - ts) > self.ttl:
+            self.conn.execute(
+                "DELETE FROM entries WHERE k = ?", (self._key(source, ioc),)
+            )
+            self.conn.commit()
+            return None
+        return json.loads(value)
+
+    def purge_expired(self):
+        cutoff = time.time() - self.ttl
+        self.conn.execute("DELETE FROM entries WHERE ts < ?", (cutoff,))
+        self.conn.commit()
 
     def set(self, source, ioc, value):
         self.conn.execute(
