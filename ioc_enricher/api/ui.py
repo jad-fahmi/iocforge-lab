@@ -7,6 +7,10 @@ ANALYST_UI = r"""<!doctype html>
 :root { color-scheme: dark; --bg:#0b1220; --panel:#121d31; --line:#273650; --ink:#e6edf7; --muted:#9db0ca; --blue:#64b5ff; --red:#ff8686; --amber:#ffd166; --green:#6ee7b7; }
 * { box-sizing:border-box } body { margin:0; font:15px system-ui,sans-serif; background:var(--bg); color:var(--ink) } header { padding:24px max(5vw,24px); border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:20px; align-items:center } h1 { margin:0; font-size:1.45rem } h2 { margin:0 0 16px; font-size:1.1rem } p { color:var(--muted) } nav { display:flex; gap:8px; flex-wrap:wrap } button, input, select { font:inherit; border-radius:7px; padding:9px 12px; border:1px solid var(--line) } button { color:var(--ink); background:#1a2b47; cursor:pointer } button:hover,button.active { background:#244d7e; border-color:var(--blue) } input, select { width:min(640px,100%); background:#091221; color:var(--ink) } main { max-width:1200px; margin:auto; padding:28px 5vw 60px } section[hidden] { display:none } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:20px } .card,.panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px } .metric { font-size:1.7rem; font-weight:700; color:var(--blue) } .label { color:var(--muted); font-size:.85rem; text-transform:uppercase; letter-spacing:.06em } .panel { margin-top:16px } .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center } table { width:100%; border-collapse:collapse } th,td { text-align:left; padding:9px; border-bottom:1px solid var(--line); vertical-align:top } th { color:var(--muted); font-size:.8rem } .status { padding:3px 8px; border-radius:12px; display:inline-block; background:#24364f } .malicious { color:var(--red) } .suspicious { color:var(--amber) } .clean { color:var(--green) } .error { color:var(--red); white-space:pre-wrap } .list { margin:0; padding-left:20px } .empty { color:var(--muted); padding:12px 0 } code { color:#b9d7ff; overflow-wrap:anywhere } pre { max-height:420px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:#091221; border-radius:7px; padding:12px } details { margin:8px 0 } .timeline-row { border-left:2px solid var(--line); margin:0 0 0 8px; padding:8px 14px } .timeline-row time { color:var(--muted); font-size:.82rem } .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center } a { color:var(--blue) } @media(max-width:600px) { header { align-items:flex-start; flex-direction:column } th:nth-child(4),td:nth-child(4) { display:none } }
 .graph-canvas { overflow:auto; max-height:680px; border:1px solid var(--line); border-radius:8px; background:#091221; margin:12px 0 }
+.alert-input { width:100%; min-height:150px; resize:vertical; background:#091221; color:var(--ink); border:1px solid var(--line); border-radius:7px; padding:12px; font:inherit }
+.extracted-row { display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--line) }
+.extracted-row input { width:auto; margin-top:4px }
+.extracted-row span { display:block; color:var(--muted); overflow-wrap:anywhere }
 .evaluation-table-wrapper { overflow-x:auto }
 .evaluation-table { min-width:900px }
 .evaluation-table th:nth-child(4),.evaluation-table td:nth-child(4) { display:table-cell }
@@ -23,7 +27,7 @@ ANALYST_UI = r"""<!doctype html>
 <main>
 <section id="dashboard"><h2>Operational dashboard</h2><div class="grid" id="metrics"></div><div class="panel"><h2>Provider health</h2><div id="providers"></div></div><div class="panel"><h2>Recent enrichment</h2><div id="recent"></div></div></section>
 <section id="evaluation" hidden><h2>Provider evaluation</h2><p>Evaluate an offline labeled fixture. This does not query providers or change scoring weights.</p><form id="evaluation-form" class="row"><label for="evaluation-file">Labeled fixture JSON</label><input id="evaluation-file" type="file" accept="application/json,.json" required><button>Run offline evaluation</button></form><div id="evaluation-result"></div></section>
-<section id="search" hidden><h2>IOC search</h2><form id="search-form" class="row"><input id="ioc" required placeholder="Domain, URL, IP, hash, email, CVE, ASN…" aria-label="Indicator of compromise"><button>Enrich indicator</button></form><div id="result"></div></section>
+<section id="search" hidden><h2>IOC search</h2><form id="search-form" class="row"><input id="ioc" required placeholder="Domain, URL, IP, hash, email, CVE, ASN…" aria-label="Indicator of compromise"><button>Enrich indicator</button></form><div id="result"></div><div class="panel"><h2>Start from an alert or report</h2><p>Paste text, review the extracted indicators and their line context, then create an investigation. Enrichment sends selected indicators to enabled providers.</p><form id="extract-form"><label for="alert-text">Alert or report text</label><textarea id="alert-text" class="alert-input" maxlength="1000000" required></textarea><div class="actions"><button>Extract indicators</button></div></form><div id="extract-result" aria-live="polite"></div></div></section>
 <section id="history" hidden><h2>Enrichment history</h2><div id="history-data"></div><div id="history-detail"></div></section>
 <section id="cases" hidden><h2>Investigations</h2><form id="case-form" class="row"><input id="case-title" required maxlength="200" placeholder="Investigation title" aria-label="Investigation title"><input id="case-description" maxlength="2000" placeholder="Optional description" aria-label="Investigation description"><button>Create investigation</button></form><form id="bundle-form" class="row panel"><label for="bundle-file">Inspect an .iocforge bundle</label><input id="bundle-file" type="file" accept=".iocforge,application/zip" required><label for="bundle-as-of">Reconstruct at</label><input id="bundle-as-of" type="datetime-local" aria-label="Offline bundle replay time"><label for="bundle-baseline">Compare baseline</label><input id="bundle-baseline" type="datetime-local" aria-label="Offline bundle comparison baseline"><label for="bundle-comparison">with</label><input id="bundle-comparison" type="datetime-local" aria-label="Offline bundle comparison time"><button>Validate and replay offline</button></form><div id="bundle-result"></div><div id="case-data"></div><div id="case-detail"></div></section>
 </main>
@@ -40,6 +44,54 @@ function verdict(value) { return node('span', value || 'unknown', `status ${valu
 function renderList(title, values) { const panel=node('div', undefined, 'panel'); panel.append(node('h2', title)); if (!values || !values.length) panel.append(empty('None recorded.')); else { const list=node('ul', undefined, 'list'); values.forEach(value=>list.append(node('li', typeof value==='string' ? value : JSON.stringify(value)))); panel.append(list); } return panel; }
 async function loadDashboard() { const target=byId('dashboard'); try { const data=await api('/dashboard'); const metrics=byId('metrics'); clear(metrics); const verdicts=data.verdict_counts || {}; const investigation=data.investigation_counts || {}; [['Indicators enriched', Object.values(verdicts).reduce((a,b)=>a+b,0)], ['Open investigations', investigation.open || 0], ['Ready providers', (data.providers||[]).filter(p=>p.available).length], ['Providers configured', (data.providers||[]).length]].forEach(([label,value])=>{const card=node('div',undefined,'card');card.append(node('div',label,'label'),node('div',String(value),'metric'));metrics.append(card)}); const providers=byId('providers');clear(providers); providers.append((data.providers||[]).length ? table(['Provider','Status','Reliability','Detail'], data.providers.map(p=>[p.name, verdict(p.enabled ? (p.available ? 'ready' : 'unavailable') : 'disabled'), p.reliability ?? '—', p.requires_api_key && !p.configured ? 'credential not configured' : 'available'])) : empty('No providers are configured.')); const recent=byId('recent');clear(recent); const entries=data.recent_enrichments || []; recent.append(entries.length ? table(['Indicator','Verdict','Score','Looked up'], entries.map(e=>[e.ioc,verdict(e.verdict),e.score,e.looked_up_at])) : empty('No enrichment has been recorded yet.')); } catch(error) { renderError(target,error); } }
 byId('search-form').addEventListener('submit', async event=>{ event.preventDefault(); const target=byId('result'); clear(target); target.append(empty('Enriching indicator…')); try { const data=await api('/enrich',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ioc:byId('ioc').value})}); const relationships=await api(`/indicators/${encodeURIComponent(data.ioc)}/relationships`).catch(()=>[]); const investigations=(await api('/investigations').catch(()=>({items:[]}))).items; renderResult(data,relationships,investigations); } catch(error) { renderError(target,error); } });
+byId('extract-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const target=byId('extract-result');clear(target);target.append(empty('Extracting indicators...'));
+  try{
+    const response=await api('/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:byId('alert-text').value})});
+    clear(target);
+    const indicators=response.indicators||[];
+    if(!indicators.length){target.append(empty('No supported indicators found.'));return;}
+    const form=node('form'),list=node('div');
+    indicators.forEach((item,index)=>{
+      const label=node('label',undefined,'extracted-row'),checkbox=node('input'),description=node('div');
+      checkbox.type='checkbox';checkbox.checked=index<100;checkbox.value=String(index);
+      description.append(node('strong',`${item.normalized} (${item.ioc_type})`),node('span',`Line ${item.line_number}: ${item.context}`));
+      label.append(checkbox,description);list.append(label);
+    });
+    const titleLabel=node('label','Investigation title '),title=node('input');
+    title.required=true;title.maxLength=200;title.placeholder='Investigation title';title.setAttribute('aria-label','New investigation title');titleLabel.append(title);
+    const submit=node('button','Create investigation and enrich selected'),status=node('div');submit.type='submit';
+    form.append(node('p',`${indicators.length} unique indicator(s) found. Review the selection before enrichment.${indicators.length>100?' The first 100 are preselected; select at most 100.':''}`),list,titleLabel,submit,status);
+    form.addEventListener('submit',async createEvent=>{
+      createEvent.preventDefault();clear(status);
+      const selected=[...list.querySelectorAll('input:checked')].map(input=>indicators[Number(input.value)]);
+      if(!selected.length){status.append(node('p','Select at least one indicator.','error'));return;}
+      if(selected.length>100){status.append(node('p','Select at most 100 indicators per investigation.','error'));return;}
+      if(!title.value.trim()){status.append(node('p','Enter an investigation title.','error'));return;}
+      submit.disabled=true;
+      let created;
+      try{
+        created=await api('/investigations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title.value.trim()})});
+        for(const item of selected){
+          await api(`/investigations/${created.id}/indicators`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ioc:item.normalized})});
+        }
+        status.append(empty(`Investigation ${created.id} created. Enriching ${selected.length} indicator(s)...`));
+        const enriched=await api('/enrich/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({iocs:selected.map(item=>({ioc:item.normalized,source_context:item}))})});
+        clear(status);
+        status.append(node('p',`Enriched ${enriched.results.length} indicator(s) in investigation ${created.id}.`));
+        status.append(table(['Indicator','Verdict','Score'],enriched.results.map(item=>[item.ioc,verdict(item.verdict),item.score])));
+        const open=actionButton('Open investigation',async()=>{document.querySelector('[data-view="cases"]').click();await openCase(created.id);});
+        status.append(open);
+      }catch(error){
+        clear(status);
+        status.append(node('p',created?`Investigation ${created.id} was created, but the workflow stopped: ${error.message}`:error.message,'error'));
+        if(created)status.append(actionButton('Open partial investigation',async()=>{document.querySelector('[data-view="cases"]').click();await openCase(created.id);}));
+      }finally{submit.disabled=false;}
+    });
+    target.append(form);
+  }catch(error){renderError(target,error);}
+});
 byId('case-form').addEventListener('submit', async event=>{ event.preventDefault(); const target=byId('case-data'); try { await api('/investigations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:byId('case-title').value,description:byId('case-description').value})}); event.target.reset(); await loadCases(); } catch(error) { renderError(target,error); } });
 document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-view]').forEach(b=>b.classList.remove('active'));button.classList.add('active');document.querySelectorAll('main section').forEach(section=>section.hidden=section.id!==button.dataset.view);if(button.dataset.view==='dashboard')loadDashboard();if(button.dataset.view==='history')loadHistory();if(button.dataset.view==='cases')loadCases();}));
 function structuredPanel(title,value,open=false) { const panel=node('div',undefined,'panel'),details=node('details');details.open=open;details.append(node('summary',title),node('pre',JSON.stringify(value,null,2)));panel.append(details);return panel; }

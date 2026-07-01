@@ -33,6 +33,9 @@ def test_analyst_workbench_serves_the_api_backed_shell(monkeypatch):
     assert "Evidence-backed relationships" in response.text
     assert "Create investigation" in response.text
     assert "Add to investigation" in response.text
+    assert "Start from an alert or report" in response.text
+    assert 'id="extract-form"' in response.text
+    assert "Create investigation and enrich selected" in response.text
     assert "Decision trace and scoring inputs" in response.text
     assert "Compare snapshots" in response.text
     assert "Event chain:" in response.text
@@ -465,6 +468,44 @@ def test_investigation_replay_endpoint_reconstructs_historical_state(
     assert replay.json()["event_integrity"]["investigation"]["valid"] is True
     assert invalid.status_code == 422
     assert missing.status_code == 404
+
+
+def test_alert_to_investigation_preserves_extraction_context(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+    client = TestClient(api_module.app)
+
+    extracted = client.post(
+        "/api/v1/extract", json={"text": "Proxy blocked evil[.]example"}
+    )
+    assert extracted.status_code == 200
+    indicator = extracted.json()["indicators"][0]
+    assert indicator["normalized"] == "evil.example"
+
+    created = client.post(
+        "/api/v1/investigations", json={"title": "Proxy alert"}
+    )
+    assert created.status_code == 201
+    case_id = created.json()["id"]
+    added = client.post(
+        f"/api/v1/investigations/{case_id}/indicators",
+        json={"ioc": indicator["normalized"]},
+    )
+    enriched = client.post(
+        "/api/v1/enrich/batch",
+        json={"iocs": [{"ioc": indicator["normalized"], "source_context": indicator}]},
+    )
+    case = client.get(f"/api/v1/investigations/{case_id}")
+
+    assert added.status_code == 200
+    assert enriched.status_code == 200
+    assert enriched.json()["results"][0]["source_context"] == indicator
+    assert case.json()["indicators"] == ["evil.example"]
+    assert store.list_enrichments(ioc="evil.example", limit=1)[0]["result"][
+        "source_context"
+    ] == indicator
 
 
 def test_investigation_comparison_endpoint_reports_case_changes(monkeypatch, tmp_path):

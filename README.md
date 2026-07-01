@@ -4,7 +4,7 @@ IOCForge is an open source workbench for investigating suspicious indicators. It
 
 The project began as a command-line enrichment tool. It is growing into a case-centered investigation workbench: the goal is to make it easy to move from an unstructured alert to a reviewable account of what is known, where that information came from, and what remains uncertain.
 
-IOCForge is early-stage software. The enrichment engine, connectors, API, lightweight web interface, investigation records, and interoperability endpoints are implemented. A richer evidence graph and a polished end-to-end investigation experience are works in progress.
+IOCForge is early-stage software. The enrichment engine, connectors, API, browser workbench, investigation records, temporal evidence graph, and interoperability endpoints are implemented. The analyst workflow is available end to end; usability and provider coverage will continue to evolve.
 
 ## Why IOCForge
 
@@ -24,6 +24,7 @@ Indicators can be submitted individually, in batches, or extracted from analyst 
 
 - **Indicator parsing:** recognize supported IOC types, refang defanged input, and normalize domain names and URL hosts.
 - **Text extraction:** extract indicators from SIEM and EDR alerts, firewall and proxy logs, tickets, email, Slack messages, and reports. Extraction results retain the line number, nearby text, original form, and normalized value.
+- **Alert-to-case workflow:** paste text into the browser workbench, review and select extracted indicators, create an investigation, and enrich the selection while retaining each indicator's source context.
 - **Provider enrichment:** run keyless and authenticated connectors through a common interface, with provider selection and enablement controls.
 - **Explainable scoring:** return a verdict, confidence, evidence, counter-evidence, missing data, errors, reason codes, and a recommended next action.
 - **Local context:** use allowlists, blocklists, business domains, CIDRs, and asset inventory tags to reduce false positives for known infrastructure.
@@ -119,6 +120,11 @@ The workbench's **Provider evaluation** section accepts an offline labeled JSON
 fixture and displays coverage, failures, detection misses, classification
 metrics, and reliability-weight candidates. Evaluation does not contact
 providers or change scoring weights.
+
+The **IOC search** section also accepts pasted alert or report text. Review the
+extracted indicators before creating a case; the workbench enriches up to 100
+selected indicators per case and saves their original line context with each
+result. Enrichment sends selected indicators to enabled providers.
 
 ### Docker Compose
 
@@ -297,7 +303,7 @@ The versioned API includes:
 | Route | Purpose |
 | --- | --- |
 | `POST /api/v1/enrich` | Enrich one or more indicators |
-| `POST /api/v1/enrich/batch` | Enrich a batch |
+| `POST /api/v1/enrich/batch` | Enrich a batch of indicator strings or objects with `ioc` and optional `source_context` |
 | `POST /api/v1/extract` | Extract indicators from text |
 | `POST /api/v1/score/explain` | Explain a scoring result |
 | `GET /api/v1/providers` | Inspect provider capability and readiness |

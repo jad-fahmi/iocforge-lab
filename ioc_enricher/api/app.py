@@ -73,8 +73,13 @@ class EnrichRequest(BaseModel):
     ioc: str = Field(min_length=1, max_length=4096, description="IOC to enrich")
 
 
+class BatchIndicator(BaseModel):
+    ioc: str = Field(min_length=1, max_length=4096)
+    source_context: dict[str, Any] | None = None
+
+
 class BatchEnrichRequest(BaseModel):
-    iocs: list[str] = Field(min_length=1, max_length=1000)
+    iocs: list[str | BatchIndicator] = Field(min_length=1, max_length=1000)
 
 
 class ExtractRequest(BaseModel):
@@ -351,7 +356,11 @@ def explain_score(request: EnrichRequest) -> dict[str, Any]:
 
 @api.post("/enrich/batch", response_model=BatchEnrichmentResponse)
 def enrich_batch(request: BatchEnrichRequest) -> dict[str, list[dict[str, Any]]]:
-    results = get_engine().enrich_many(request.iocs)
+    inputs = [
+        (item.ioc, item.source_context) if isinstance(item, BatchIndicator) else item
+        for item in request.iocs
+    ]
+    results = get_engine().enrich_many(inputs)
     return {"results": [result.to_dict() for result in results]}
 
 
