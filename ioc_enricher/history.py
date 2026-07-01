@@ -19,6 +19,23 @@ from ioc_enricher.scoring import score_for_version, supports_scoring_version
 DEFAULT_HISTORY_DB = Path.home() / ".local" / "share" / "iocforge-lab" / "history.db"
 log = logging.getLogger(__name__)
 EVENT_CHAIN_GENESIS = "0" * 64
+RELATIONSHIP_CHAIN_GENESIS = "0" * 64
+RELATIONSHIP_HASH_FIELDS = (
+    "id",
+    "source_ioc",
+    "target_ioc",
+    "relationship_type",
+    "confidence",
+    "evidence_source",
+    "created_at",
+    "valid_from",
+    "valid_to",
+    "evidence_observation_id",
+    "attributes_json",
+    "source_entity_id",
+    "target_entity_id",
+    "previous_hash",
+)
 GRAPH_ENTITY_TYPES = {
     "domain",
     "ip",
@@ -243,6 +260,14 @@ def _event_hash(
     return hashlib.sha256(payload).hexdigest()
 
 
+def _relationship_edge_hash(edge: dict[str, Any]) -> str:
+    payload = {key: edge.get(key) for key in RELATIONSHIP_HASH_FIELDS}
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _observation_identity(source: dict[str, Any]) -> dict[str, str]:
     return {
         "source": source["source"],
@@ -395,6 +420,8 @@ class HistoryStore:
                         confidence REAL NOT NULL DEFAULT 1.0,
                         evidence_source TEXT NOT NULL DEFAULT 'analyst',
                         created_at TEXT NOT NULL,
+                        previous_hash TEXT,
+                        edge_hash TEXT,
                         UNIQUE(source_ioc, target_ioc, relationship_type, evidence_source)
                     );
                     CREATE INDEX idx_relationships_source ON indicator_relationships(source_ioc);
@@ -511,6 +538,8 @@ class HistoryStore:
                         valid_to TEXT,
                         evidence_observation_id INTEGER,
                         attributes_json TEXT NOT NULL DEFAULT '{}',
+                        previous_hash TEXT,
+                        edge_hash TEXT,
                         FOREIGN KEY(evidence_observation_id)
                             REFERENCES evidence_observations(id),
                         CHECK(valid_to IS NULL OR valid_to >= valid_from)
@@ -665,6 +694,20 @@ class HistoryStore:
                     ON indicator_relationships(target_entity_id);
                     """
                 )
+                relationship_columns = {
+                    row["name"]
+                    for row in self.conn.execute(
+                        "PRAGMA table_info(indicator_relationships)"
+                    ).fetchall()
+                }
+                if "previous_hash" not in relationship_columns:
+                    self.conn.execute(
+                        "ALTER TABLE indicator_relationships ADD COLUMN previous_hash TEXT"
+                    )
+                if "edge_hash" not in relationship_columns:
+                    self.conn.execute(
+                        "ALTER TABLE indicator_relationships ADD COLUMN edge_hash TEXT"
+                    )
                 old_edges = self.conn.execute(
                     "SELECT id, source_ioc, target_ioc, relationship_type FROM "
                     "indicator_relationships ORDER BY id"
@@ -775,6 +818,46 @@ class HistoryStore:
                     """
                 )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (13)")
+            if 14 not in applied:
+                self.conn.execute(
+                    "DROP TRIGGER IF EXISTS indicator_relationships_no_update"
+                )
+                columns = {
+                    row["name"]
+                    for row in self.conn.execute(
+                        "PRAGMA table_info(indicator_relationships)"
+                    ).fetchall()
+                }
+                if "previous_hash" not in columns:
+                    self.conn.execute(
+                        "ALTER TABLE indicator_relationships ADD COLUMN previous_hash TEXT"
+                    )
+                if "edge_hash" not in columns:
+                    self.conn.execute(
+                        "ALTER TABLE indicator_relationships ADD COLUMN edge_hash TEXT"
+                    )
+                previous_hash = RELATIONSHIP_CHAIN_GENESIS
+                rows = self.conn.execute(
+                    "SELECT * FROM indicator_relationships ORDER BY id"
+                ).fetchall()
+                for row in rows:
+                    edge = dict(row)
+                    edge["previous_hash"] = previous_hash
+                    edge_hash = _relationship_edge_hash(edge)
+                    self.conn.execute(
+                        "UPDATE indicator_relationships SET previous_hash = ?, "
+                        "edge_hash = ? WHERE id = ?",
+                        (previous_hash, edge_hash, edge["id"]),
+                    )
+                    previous_hash = edge_hash
+                self.conn.executescript(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS indicator_relationships_no_update
+                    BEFORE UPDATE ON indicator_relationships
+                    BEGIN SELECT RAISE(ABORT, 'graph relationships are append-only'); END;
+                    """
+                )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (14)")
             self.conn.commit()
 
     def _ensure_graph_entity(
@@ -1470,10 +1553,41 @@ class HistoryStore:
                 continue
             issues.append({"edge_id": edge.get("id"), "problems": problems})
 
+        chain = self.verify_relationship_chain()
         return {
-            "valid": not issues,
+            "valid": not issues and chain["valid"],
             "checked_edges": len(edges),
             "issues": issues,
+            "chain": chain,
+        }
+
+    def verify_relationship_chain(self) -> dict[str, Any]:
+        """Verify the append-only graph relationship hash chain."""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id, source_ioc, target_ioc, relationship_type, confidence, "
+                "evidence_source, created_at, valid_from, valid_to, "
+                "evidence_observation_id, attributes_json, source_entity_id, "
+                "target_entity_id, previous_hash, edge_hash "
+                "FROM indicator_relationships ORDER BY id"
+            ).fetchall()
+        previous_hash = RELATIONSHIP_CHAIN_GENESIS
+        first_invalid = None
+        for row in rows:
+            edge = dict(row)
+            expected_hash = _relationship_edge_hash(edge)
+            if (
+                edge["previous_hash"] != previous_hash
+                or edge["edge_hash"] != expected_hash
+            ):
+                first_invalid = edge["id"]
+                break
+            previous_hash = edge["edge_hash"]
+        return {
+            "valid": first_invalid is None,
+            "checked_edges": len(rows),
+            "first_invalid_edge_id": first_invalid,
+            "head_hash": previous_hash if first_invalid is None else None,
         }
 
     def replay_enrichment(self, enrichment_id: int) -> dict[str, Any] | None:
@@ -2862,6 +2976,7 @@ class HistoryStore:
             raise ValueError("relationship endpoints must not be empty")
         if not 0 <= confidence <= 1:
             raise ValueError("relationship confidence must be between 0 and 1")
+        confidence = float(confidence)
         relationship_type = relationship_type.strip()
         if not relationship_type:
             raise ValueError("relationship type must not be empty")
@@ -3004,16 +3119,46 @@ class HistoryStore:
             target_entity_type,
             attributes if target_entity_type == "certificate" else None,
         )
+        edge_id = self.conn.execute(
+            "SELECT COALESCE(MAX(id), 0) + 1 FROM indicator_relationships"
+        ).fetchone()[0]
+        previous_edge = self.conn.execute(
+            "SELECT edge_hash FROM indicator_relationships ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        previous_hash = (
+            previous_edge["edge_hash"]
+            if previous_edge and previous_edge["edge_hash"]
+            else RELATIONSHIP_CHAIN_GENESIS
+        )
+        attributes_json = json.dumps(attributes, sort_keys=True)
+        edge_payload = {
+            "id": edge_id,
+            "source_ioc": source_ioc,
+            "target_ioc": target_ioc,
+            "relationship_type": relationship_type,
+            "confidence": confidence,
+            "evidence_source": evidence_source,
+            "created_at": timestamp,
+            "valid_from": valid_from,
+            "valid_to": valid_to,
+            "evidence_observation_id": evidence_observation_id,
+            "attributes_json": attributes_json,
+            "source_entity_id": source_entity_id,
+            "target_entity_id": target_entity_id,
+            "previous_hash": previous_hash,
+        }
+        edge_hash = _relationship_edge_hash(edge_payload)
         self.conn.execute(
             """
             INSERT OR IGNORE INTO indicator_relationships(
-                source_ioc, target_ioc, relationship_type, confidence,
+                id, source_ioc, target_ioc, relationship_type, confidence,
                 evidence_source, created_at, valid_from, valid_to,
                 evidence_observation_id, attributes_json,
-                source_entity_id, target_entity_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source_entity_id, target_entity_id, previous_hash, edge_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                edge_id,
                 source_ioc,
                 target_ioc,
                 relationship_type,
@@ -3023,9 +3168,11 @@ class HistoryStore:
                 valid_from,
                 valid_to,
                 evidence_observation_id,
-                json.dumps(attributes, sort_keys=True),
+                attributes_json,
                 source_entity_id,
                 target_entity_id,
+                previous_hash,
+                edge_hash,
             ),
         )
         row = self.conn.execute(

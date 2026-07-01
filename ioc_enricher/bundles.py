@@ -15,6 +15,7 @@ from ioc_enricher.history import (
     _event_hash,
     _observation_content_key,
     _observation_key,
+    _relationship_edge_hash,
     _relationship_matches_observation,
 )
 from ioc_enricher.ioc.types import IocType
@@ -278,6 +279,19 @@ def read_bundle(source: bytes | bytearray | str | Path) -> dict[str, Any]:
         if edge["id"] in edge_ids:
             raise ValueError("bundle graph contains duplicate edge IDs")
         edge_ids.add(edge["id"])
+        if "edge_hash" in edge or "previous_hash" in edge:
+            edge_payload = {
+                **edge,
+                "attributes_json": json.dumps(
+                    edge.get("attributes", {}), sort_keys=True
+                ),
+            }
+            if (
+                not isinstance(edge.get("previous_hash"), str)
+                or not isinstance(edge.get("edge_hash"), str)
+                or _relationship_edge_hash(edge_payload) != edge["edge_hash"]
+            ):
+                raise ValueError("bundle graph edge hash does not match edge data")
         if edge.get("evidence_observation_id") is not None:
             graph_observation_ids.add(edge["evidence_observation_id"])
 

@@ -571,6 +571,12 @@ def test_migration_backfills_observations_from_existing_snapshots(tmp_path):
     assert migrated_edge["evidence_observation_id"] is None
     assert migrated_edge["source_entity_type"] == "domain"
     assert migrated_edge["target_entity_type"] == "ip"
+    assert store.verify_relationship_chain() == {
+        "valid": True,
+        "checked_edges": 1,
+        "first_invalid_edge_id": None,
+        "head_hash": migrated_edge["edge_hash"],
+    }
 
 
 def test_replay_reproduces_historical_score_from_pinned_time_and_config(
@@ -1558,6 +1564,33 @@ def test_investigation_replay_rejects_tampered_graph_provenance(tmp_path):
         }
     ]
     assert replay["state_complete"] is False
+    assert replay["replayable"] is False
+
+
+def test_relationship_hash_chain_detects_analyst_edge_tampering(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    edge = store.add_relationship(
+        "example.com", "203.0.113.7", "resolves_to"
+    )
+    investigation = store.create_investigation("Analyst graph integrity")
+    store.add_investigation_indicator(investigation["id"], "example.com")
+
+    assert store.verify_relationship_chain()["valid"] is True
+    store.conn.execute("DROP TRIGGER indicator_relationships_no_update")
+    store.conn.execute(
+        "UPDATE indicator_relationships SET confidence = ? WHERE id = ?",
+        (0.2, edge["id"]),
+    )
+    store.conn.commit()
+
+    replay = store.replay_investigation(
+        investigation["id"], "2099-01-01T00:00:00+00:00"
+    )
+
+    assert replay["graph_integrity"]["valid"] is False
+    assert replay["graph_integrity"]["issues"] == []
+    assert replay["graph_integrity"]["chain"]["valid"] is False
+    assert replay["graph_integrity"]["chain"]["first_invalid_edge_id"] == edge["id"]
     assert replay["replayable"] is False
 
 

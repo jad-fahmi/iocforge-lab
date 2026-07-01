@@ -8,7 +8,11 @@ import ioc_enricher.history as history_module
 import ioc_enricher.scoring as scoring_module
 import pytest
 from ioc_enricher.bundles import build_bundle, inspect_bundle
-from ioc_enricher.history import HistoryStore, _observation_key
+from ioc_enricher.history import (
+    HistoryStore,
+    _observation_key,
+    _relationship_edge_hash,
+)
 from ioc_enricher.ioc.types import IocType
 from ioc_enricher.models import EnrichmentResult, SourceResult
 from ioc_enricher.scoring import score
@@ -53,6 +57,12 @@ def _bundle_payload(tmp_path):
     store.close()
     assert payload is not None
     return payload
+
+
+def _rehash_graph_edge(edge):
+    edge["edge_hash"] = _relationship_edge_hash(
+        {**edge, "attributes_json": json.dumps(edge.get("attributes", {}), sort_keys=True)}
+    )
 
 
 def test_investigation_bundle_replays_without_providers_and_includes_graph(tmp_path):
@@ -323,6 +333,7 @@ def test_bundle_rejects_snapshot_source_evidence_mismatch(tmp_path):
 def test_bundle_rejects_graph_edges_with_missing_evidence_references(tmp_path):
     payload = _bundle_payload(tmp_path)
     payload["graph"]["edges"][0]["evidence_observation_id"] = 999
+    _rehash_graph_edge(payload["graph"]["edges"][0])
 
     with pytest.raises(ValueError, match="graph evidence reference is missing"):
         inspect_bundle(build_bundle(payload))
@@ -331,8 +342,29 @@ def test_bundle_rejects_graph_edges_with_missing_evidence_references(tmp_path):
 def test_bundle_rejects_graph_edges_not_supported_by_linked_evidence(tmp_path):
     payload = _bundle_payload(tmp_path)
     payload["graph"]["edges"][0]["confidence"] = 0.25
+    _rehash_graph_edge(payload["graph"]["edges"][0])
 
     with pytest.raises(ValueError, match="graph edge does not match linked evidence"):
+        inspect_bundle(build_bundle(payload))
+
+
+def test_bundle_rejects_modified_analyst_graph_edge(tmp_path):
+    store = HistoryStore(tmp_path / "analyst-edge.db")
+    investigation = store.create_investigation("Analyst edge integrity")
+    store.add_investigation_indicator(investigation["id"], "evil.example")
+    store.add_relationship("evil.example", "203.0.113.7", "resolves_to")
+    payload = store.investigation_bundle_payload(investigation["id"])
+    store.close()
+    assert payload is not None
+    edge = next(
+        edge
+        for edge in payload["graph"]["edges"]
+        if edge["source_ioc"] == "evil.example"
+        and edge["target_ioc"] == "203.0.113.7"
+    )
+    edge["confidence"] = 0.25
+
+    with pytest.raises(ValueError, match="graph edge hash does not match edge data"):
         inspect_bundle(build_bundle(payload))
 
 

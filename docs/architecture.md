@@ -19,11 +19,13 @@ Snapshot comparison is available. Indicator and investigation events now use
 per-scope SHA-256 chains, migration backfill, SQLite append-only guards, and
 explicit integrity verification. Normalized provider observations and their
 snapshot links and temporal graph relationships also reject direct SQL updates
-and deletes. Enrichment snapshots now reject updates and deletes as well;
+and deletes. Graph relationships also form an id-ordered SHA-256 chain, which
+is backfilled during migration and verified during investigation replay.
+Enrichment snapshots now reject updates and deletes as well;
 observation IDs are projected from the append-only link table into returned
-decision traces instead of rewriting a saved snapshot. Event chains detect edits
-but are not anchored outside the database, so a privileged database operator
-could rewrite or truncate a whole chain.
+decision traces instead of rewriting a saved snapshot. These chains detect
+edits but are not anchored outside the database, so a privileged database
+operator could rewrite or truncate a whole chain.
 Indicator integrity checks recompute observation payload hashes and identity keys,
 then verify each saved snapshot source still matches its linked evidence. Replay
 refuses to score a snapshot when those evidence checks fail.
