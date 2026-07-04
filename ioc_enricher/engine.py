@@ -1,0 +1,45 @@
+from concurrent.futures import ThreadPoolExecutor
+
+from ioc_enricher.connectors.abuseipdb import AbuseIPDB
+from ioc_enricher.connectors.greynoise import GreyNoise
+from ioc_enricher.connectors.otx import OTX
+from ioc_enricher.connectors.shodan import Shodan
+from ioc_enricher.connectors.virustotal import VirusTotal
+from ioc_enricher.ioc.detect import detect
+from ioc_enricher.log import get
+from ioc_enricher.models import EnrichmentResult
+
+log = get(__name__)
+
+REGISTRY = [VirusTotal, AbuseIPDB, OTX, Shodan, GreyNoise]
+
+
+class Engine:
+    def __init__(self, config, cache=None, sources=None):
+        self.config = config
+        self.cache = cache
+        self.connectors = self._build(sources)
+
+    def _build(self, sources):
+        built = []
+        for cls in REGISTRY:
+            if sources and cls.name not in sources:
+                continue
+            key = self.config.key_for(cls.name)
+            built.append(cls(api_key=key))
+        return built
+
+    def enrich(self, ioc):
+        ioc_type = detect(ioc)
+        result = EnrichmentResult(ioc=ioc, ioc_type=ioc_type)
+
+        active = [c for c in self.connectors if c.supports(ioc_type)]
+
+        with ThreadPoolExecutor(max_workers=len(active) or 1) as pool:
+            futures = [
+                pool.submit(c.run, ioc, ioc_type, self.cache) for c in active
+            ]
+            for f in futures:
+                result.add(f.result())
+
+        return result
