@@ -8,6 +8,7 @@ from ioc_enricher.connectors.virustotal import VirusTotal
 from ioc_enricher.ioc.detect import detect
 from ioc_enricher.log import get
 from ioc_enricher.models import EnrichmentResult
+from ioc_enricher.scoring import score
 
 log = get(__name__)
 
@@ -42,4 +43,5 @@ class Engine:
             for f in futures:
                 result.add(f.result())
 
+        result.score, result.verdict = score(result)
         return result
