@@ -1,3 +1,6 @@
+from ioc_enricher.output.color import paint
+
+
 def _row(cols, widths):
     return "  ".join(str(c).ljust(w) for c, w in zip(cols, widths))
 
@@ -5,8 +8,9 @@ def _row(cols, widths):
 def render(results):
     lines = []
     for r in results:
-        lines.append(f"{r.ioc}  [{r.ioc_type.value}]  ->  "
-                     f"{r.verdict} ({r.score})")
+        head = (f"{r.ioc}  [{r.ioc_type.value}]  ->  "
+                f"{r.verdict} ({r.score})")
+        lines.append(paint(head, r.verdict))
 
         rows = []
         for s in r.sources:
