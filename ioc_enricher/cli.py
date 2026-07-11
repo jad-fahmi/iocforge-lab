@@ -15,6 +15,8 @@ def build_parser():
         description="enrich indicators of compromise from threat intel sources",
     )
     p.add_argument("ioc", nargs="?", help="a single ioc to enrich")
+    p.add_argument("-i", "--input", help="file of iocs, one per line "
+                   "(use - for stdin)")
     p.add_argument("-f", "--format", choices=["table", "json", "csv"],
                    default="table")
     p.add_argument("-s", "--sources", help="comma separated subset of: "
@@ -33,6 +35,23 @@ def _sources_arg(value):
     return picked
 
 
+def read_iocs(args):
+    if args.input == "-":
+        lines = sys.stdin.read().splitlines()
+    elif args.input:
+        with open(args.input) as fh:
+            lines = fh.read().splitlines()
+    else:
+        return [args.ioc] if args.ioc else []
+
+    out = []
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("#"):
+            out.append(line)
+    return out
+
+
 def render(results, fmt):
     if fmt == "json":
         return json_out.render(results)
@@ -45,7 +64,8 @@ def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
     args = build_parser().parse_args(argv)
 
-    if not args.ioc:
+    iocs = read_iocs(args)
+    if not iocs:
         build_parser().print_help()
         return 1
 
@@ -54,7 +74,7 @@ def main(argv=None):
     cache = None if args.no_cache else Cache(ttl=config.cache_ttl)
 
     engine = Engine(config, cache=cache, sources=_sources_arg(args.sources))
-    results = [engine.enrich(args.ioc)]
+    results = [engine.enrich(i) for i in iocs]
 
     print(render(results, args.format))
     return 0
