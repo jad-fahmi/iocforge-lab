@@ -50,3 +50,16 @@ class Engine:
 
         result.score, result.verdict = score(result)
         return result
+
+    def enrich_many(self, iocs, workers=4):
+        # dedupe but keep first-seen order
+        seen = {}
+        for i in iocs:
+            seen.setdefault(i, None)
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(self.enrich, i): i for i in seen}
+            for f in futures:
+                seen[futures[f]] = f.result()
+
+        return list(seen.values())

@@ -74,7 +74,10 @@ def main(argv=None):
     cache = None if args.no_cache else Cache(ttl=config.cache_ttl)
 
     engine = Engine(config, cache=cache, sources=_sources_arg(args.sources))
-    results = [engine.enrich(i) for i in iocs]
+    if len(iocs) == 1:
+        results = [engine.enrich(iocs[0])]
+    else:
+        results = engine.enrich_many(iocs)
 
     print(render(results, args.format))
     return 0
