@@ -5,6 +5,7 @@ _REFANG_SUBS = [
     (re.compile(r"\(\.\)"), "."),
     (re.compile(r"\{\.\}"), "."),
     (re.compile(r"\[dot\]", re.I), "."),
+    (re.compile(r"\[://\]"), "://"),
     (re.compile(r"\[:\]"), ":"),
     (re.compile(r"hxxp", re.I), "http"),
     (re.compile(r"\[at\]", re.I), "@"),
