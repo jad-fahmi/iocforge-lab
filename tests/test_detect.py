@@ -31,6 +31,10 @@ def test_sha256():
     assert detect(h) == IocType.SHA256
 
 
+def test_uppercase_hash():
+    assert detect("D41D8CD98F00B204E9800998ECF8427E") == IocType.MD5
+
+
 def test_defanged_domain():
     assert detect("evil-domain[.]com") == IocType.DOMAIN
 
