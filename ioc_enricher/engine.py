@@ -32,7 +32,7 @@ class Engine:
 
     def enrich(self, ioc):
         ioc_type = detect(ioc)
-        print("detected", ioc, "as", ioc_type)  # debug
+        log.debug("detected %s as %s", ioc, ioc_type)
         result = EnrichmentResult(ioc=ioc, ioc_type=ioc_type)
 
         active = [c for c in self.connectors if c.supports(ioc_type)]
