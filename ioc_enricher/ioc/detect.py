@@ -62,3 +62,17 @@ def detect(value):
         return IocType.DOMAIN
 
     return IocType.UNKNOWN
+
+
+def normalize(value, ioc_type):
+    """canonicalize an ioc so equivalent inputs share one cache key.
+
+    domains and hashes are case-insensitive; ips have multiple valid
+    textual forms. urls are left untouched since path/query can be
+    case sensitive.
+    """
+    if ioc_type in (IocType.IPV4, IocType.IPV6):
+        return str(ipaddress.ip_address(value))
+    if ioc_type == IocType.DOMAIN or ioc_type.is_hash():
+        return value.lower()
+    return value
