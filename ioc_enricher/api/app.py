@@ -21,7 +21,7 @@ def health():
     return {"ok": True}
 
 
-@app.get("/enrich/{ioc}")
+@app.get("/enrich")
 def enrich(ioc: str):
     result = get_engine().enrich(ioc)
     return result.to_dict()
