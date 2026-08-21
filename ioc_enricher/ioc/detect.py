@@ -13,6 +13,9 @@ DOMAIN_RE = re.compile(
 MD5_RE = re.compile(r"^[a-fA-F0-9]{32}$")
 SHA1_RE = re.compile(r"^[a-fA-F0-9]{40}$")
 SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
+EMAIL_RE = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}$", re.I)
+CVE_RE = re.compile(r"^CVE-\d{4}-\d{4,}$", re.I)
+ASN_RE = re.compile(r"^AS\d{1,10}$", re.I)
 
 
 def _try_ip(value):
@@ -55,6 +58,15 @@ def detect(value):
     if h:
         return h
 
+    if CVE_RE.match(value):
+        return IocType.CVE
+
+    if ASN_RE.match(value):
+        return IocType.ASN
+
+    if EMAIL_RE.match(value):
+        return IocType.EMAIL
+
     if _looks_like_url(value):
         return IocType.URL
 
@@ -75,4 +87,9 @@ def normalize(value, ioc_type):
         return str(ipaddress.ip_address(value))
     if ioc_type == IocType.DOMAIN or ioc_type.is_hash():
         return value.lower()
+    if ioc_type == IocType.EMAIL:
+        local, _, domain = value.partition("@")
+        return f"{local}@{domain.lower()}"
+    if ioc_type in (IocType.CVE, IocType.ASN):
+        return value.upper()
     return value

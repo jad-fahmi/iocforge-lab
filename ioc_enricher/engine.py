@@ -10,6 +10,7 @@ from ioc_enricher.ioc.detect import detect, normalize
 from ioc_enricher.log import get
 from ioc_enricher.models import EnrichmentResult
 from ioc_enricher.scoring import score
+from ioc_enricher.context import InternalContext
 
 log = get(__name__)
 
@@ -17,10 +18,11 @@ REGISTRY = [VirusTotal, AbuseIPDB, OTX, Shodan, GreyNoise]
 
 
 class Engine:
-    def __init__(self, config, cache=None, sources=None):
+    def __init__(self, config, cache=None, sources=None, internal_context=None):
         self.config = config
         self.cache = cache
         self.connectors = self._build(sources)
+        self.internal_context = internal_context or InternalContext.empty()
 
     def _build(self, sources):
         built = []
@@ -31,12 +33,14 @@ class Engine:
             built.append(cls(api_key=key))
         return built
 
-    def enrich(self, ioc):
+    def enrich(self, ioc, source_context=None):
         ioc = refang(ioc.strip())
         ioc_type = detect(ioc)
         ioc = normalize(ioc, ioc_type)
         log.debug("detected %s as %s", ioc, ioc_type)
-        result = EnrichmentResult(ioc=ioc, ioc_type=ioc_type)
+        result = EnrichmentResult(ioc=ioc, ioc_type=ioc_type,
+                                  source_context=source_context)
+        result.internal_context = self.internal_context.evaluate(ioc, ioc_type)
 
         active = [c for c in self.connectors if c.supports(ioc_type)]
 
@@ -55,15 +59,28 @@ class Engine:
         result.score, result.verdict = score(result)
         return result
 
-    def enrich_many(self, iocs, workers=4):
+    def enrich_many(self, iocs, workers=4, progress=None):
         # dedupe but keep first-seen order
         seen = {}
-        for i in iocs:
-            seen.setdefault(i, None)
+        contexts = {}
+        for item in iocs:
+            if isinstance(item, tuple):
+                ioc, source_context = item
+            else:
+                ioc, source_context = item, None
+            seen.setdefault(ioc, None)
+            contexts.setdefault(ioc, source_context)
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(self.enrich, i): i for i in seen}
+            futures = {
+                pool.submit(self.enrich, i, contexts.get(i)): i
+                for i in seen
+            }
+            done = 0
             for f in futures:
                 seen[futures[f]] = f.result()
+                done += 1
+                if progress:
+                    progress(done, len(futures), futures[f])
 
         return list(seen.values())
