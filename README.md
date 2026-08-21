@@ -1,4 +1,4 @@
-# ioc-enricher
+# iocforge-lab
 
 Threat intelligence enrichment tool for investigating IP addresses, domains, URLs, and file hashes using multiple intelligence sources.
 
@@ -27,7 +27,7 @@ pip install -e .
 
 ## Config
 
-Keys come from env vars or `~/.config/ioc-enricher/config.json`. Copy `.env.example` to `.env` and fill in whatever you have.
+Keys come from env vars or `~/.config/iocforge-lab/config.json`. Copy `.env.example` to `.env` and fill in whatever you have.
 
 ## Usage
 
