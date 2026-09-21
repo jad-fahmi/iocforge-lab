@@ -68,3 +68,16 @@ def test_investigation_groups_indicators_and_preserves_events(tmp_path):
         "indicator_added",
         "investigation_created",
     ]
+
+
+def test_relationship_graph_returns_nodes_and_evidence(tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    relationship = store.add_relationship(
+        "evil.example", "203.0.113.7", "resolves_to", confidence=0.8, evidence_source="dns"
+    )
+
+    graph = store.relationship_graph("evil.example")
+
+    assert relationship["relationship_type"] == "resolves_to"
+    assert graph["nodes"] == [{"id": "203.0.113.7"}, {"id": "evil.example"}]
+    assert graph["edges"][0]["evidence_source"] == "dns"
