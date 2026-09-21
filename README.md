@@ -4,7 +4,7 @@ Threat intelligence enrichment tool for investigating IP addresses, domains, URL
 
 ## What it does
 
-- detects the type of an indicator (ip, domain, url, hash)
+- detects IPv4/IPv6, domains, URLs, MD5/SHA-1/SHA-256/SHA-512, emails, CVEs, and ASNs
 - refangs defanged input like `evil[.]com` or `hxxp://`
 - queries several intel sources through pluggable connectors
 - caches answers in sqlite so repeat lookups are cheap
@@ -20,6 +20,7 @@ Threat intelligence enrichment tool for investigating IP addresses, domains, URL
 - AlienVault OTX
 - Shodan
 - GreyNoise
+- RDAP (keyless domain and IP registration data)
 
 ## Install
 
@@ -30,6 +31,12 @@ pip install -e .
 ## Config
 
 Keys come from env vars or `~/.config/iocforge-lab/config.json`. Copy `.env.example` to `.env` and fill in whatever you have.
+
+Providers can be disabled without removing their credentials:
+
+```json
+{"providers": {"shodan": {"enabled": false}}}
+```
 
 ## Usage
 
@@ -69,6 +76,8 @@ Run the http api:
 uvicorn ioc_enricher.api.app:app
 ```
 
+Provider capabilities and credential availability are available at `GET /providers`.
+
 ## Scoring
 
 Each source gets a weight. Shodan is informational and never moves the verdict. Buckets: clean, low, suspicious, malicious.
@@ -76,6 +85,9 @@ Each source gets a weight. Shodan is informational and never moves the verdict. 
 Results include `verdict`, `confidence`, `evidence`, `counter_evidence`, `no_data`, `errors`, `reason_codes`, and `recommended_action`. Older observations are discounted, while local allowlists, business domains, CIDR ranges and asset inventory tags can reduce false positives for known-safe assets.
 
 ## Notes
+
+See [architecture](docs/architecture.md), [scoring](docs/scoring.md), and the
+[threat model](docs/threat-model.md) for operating details.
 
 ## TODO
 
