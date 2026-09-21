@@ -31,12 +31,13 @@ def load_dotenv(path=".env"):
 
 
 class Config:
-    def __init__(self, keys=None, cache_ttl=3600, providers=None):
+    def __init__(self, keys=None, cache_ttl=3600, providers=None, scoring=None):
         self.keys = keys or {}
         self.cache_ttl = cache_ttl
         # A provider omitted from configuration remains enabled.  This keeps
         # existing installations working while allowing explicit opt-out.
         self.providers = providers or {}
+        self.scoring = scoring or {}
 
     def key_for(self, source):
         return self.keys.get(source)
@@ -48,11 +49,13 @@ class Config:
     def load(cls, path=None):
         keys = {}
         providers = {}
+        scoring = {}
         path = Path(path) if path else DEFAULT_PATH
         if path.exists():
             data = json.loads(path.read_text())
             keys.update(data.get("keys", {}))
             providers.update(data.get("providers", {}))
+            scoring.update(data.get("scoring", {}))
 
         # env always wins over the file
         for source, env in ENV_KEYS.items():
@@ -61,4 +64,9 @@ class Config:
                 keys[source] = val
 
         ttl = int(os.environ.get("IOC_CACHE_TTL", "3600"))
-        return cls(keys=keys, cache_ttl=ttl, providers=providers)
+        return cls(
+            keys=keys,
+            cache_ttl=ttl,
+            providers=providers,
+            scoring=scoring,
+        )

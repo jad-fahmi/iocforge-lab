@@ -33,6 +33,7 @@ class EnrichmentResult:
     verdict: str = "unknown"
     score: float = 0.0
     confidence: str = "low"
+    scoring_version: str = "1"
     evidence: list = field(default_factory=list)
     counter_evidence: list = field(default_factory=list)
     no_data: list = field(default_factory=list)
@@ -55,6 +56,7 @@ class EnrichmentResult:
             "verdict": self.verdict,
             "score": self.score,
             "confidence": self.confidence,
+            "scoring_version": self.scoring_version,
             "evidence": self.evidence,
             "counter_evidence": self.counter_evidence,
             "no_data": self.no_data,

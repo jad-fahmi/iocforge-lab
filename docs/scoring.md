@@ -20,3 +20,10 @@ action so analysts can inspect why a verdict was reached.
 
 Scores are decision support, not an automated containment authority. Conflicting
 sources should be reviewed alongside local telemetry.
+
+## Configuration
+
+Set `scoring.weights` and `scoring.thresholds` in local `config.json` to tune
+the source reliability weights and suspicious/malicious boundaries. Thresholds
+must satisfy `0 <= suspicious <= malicious <= 1`. Every result carries the
+`scoring_version` so historical decisions can be interpreted correctly.

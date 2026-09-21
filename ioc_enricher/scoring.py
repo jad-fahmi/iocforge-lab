@@ -2,7 +2,9 @@
 
 from datetime import datetime, timezone
 
-WEIGHTS = {
+METHODOLOGY_VERSION = "1"
+
+DEFAULT_WEIGHTS = {
     "virustotal": 1.0,
     "abuseipdb": 0.8,
     "otx": 0.7,
@@ -11,9 +13,11 @@ WEIGHTS = {
     "shodan": 0.0,
 }
 
+DEFAULT_THRESHOLDS = {"suspicious": 0.25, "malicious": 0.6}
 
-def score(result):
-    explanation = explain(result)
+
+def score(result, settings=None):
+    explanation = explain(result, settings=settings)
     result.score = explanation["score"]
     result.verdict = explanation["verdict"]
     result.confidence = explanation["confidence"]
@@ -23,10 +27,12 @@ def score(result):
     result.errors = explanation["errors"]
     result.reason_codes = explanation["reason_codes"]
     result.recommended_action = explanation["recommended_action"]
+    result.scoring_version = METHODOLOGY_VERSION
     return result.score, result.verdict
 
 
-def explain(result):
+def explain(result, settings=None):
+    weights, thresholds = _settings(settings)
     evidence = []
     counter_evidence = []
     no_data = []
@@ -43,7 +49,7 @@ def explain(result):
             no_data.append(source.source)
             continue
 
-        weight = WEIGHTS.get(source.source, 0.5)
+        weight = weights.get(source.source, 0.5)
         age_factor = _freshness_factor(source)
         adjusted_weight = weight * age_factor
         codes = reason_codes_for(source)
@@ -79,7 +85,7 @@ def explain(result):
     if "known_scanner" in internal_reasons:
         final = min(final, 0.2)
 
-    verdict = verdict_for(final)
+    verdict = verdict_for(final, thresholds=thresholds)
     confidence = confidence_for(evidence, counter_evidence, errors, no_data)
     return {
         "score": final,
@@ -94,14 +100,29 @@ def explain(result):
     }
 
 
-def verdict_for(value):
-    if value >= 0.6:
+def verdict_for(value, thresholds=None):
+    _, thresholds = _settings({"thresholds": thresholds} if thresholds else None)
+    if value >= thresholds["malicious"]:
         return "malicious"
-    if value >= 0.25:
+    if value >= thresholds["suspicious"]:
         return "suspicious"
     if value > 0:
         return "low"
     return "clean"
+
+
+def _settings(settings):
+    settings = settings or {}
+    weights = {**DEFAULT_WEIGHTS, **settings.get("weights", {})}
+    thresholds = {**DEFAULT_THRESHOLDS, **settings.get("thresholds", {})}
+    suspicious = float(thresholds["suspicious"])
+    malicious = float(thresholds["malicious"])
+    if not 0 <= suspicious <= malicious <= 1:
+        raise ValueError("scoring thresholds must satisfy 0 <= suspicious <= malicious <= 1")
+    return ({name: float(weight) for name, weight in weights.items()}, {
+        "suspicious": suspicious,
+        "malicious": malicious,
+    })
 
 
 def confidence_for(evidence, counter_evidence, errors, no_data):
