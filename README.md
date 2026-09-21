@@ -24,6 +24,7 @@ Threat intelligence enrichment tool for investigating IP addresses, domains, URL
 - DNS (keyless A, AAAA, CNAME, MX, and NS resolution)
 - crt.sh (keyless certificate-transparency metadata)
 - URLhaus (authenticated malware URL lookup)
+- ThreatFox (authenticated curated malware IOC lookup)
 
 ## Install
 
