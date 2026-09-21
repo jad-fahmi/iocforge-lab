@@ -21,6 +21,12 @@ def health():
     return {"ok": True}
 
 
+@app.get("/providers")
+def providers():
+    """List connector capabilities without exposing credentials."""
+    return {"providers": get_engine().provider_status()}
+
+
 @app.get("/enrich")
 def enrich(ioc: str):
     result = get_engine().enrich(ioc)

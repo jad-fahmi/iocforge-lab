@@ -8,7 +8,7 @@ from ioc_enricher.engine import REGISTRY, Engine
 from ioc_enricher.ioc.extract import extract_iocs
 from ioc_enricher.output import csv_out, json_out, markdown, table
 
-ALL_SOURCES = [c.name for c in REGISTRY]
+ALL_SOURCES = list(REGISTRY.names)
 
 
 def build_parser():
