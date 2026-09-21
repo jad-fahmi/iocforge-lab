@@ -2,7 +2,7 @@
 
 ## Development setup
 
-Use Python 3.9 or later, then install the development and API dependencies:
+Use Python 3.10 or later, then install the development and API dependencies:
 
 ```shell
 python -m pip install -e ".[dev,api]"

@@ -28,6 +28,8 @@ Threat intelligence enrichment tool for investigating IP addresses, domains, URL
 
 ## Install
 
+IOCForge requires Python 3.10 or later.
+
 ```
 pip install -e .
 ```
