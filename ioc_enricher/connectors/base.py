@@ -31,12 +31,12 @@ class Connector(abc.ABC):
     def supports(self, ioc_type: IocType) -> bool:
         return ioc_type in self.supported
 
-    def get(self, url, max_retries=2, **kwargs):
-        """wrapper that backs off on 429s, 5xx errors, and network hiccups."""
+    def request(self, method, url, max_retries=2, **kwargs):
+        """Request with bounded retries for transient upstream failures."""
         attempt = 0
         while True:
             try:
-                resp = self.client.get(url, **kwargs)
+                resp = self.client.request(method, url, **kwargs)
             except (httpx.TimeoutException, httpx.NetworkError):
                 if attempt >= max_retries:
                     raise
@@ -47,7 +47,10 @@ class Connector(abc.ABC):
                 continue
 
             if resp.status_code == 429 and attempt < max_retries:
-                wait = float(resp.headers.get("Retry-After", 2))
+                try:
+                    wait = float(resp.headers.get("Retry-After", 2))
+                except ValueError:
+                    wait = 2
                 log.warning("%s rate limited, sleeping %ss", self.name, wait)
                 time.sleep(min(wait, 30))
                 attempt += 1
@@ -62,6 +65,12 @@ class Connector(abc.ABC):
                 continue
 
             return resp
+
+    def get(self, url, max_retries=2, **kwargs):
+        return self.request("GET", url, max_retries=max_retries, **kwargs)
+
+    def post(self, url, max_retries=2, **kwargs):
+        return self.request("POST", url, max_retries=max_retries, **kwargs)
 
     @abc.abstractmethod
     def enrich(self, ioc: str, ioc_type: IocType) -> SourceResult:

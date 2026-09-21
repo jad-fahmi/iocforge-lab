@@ -11,6 +11,7 @@ ENV_KEYS = {
     "otx": "OTX_API_KEY",
     "shodan": "SHODAN_API_KEY",
     "greynoise": "GREYNOISE_API_KEY",
+    "urlhaus": "URLHAUS_API_KEY",
 }
 
 

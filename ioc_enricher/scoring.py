@@ -7,6 +7,7 @@ WEIGHTS = {
     "abuseipdb": 0.8,
     "otx": 0.7,
     "greynoise": 0.6,
+    "urlhaus": 0.9,
     "shodan": 0.0,
 }
 
@@ -158,6 +159,8 @@ def _summary(source):
         return f"pulse count {source.raw.get('pulse_count', 0)}"
     if source.source == "shodan":
         return f"open ports {source.raw.get('ports', [])}"
+    if source.source == "urlhaus":
+        return f"malware URL status {source.raw.get('url_status', 'unknown')}"
     return "source reported data"
 
 
