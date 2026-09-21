@@ -25,6 +25,8 @@ def test_registry_builds_only_enabled_requested_connectors():
         "name": "example",
         "enabled": False,
         "configured": True,
+        "available": False,
+        "requires_api_key": True,
         "supported_types": ["domain", "url"],
     }
 
@@ -39,4 +41,5 @@ def test_engine_reports_provider_capabilities_without_keys():
     virustotal = next(provider for provider in providers if provider["name"] == "virustotal")
 
     assert virustotal["configured"] is False
+    assert virustotal["available"] is False
     assert "sha256" in virustotal["supported_types"]

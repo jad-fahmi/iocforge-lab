@@ -15,6 +15,7 @@ class Connector(abc.ABC):
 
     name = "base"
     supported: tuple = ()
+    requires_api_key = True
 
     def __init__(self, api_key=None, timeout=10.0, client=None):
         self.api_key = api_key
