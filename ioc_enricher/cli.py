@@ -1,6 +1,8 @@
 import argparse
+import json
 import sys
 
+from ioc_enricher import __version__
 from ioc_enricher.cache import Cache
 from ioc_enricher.config import Config, load_dotenv
 from ioc_enricher.context import InternalContext
@@ -17,11 +19,13 @@ def build_parser():
         description="enrich indicators of compromise from threat intel sources",
     )
     p.add_argument("ioc", nargs="?", help="a single ioc to enrich")
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("-i", "--input", help="file of iocs, one per line "
                    "(use - for stdin)")
     p.add_argument("--extract", help="extract IOCs from messy analyst text")
     p.add_argument("-f", "--format", choices=["table", "json", "csv"],
                    default="table")
+    p.add_argument("-o", "--output", help="write rendered output to this file")
     p.add_argument("--report", choices=["markdown"],
                    help="render an investigation report")
     p.add_argument("-s", "--sources", help="comma separated subset of: "
@@ -37,6 +41,8 @@ def build_parser():
                    help="exit 0 even when sources error")
     p.add_argument("--fail-on-malicious", action="store_true",
                    help="exit 2 when any IOC is malicious")
+    p.add_argument("--provider-status", action="store_true",
+                   help="show enabled provider capabilities and exit")
     return p
 
 
@@ -86,6 +92,13 @@ def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
     args = build_parser().parse_args(argv)
 
+    load_dotenv()
+    config = Config.load()
+    if args.provider_status:
+        status = Engine(config, cache=None).provider_status()
+        print(json.dumps({"providers": status}, indent=2))
+        return 0
+
     iocs = read_iocs(args)
     total_seen = len(iocs)
     if args.max_iocs is not None:
@@ -94,8 +107,6 @@ def main(argv=None):
         build_parser().print_help()
         return 1
 
-    load_dotenv()
-    config = Config.load()
     cache = None if args.no_cache else Cache(ttl=config.cache_ttl)
 
     internal_context = InternalContext.from_files(
@@ -121,7 +132,13 @@ def main(argv=None):
 
     summary = _batch_summary(iocs, results, total_seen)
     _print_batch_summary(summary)
-    print(render(results, args.format, report=args.report, summary=summary))
+    rendered = render(results, args.format, report=args.report, summary=summary)
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as output:
+            output.write(rendered)
+            output.write("\n")
+    else:
+        print(rendered)
 
     if args.fail_on_malicious and any(r.verdict == "malicious" for r in results):
         return 2
