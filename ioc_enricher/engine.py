@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from ioc_enricher.connectors.abuseipdb import AbuseIPDB
+from ioc_enricher.connectors.crtsh import CrtSh
 from ioc_enricher.connectors.dns import DNS
 from ioc_enricher.connectors.greynoise import GreyNoise
 from ioc_enricher.connectors.otx import OTX
@@ -20,7 +21,7 @@ from ioc_enricher.scoring import score
 log = get(__name__)
 
 REGISTRY = ConnectorRegistry(
-    [VirusTotal, AbuseIPDB, OTX, Shodan, GreyNoise, RDAP, DNS, URLhaus]
+    [VirusTotal, AbuseIPDB, OTX, Shodan, GreyNoise, RDAP, DNS, CrtSh, URLhaus]
 )
 
 
