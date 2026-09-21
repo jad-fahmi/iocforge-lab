@@ -78,6 +78,8 @@ uvicorn ioc_enricher.api.app:app
 ```
 
 Provider capabilities and credential availability are available at `GET /providers`.
+New integrations should use the documented `/api/v1` endpoints: `POST /enrich`,
+`POST /enrich/batch`, `POST /extract`, and `GET /providers`.
 
 ## Scoring
 
