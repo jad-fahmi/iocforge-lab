@@ -22,3 +22,13 @@ def test_extract_dedupes_normalized_values():
     results = extract_iocs("evil[.]com then evil.com")
 
     assert [r.normalized for r in results] == ["evil.com"]
+
+
+def test_extracts_sha512():
+    value = "a" * 128
+
+    results = extract_iocs(f"suspicious file {value}")
+
+    assert [(result.normalized, result.ioc_type) for result in results] == [
+        (value, IocType.SHA512)
+    ]

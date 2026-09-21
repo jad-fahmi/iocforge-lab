@@ -9,7 +9,7 @@ from ioc_enricher.ioc.types import IocType
 TOKEN_RE = re.compile(
     r"(?P<url>hxxps?://[^\s<>'\"]+|https?://[^\s<>'\"]+)|"
     r"(?P<email>[A-Z0-9._%+-]+(?:@|\[at\])[A-Z0-9.-]+(?:\.|\[\.\]|\(dot\)|\[dot\])[A-Z]{2,63})|"
-    r"(?P<hash>\b[A-Fa-f0-9]{32}\b|\b[A-Fa-f0-9]{40}\b|\b[A-Fa-f0-9]{64}\b)|"
+    r"(?P<hash>\b[A-Fa-f0-9]{32}\b|\b[A-Fa-f0-9]{40}\b|\b[A-Fa-f0-9]{64}\b|\b[A-Fa-f0-9]{128}\b)|"
     r"(?P<cve>\bCVE-\d{4}-\d{4,}\b)|"
     r"(?P<asn>\bAS\d{1,10}\b)|"
     r"(?P<ip>\b(?:\d{1,3}(?:\.|\[\.\]|\(\.\)|\{\.\})\d{1,3}(?:\.|\[\.\]|\(\.\)|\{\.\})\d{1,3}(?:\.|\[\.\]|\(\.\)|\{\.\})\d{1,3})\b)|"

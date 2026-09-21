@@ -13,6 +13,7 @@ DOMAIN_RE = re.compile(
 MD5_RE = re.compile(r"^[a-fA-F0-9]{32}$")
 SHA1_RE = re.compile(r"^[a-fA-F0-9]{40}$")
 SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
+SHA512_RE = re.compile(r"^[a-fA-F0-9]{128}$")
 EMAIL_RE = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}$", re.I)
 CVE_RE = re.compile(r"^CVE-\d{4}-\d{4,}$", re.I)
 ASN_RE = re.compile(r"^AS\d{1,10}$", re.I)
@@ -44,6 +45,8 @@ def _try_hash(value):
         return IocType.SHA1
     if SHA256_RE.match(value):
         return IocType.SHA256
+    if SHA512_RE.match(value):
+        return IocType.SHA512
     return None
 
 

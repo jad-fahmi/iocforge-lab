@@ -12,10 +12,11 @@ class IocType(str, Enum):
     MD5 = "md5"
     SHA1 = "sha1"
     SHA256 = "sha256"
+    SHA512 = "sha512"
     UNKNOWN = "unknown"
 
     def is_hash(self):
-        return self in (IocType.MD5, IocType.SHA1, IocType.SHA256)
+        return self in (IocType.MD5, IocType.SHA1, IocType.SHA256, IocType.SHA512)
 
     def is_network(self):
         return self in (IocType.IPV4, IocType.IPV6, IocType.DOMAIN, IocType.URL)
