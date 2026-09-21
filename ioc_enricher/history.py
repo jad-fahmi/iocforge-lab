@@ -79,6 +79,37 @@ class HistoryStore:
                     """
                 )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (2)")
+            if 3 not in applied:
+                self.conn.executescript(
+                    """
+                    CREATE TABLE investigations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL DEFAULT 'open',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                    CREATE TABLE investigation_indicators (
+                        investigation_id INTEGER NOT NULL,
+                        ioc TEXT NOT NULL,
+                        added_at TEXT NOT NULL,
+                        PRIMARY KEY(investigation_id, ioc),
+                        FOREIGN KEY(investigation_id) REFERENCES investigations(id)
+                    );
+                    CREATE TABLE investigation_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        investigation_id INTEGER NOT NULL,
+                        event_type TEXT NOT NULL,
+                        data_json TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY(investigation_id) REFERENCES investigations(id)
+                    );
+                    CREATE INDEX idx_investigation_events_time
+                    ON investigation_events(investigation_id, created_at DESC);
+                    """
+                )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (3)")
             self.conn.commit()
 
     def record(self, result: Any, looked_up_at: str | None = None) -> int:
@@ -217,6 +248,108 @@ class HistoryStore:
             }
             for row in rows
         ]
+
+    def create_investigation(self, title: str, description: str = "") -> dict[str, Any]:
+        timestamp = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            cursor = self.conn.execute(
+                "INSERT INTO investigations(title, description, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                (title.strip(), description.strip(), timestamp, timestamp),
+            )
+            if cursor.lastrowid is None:
+                raise RuntimeError("failed to create investigation")
+            investigation_id = int(cursor.lastrowid)
+            self._record_investigation_event(
+                investigation_id, "investigation_created", {"title": title.strip()}, timestamp
+            )
+            self.conn.commit()
+        return self.investigation(investigation_id) or {}
+
+    def investigation(self, investigation_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM investigations WHERE id = ?", (investigation_id,)
+            ).fetchone()
+            if not row:
+                return None
+            indicators = self.conn.execute(
+                "SELECT ioc FROM investigation_indicators WHERE investigation_id = ? "
+                "ORDER BY added_at", (investigation_id,)
+            ).fetchall()
+        result = dict(row)
+        result["indicators"] = [item["ioc"] for item in indicators]
+        return result
+
+    def list_investigations(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        offset = max(0, offset)
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id FROM investigations ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        investigations = []
+        for row in rows:
+            investigation = self.investigation(row["id"])
+            if investigation is not None:
+                investigations.append(investigation)
+        return investigations
+
+    def add_investigation_indicator(
+        self, investigation_id: int, ioc: str
+    ) -> dict[str, Any] | None:
+        timestamp = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            exists = self.conn.execute(
+                "SELECT id FROM investigations WHERE id = ?", (investigation_id,)
+            ).fetchone()
+            if not exists:
+                return None
+            cursor = self.conn.execute(
+                "INSERT OR IGNORE INTO investigation_indicators(investigation_id, ioc, added_at) "
+                "VALUES (?, ?, ?)",
+                (investigation_id, ioc, timestamp),
+            )
+            if cursor.rowcount:
+                self._record_investigation_event(
+                    investigation_id, "indicator_added", {"ioc": ioc}, timestamp
+                )
+            self.conn.execute(
+                "UPDATE investigations SET updated_at = ? WHERE id = ?",
+                (timestamp, investigation_id),
+            )
+            self.conn.commit()
+        return self.investigation(investigation_id)
+
+    def investigation_events(
+        self, investigation_id: int, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id, event_type, data_json, created_at FROM investigation_events "
+                "WHERE investigation_id = ? ORDER BY id DESC LIMIT ?",
+                (investigation_id, limit),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "event_type": row["event_type"],
+                "data": json.loads(row["data_json"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    def _record_investigation_event(
+        self, investigation_id: int, event_type: str, data: dict[str, Any], timestamp: str
+    ) -> None:
+        self.conn.execute(
+            "INSERT INTO investigation_events(investigation_id, event_type, data_json, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (investigation_id, event_type, json.dumps(data, sort_keys=True), timestamp),
+        )
 
     def close(self) -> None:
         self.conn.close()
