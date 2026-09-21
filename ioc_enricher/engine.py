@@ -1,18 +1,19 @@
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 from ioc_enricher.connectors.abuseipdb import AbuseIPDB
 from ioc_enricher.connectors.greynoise import GreyNoise
 from ioc_enricher.connectors.otx import OTX
 from ioc_enricher.connectors.rdap import RDAP
+from ioc_enricher.connectors.registry import ConnectorRegistry
 from ioc_enricher.connectors.shodan import Shodan
 from ioc_enricher.connectors.virustotal import VirusTotal
-from ioc_enricher.connectors.registry import ConnectorRegistry
+from ioc_enricher.context import InternalContext
 from ioc_enricher.ioc.defang import refang
 from ioc_enricher.ioc.detect import detect, normalize
 from ioc_enricher.log import get
 from ioc_enricher.models import EnrichmentResult
 from ioc_enricher.scoring import score
-from ioc_enricher.context import InternalContext
 
 log = get(__name__)
 
@@ -60,8 +61,8 @@ class Engine:
 
     def enrich_many(self, iocs, workers=4, progress=None):
         # dedupe but keep first-seen order
-        seen = {}
-        contexts = {}
+        seen: dict[str, Any] = {}
+        contexts: dict[str, Any] = {}
         for item in iocs:
             if isinstance(item, tuple):
                 ioc, source_context = item

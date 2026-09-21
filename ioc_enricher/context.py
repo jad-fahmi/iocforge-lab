@@ -2,6 +2,7 @@ import csv
 import ipaddress
 import json
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 from ioc_enricher.ioc.types import IocType
@@ -30,7 +31,7 @@ class InternalContext:
 
     @classmethod
     def from_files(cls, paths=None, asset_inventory=None):
-        data = {
+        data: dict[str, list[Any]] = {
             "allowlist": [],
             "blocklist": [],
             "business_domains": [],
@@ -117,7 +118,7 @@ def load_asset_inventory(path):
                      or row.get("domain") or row.get("asset") or "").strip()
             if not value:
                 continue
-            tags = []
+            tags: list[str] = []
             for field in ("tags", "tag"):
                 if row.get(field):
                     tags.extend(t.strip() for t in row[field].replace(";", ",").split(","))

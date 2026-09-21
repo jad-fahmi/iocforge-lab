@@ -1,5 +1,4 @@
 import pytest
-
 from ioc_enricher.config import Config
 from ioc_enricher.connectors.base import Connector
 from ioc_enricher.connectors.registry import ConnectorRegistry
