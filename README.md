@@ -51,6 +51,7 @@ ioc-enrich 1.2.3.4 -s virustotal,abuseipdb
 ioc-enrich --extract alert.txt --report markdown
 ioc-enrich --extract ticket.txt --max-iocs 100 --fail-soft
 ioc-enrich -i iocs.txt --fail-on-malicious
+ioc-enrich --history evil.example --history-limit 20
 ```
 
 ## Extraction
