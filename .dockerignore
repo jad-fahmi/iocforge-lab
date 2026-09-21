@@ -1,0 +1,9 @@
+.git
+.github
+.venv
+.pytest_cache
+__pycache__
+*.py[codz]
+.env
+coverage.xml
+htmlcov

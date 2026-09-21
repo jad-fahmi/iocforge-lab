@@ -86,6 +86,18 @@ Provider capabilities and credential availability are available at `GET /provide
 New integrations should use the documented `/api/v1` endpoints: `POST /enrich`,
 `POST /enrich/batch`, `POST /extract`, and `GET /providers`.
 
+## Container deployment
+
+Run the API with Docker Compose:
+
+```shell
+docker compose up --build
+```
+
+The service listens on port 8000, exposes `/health`, runs as a non-root user,
+and persists enrichment history in the `iocforge-data` volume. Put provider keys
+in a local `.env` file; it is not copied into the image.
+
 ## Scoring
 
 Each source gets a weight. Shodan is informational and never moves the verdict. Buckets: clean, low, suspicious, malicious.
