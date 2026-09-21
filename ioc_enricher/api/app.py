@@ -1,7 +1,7 @@
 """Versioned FastAPI application for IOC enrichment."""
 
 from functools import lru_cache
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -71,6 +71,29 @@ class HistoryResponse(BaseModel):
     offset: int
 
 
+class IndicatorUpdateRequest(BaseModel):
+    tags: list[str] | None = Field(default=None, max_length=50)
+    status: Literal["open", "triaged", "benign", "malicious", "closed"] | None = None
+    analyst_notes: str | None = Field(default=None, max_length=10_000)
+
+
+class IndicatorResponse(BaseModel):
+    ioc: str
+    ioc_type: str
+    first_seen: str
+    last_seen: str
+    tags: list[str]
+    status: str
+    analyst_notes: str
+
+
+class IndicatorEventResponse(BaseModel):
+    id: int
+    event_type: str
+    data: dict[str, Any]
+    created_at: str
+
+
 @lru_cache
 def get_engine() -> Engine:
     load_dotenv()
@@ -124,6 +147,45 @@ def history(
         "limit": limit,
         "offset": offset,
     }
+
+
+def _history_store() -> HistoryStore:
+    store = get_engine().history
+    if store is None:
+        raise HTTPException(status_code=503, detail="history storage is unavailable")
+    return store
+
+
+@api.get("/indicators/{ioc}", response_model=IndicatorResponse, tags=["indicators"])
+def get_indicator(ioc: str) -> dict[str, Any]:
+    indicator = _history_store().indicator(ioc)
+    if indicator is None:
+        raise HTTPException(status_code=404, detail="indicator not found")
+    return indicator
+
+
+@api.patch("/indicators/{ioc}", response_model=IndicatorResponse, tags=["indicators"])
+def update_indicator(ioc: str, request: IndicatorUpdateRequest) -> dict[str, Any]:
+    indicator = _history_store().update_indicator(
+        ioc,
+        tags=request.tags,
+        status=request.status,
+        analyst_notes=request.analyst_notes,
+    )
+    if indicator is None:
+        raise HTTPException(status_code=404, detail="indicator not found")
+    return indicator
+
+
+@api.get(
+    "/indicators/{ioc}/events",
+    response_model=list[IndicatorEventResponse],
+    tags=["indicators"],
+)
+def indicator_events(
+    ioc: str, limit: int = Query(default=100, ge=1, le=500)
+) -> list[dict[str, Any]]:
+    return _history_store().indicator_events(ioc, limit=limit)
 
 
 app.include_router(api)

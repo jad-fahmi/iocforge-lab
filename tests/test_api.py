@@ -66,3 +66,22 @@ def test_history_endpoint_filters_and_paginates(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert response.json()["items"][0]["ioc"] == "example.com"
     assert response.json()["limit"] == 1
+
+
+def test_indicator_metadata_endpoints(monkeypatch, tmp_path):
+    store = HistoryStore(tmp_path / "history.db")
+    store.record(EnrichmentResult(ioc="example.com", ioc_type=IocType.DOMAIN))
+    engine = Engine(Config(), history=store)
+    engine.connectors = []
+    monkeypatch.setattr(api_module, "get_engine", lambda: engine)
+    client = TestClient(api_module.app)
+
+    updated = client.patch(
+        "/api/v1/indicators/example.com",
+        json={"tags": ["phishing"], "status": "triaged", "analyst_notes": "reviewed"},
+    )
+    events = client.get("/api/v1/indicators/example.com/events")
+
+    assert updated.status_code == 200
+    assert updated.json()["tags"] == ["phishing"]
+    assert events.json()[0]["event_type"] == "indicator_updated"

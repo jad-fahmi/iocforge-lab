@@ -63,6 +63,22 @@ class HistoryStore:
                     """
                 )
                 self.conn.execute("INSERT INTO schema_migrations(version) VALUES (1)")
+            if 2 not in applied:
+                self.conn.executescript(
+                    """
+                    CREATE TABLE indicator_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ioc TEXT NOT NULL,
+                        event_type TEXT NOT NULL,
+                        data_json TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY(ioc) REFERENCES indicators(ioc)
+                    );
+                    CREATE INDEX idx_indicator_events_ioc_time
+                    ON indicator_events(ioc, created_at DESC);
+                    """
+                )
+                self.conn.execute("INSERT INTO schema_migrations(version) VALUES (2)")
             self.conn.commit()
 
     def record(self, result: Any, looked_up_at: str | None = None) -> int:
@@ -134,7 +150,73 @@ class HistoryStore:
             row = self.conn.execute(
                 "SELECT * FROM indicators WHERE ioc = ?", (ioc,)
             ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        result = dict(row)
+        result["tags"] = json.loads(result["tags"])
+        return result
+
+    def update_indicator(
+        self,
+        ioc: str,
+        tags: list[str] | None = None,
+        status: str | None = None,
+        analyst_notes: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Update analyst-managed fields and preserve a timestamped audit event."""
+        if status and status not in {"open", "triaged", "benign", "malicious", "closed"}:
+            raise ValueError("invalid indicator status")
+        fields: dict[str, Any] = {}
+        if tags is not None:
+            fields["tags"] = json.dumps(sorted({tag.strip().lower() for tag in tags if tag.strip()}))
+        if status is not None:
+            fields["status"] = status
+        if analyst_notes is not None:
+            fields["analyst_notes"] = analyst_notes
+        if not fields:
+            return self.indicator(ioc)
+
+        with self._lock:
+            current = self.conn.execute(
+                "SELECT ioc FROM indicators WHERE ioc = ?", (ioc,)
+            ).fetchone()
+            if not current:
+                return None
+            assignments = ", ".join(f"{field} = ?" for field in fields)
+            self.conn.execute(
+                f"UPDATE indicators SET {assignments} WHERE ioc = ?",
+                [*fields.values(), ioc],
+            )
+            self.conn.execute(
+                "INSERT INTO indicator_events(ioc, event_type, data_json, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    ioc,
+                    "indicator_updated",
+                    json.dumps(fields, sort_keys=True),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            self.conn.commit()
+        return self.indicator(ioc)
+
+    def indicator_events(self, ioc: str, limit: int = 100) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id, event_type, data_json, created_at FROM indicator_events "
+                "WHERE ioc = ? ORDER BY id DESC LIMIT ?",
+                (ioc, limit),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "event_type": row["event_type"],
+                "data": json.loads(row["data_json"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     def close(self) -> None:
         self.conn.close()
