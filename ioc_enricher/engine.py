@@ -25,11 +25,14 @@ REGISTRY = ConnectorRegistry(
 
 
 class Engine:
-    def __init__(self, config, cache=None, sources=None, internal_context=None):
+    def __init__(
+        self, config, cache=None, sources=None, internal_context=None, history=None
+    ):
         self.config = config
         self.cache = cache
         self.connectors = self._build(sources)
         self.internal_context = internal_context or InternalContext.empty()
+        self.history = history
 
     def _build(self, sources):
         return REGISTRY.build(self.config, sources)
@@ -61,6 +64,8 @@ class Engine:
                     result.add(conn._empty(ioc, ioc_type, error=str(exc)))
 
         result.score, result.verdict = score(result)
+        if self.history is not None:
+            self.history.record(result)
         return result
 
     def enrich_many(self, iocs, workers=4, progress=None):
